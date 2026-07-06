@@ -1,4 +1,5 @@
 from . import fake as _fake  # noqa: F401  (registers builtin providers)
+from . import openai_compat as _openai_compat  # noqa: F401
 from .base import (
     ChatMessage,
     ChatRequest,
