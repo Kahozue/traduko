@@ -8,16 +8,33 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import yaml
+
 from ..asr import AsrError, create_asr
 from ..budget import BudgetExceededError, BudgetMeter
 from ..config import load_config
+from ..fsutil import atomic_write_text
 from ..glossary import load_glossary
 from ..llm import LLMError, create_llm
-from ..media import MediaError, build_extract_audio_cmd, ffmpeg_available
+from ..media import (
+    MediaError,
+    build_extract_audio_cmd,
+    build_hardburn_cmd,
+    ffmpeg_available,
+)
 from ..media import run as run_media
 from ..prompts import load_template
 from ..segmenting import refine_segments
-from ..subtitles import SubtitleError, parse_subtitle
+from ..styles import SubtitleStyle, serialize_ass
+from ..subtitles import (
+    Cue,
+    SubtitleError,
+    compose_bilingual,
+    parse_subtitle,
+    serialize_srt,
+    serialize_txt,
+    serialize_vtt,
+)
 from ..translate import TranslationError, TranslationSettings, translate_segments
 from . import registry
 from .base import PauseRequested, StageContext, StageError, StageResult
@@ -209,3 +226,102 @@ class TranslateStage:
             },
         )
         return StageResult(artifacts=[path.name, partial_path.name])
+
+
+def _style_from(ctx: StageContext) -> SubtitleStyle:
+    base_values: dict = {}
+    preset = ctx.params.get("style_preset")
+    if preset:
+        path = ctx.data_root / "config" / "styles.yaml"
+        presets = {}
+        if path.exists():
+            presets = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        if preset not in presets:
+            raise StageError(f"unknown style preset: {preset}")
+        base_values = dict(presets[preset])
+    base_values.update(ctx.params.get("style") or {})
+    return SubtitleStyle(**base_values)
+
+
+def _cues_from_translation(data: dict, bilingual: bool) -> list[Cue]:
+    cues: list[Cue] = []
+    for seg in data["segments"]:
+        text = (
+            compose_bilingual(seg["target"], seg["source"])
+            if bilingual
+            else seg["target"]
+        )
+        cues.append(Cue(id=seg["id"], start=seg["start"], end=seg["end"], text=text))
+    return cues
+
+
+_SERIALIZERS = {
+    "srt": lambda cues, ctx: serialize_srt(cues),
+    "vtt": lambda cues, ctx: serialize_vtt(cues),
+    "txt": lambda cues, ctx: serialize_txt(cues),
+    "ass": lambda cues, ctx: serialize_ass(cues, _style_from(ctx)),
+}
+
+
+@registry.register
+class ExportSubtitlesStage:
+    type = "export_subtitles"
+
+    def run(self, ctx: StageContext) -> StageResult:
+        try:
+            data = ctx.artifacts.read_latest_json("translation.json")
+        except FileNotFoundError as error:
+            raise StageError("export stage requires a translation artifact") from error
+        formats = ctx.params.get("formats", ["srt"])
+        cues = _cues_from_translation(data, ctx.params.get("bilingual", False))
+        names: list[str] = []
+        for fmt in formats:
+            serializer = _SERIALIZERS.get(fmt)
+            if serializer is None:
+                raise StageError(f"unknown subtitle format: {fmt}")
+            try:
+                body = serializer(cues, ctx)
+            except SubtitleError as error:
+                raise StageError(str(error)) from error
+            path = ctx.artifacts.path_for(ctx.stage_index + 1, f"subtitles.{fmt}")
+            atomic_write_text(path, body)
+            names.append(path.name)
+        ctx.emit_progress(1, 1)
+        return StageResult(artifacts=names)
+
+
+@registry.register
+class HardburnStage:
+    type = "hardburn"
+
+    def run(self, ctx: StageContext) -> StageResult:
+        if not ffmpeg_available():
+            raise StageError("ffmpeg/ffprobe not found on PATH")
+        try:
+            data = ctx.artifacts.read_latest_json("translation.json")
+        except FileNotFoundError as error:
+            raise StageError("hardburn stage requires a translation artifact") from error
+        cues = _cues_from_translation(data, ctx.params.get("bilingual", False))
+        try:
+            body = serialize_ass(cues, _style_from(ctx))
+        except SubtitleError as error:
+            raise StageError(str(error)) from error
+        ass_path = ctx.artifacts.path_for(ctx.stage_index + 1, "burn.ass")
+        atomic_write_text(ass_path, body)
+        output = ctx.artifacts.path_for(
+            ctx.stage_index + 1, ctx.params.get("output_name", "video.mp4")
+        )
+        fonts_dir = ctx.params.get("fonts_dir")
+        try:
+            run_media(
+                build_hardburn_cmd(
+                    Path(ctx.task.input_path),
+                    ass_path,
+                    output,
+                    fonts_dir=Path(fonts_dir) if fonts_dir else None,
+                )
+            )
+        except MediaError as error:
+            raise StageError(str(error)) from error
+        ctx.emit_progress(1, 1)
+        return StageResult(artifacts=[ass_path.name, output.name])
