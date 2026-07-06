@@ -11,7 +11,7 @@ from pathlib import Path
 import platformdirs
 
 ENV_DATA_ROOT = "TRADUKO_DATA_ROOT"
-SUBDIRS = ("config", "profiles", "prompts", "glossaries", "projects", "sync")
+SUBDIRS = ("config", "profiles", "prompts", "glossaries", "projects", "sync", "budget")
 
 
 def resolve_data_root(explicit: Path | None = None) -> Path:

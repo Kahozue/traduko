@@ -27,3 +27,13 @@ def test_read_rejects_missing_schema_version(tmp_path: Path) -> None:
     path.write_text(json.dumps({"x": 1}), encoding="utf-8")
     with pytest.raises(ValueError):
         store.read_json(1, "bad.json")
+
+
+def test_read_latest_json(tmp_path: Path) -> None:
+    store = ArtifactStore(tmp_path)
+    store.write_json(1, "segments.json", {"v": "old"})
+    store.write_json(3, "segments.json", {"v": "new"})
+    assert store.read_latest_json("segments.json")["v"] == "new"
+    assert store.latest_path("segments.json").name == "03-segments.json"
+    with pytest.raises(FileNotFoundError):
+        store.read_latest_json("missing.json")

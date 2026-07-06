@@ -34,3 +34,9 @@ def test_subscriber_error_does_not_break_others() -> None:
     bus.subscribe(seen.append)
     bus.publish(make_event())
     assert len(seen) == 1
+
+
+def test_event_types_include_pause_and_budget() -> None:
+    from traduko.events import EVENT_TYPES
+
+    assert {"task_paused", "budget_warning", "budget_exceeded"} <= EVENT_TYPES

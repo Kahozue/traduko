@@ -115,3 +115,40 @@ def test_profile_yaml_roundtrip(tmp_path: Path) -> None:
     save_profile(tmp_path, profile)
     loaded = load_profile(tmp_path, "p")
     assert loaded == profile
+
+
+def test_pause_requested_pauses_task_then_resumes(tmp_path: Path) -> None:
+    @registry.register
+    class PauseOnceStage:
+        type = "pause_once"
+        seen: set[str] = set()
+
+        def run(self, ctx: base.StageContext) -> base.StageResult:
+            if ctx.task.id not in PauseOnceStage.seen:
+                PauseOnceStage.seen.add(ctx.task.id)
+                raise base.PauseRequested("budget exhausted")
+            return base.StageResult()
+
+    store, bus, events, record = build(tmp_path, [ProfileStage(type="pause_once")])
+    executor = PipelineExecutor(store, bus, tmp_path)
+    paused = executor.run(record)
+    assert paused.status == TaskStatus.PAUSED
+    assert paused.stages[0].status == StageStatus.PENDING
+    assert events[-1].type == "task_paused"
+    assert events[-1].data["reason"] == "budget exhausted"
+    resumed = executor.run(paused)
+    assert resumed.status == TaskStatus.COMPLETED
+
+
+def test_stage_context_carries_bus(tmp_path: Path) -> None:
+    @registry.register
+    class BusProbeStage:
+        type = "bus_probe"
+
+        def run(self, ctx: base.StageContext) -> base.StageResult:
+            assert ctx.bus is not None
+            return base.StageResult()
+
+    store, bus, events, record = build(tmp_path, [ProfileStage(type="bus_probe")])
+    result = PipelineExecutor(store, bus, tmp_path).run(record)
+    assert result.status == TaskStatus.COMPLETED

@@ -18,6 +18,9 @@ EVENT_TYPES = frozenset(
         "task_completed",
         "task_failed",
         "task_canceled",
+        "task_paused",
+        "budget_warning",
+        "budget_exceeded",
     }
 )
 

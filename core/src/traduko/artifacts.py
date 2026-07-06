@@ -31,3 +31,16 @@ class ArtifactStore:
         if "schema_version" not in data:
             raise ValueError(f"artifact missing schema_version: {path}")
         return data
+
+    def latest_path(self, name: str) -> Path:
+        matches = sorted(self.dir.glob(f"*-{name}"))
+        if not matches:
+            raise FileNotFoundError(f"no artifact matching *-{name} in {self.dir}")
+        return matches[-1]
+
+    def read_latest_json(self, name: str) -> dict:
+        path = self.latest_path(name)
+        data = json.loads(path.read_text(encoding="utf-8"))
+        if "schema_version" not in data:
+            raise ValueError(f"artifact missing schema_version: {path}")
+        return data

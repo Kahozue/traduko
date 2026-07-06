@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Protocol, runtime_checkable
 
 from ..artifacts import ArtifactStore
+from ..events import EventBus
 from ..models import TaskRecord
 
 
@@ -17,6 +18,14 @@ class UnknownStageError(StageError):
     pass
 
 
+class PauseRequested(Exception):
+    """Raised by a stage to pause the task without failing it."""
+
+    def __init__(self, reason: str) -> None:
+        super().__init__(reason)
+        self.reason = reason
+
+
 @dataclass
 class StageContext:
     task: TaskRecord
@@ -26,6 +35,7 @@ class StageContext:
     data_root: Path
     emit_progress: Callable[[int, int], None]
     should_cancel: Callable[[], bool]
+    bus: EventBus
 
 
 @dataclass

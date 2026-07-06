@@ -3,14 +3,21 @@ from __future__ import annotations
 from pathlib import Path
 
 import yaml
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 CONFIG_FILE = "config/core.yaml"
+
+
+class BudgetConfig(BaseModel):
+    task_usd_limit: float | None = None
+    monthly_usd_limit: float | None = None
 
 
 class CoreConfig(BaseModel):
     schema_version: int = 1
     default_project: str = "default"
+    budget: BudgetConfig = Field(default_factory=BudgetConfig)
+    llm_providers: dict[str, dict] = Field(default_factory=dict)
 
 
 def load_config(root: Path) -> CoreConfig:
