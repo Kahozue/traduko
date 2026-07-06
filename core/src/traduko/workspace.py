@@ -7,6 +7,7 @@ from .config import CoreConfig, load_config
 from .events import EventBus
 from .index import TaskIndex
 from .paths import ensure_layout, resolve_data_root
+from .seeds import ensure_defaults
 from .tasks import TaskStore
 
 
@@ -21,6 +22,7 @@ class Workspace:
     @classmethod
     def open(cls, data_root: Path | None = None) -> "Workspace":
         root = ensure_layout(resolve_data_root(data_root))
+        ensure_defaults(root)
         index = TaskIndex(root)
         return cls(
             root=root,
