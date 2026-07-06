@@ -3,7 +3,7 @@ from pathlib import Path
 
 from typer.testing import CliRunner
 
-from translator_core.cli import app
+from traduko.cli import app
 
 runner = CliRunner()
 
@@ -15,7 +15,7 @@ def setup_workspace(tmp_path: Path) -> dict[str, str]:
         "schema_version: 1\nname: passthrough\nstages:\n  - type: noop\n",
         encoding="utf-8",
     )
-    return {"TRANSLATOR_DATA_ROOT": str(tmp_path)}
+    return {"TRADUKO_DATA_ROOT": str(tmp_path)}
 
 
 def test_create_run_list_show(tmp_path: Path) -> None:

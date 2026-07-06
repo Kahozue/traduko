@@ -2,12 +2,12 @@ from pathlib import Path
 
 import pytest
 
-from translator_core.events import Event, EventBus
-from translator_core.executor import CancelToken, PipelineExecutor
-from translator_core.models import StageStatus, TaskStatus
-from translator_core.profiles import Profile, ProfileStage, stage_records_from
-from translator_core.stages import base, registry
-from translator_core.tasks import TaskStore
+from traduko.events import Event, EventBus
+from traduko.executor import CancelToken, PipelineExecutor
+from traduko.models import StageStatus, TaskStatus
+from traduko.profiles import Profile, ProfileStage, stage_records_from
+from traduko.stages import base, registry
+from traduko.tasks import TaskStore
 
 
 @registry.register
@@ -109,7 +109,7 @@ def test_unknown_stage_type_fails_task(tmp_path: Path) -> None:
 
 
 def test_profile_yaml_roundtrip(tmp_path: Path) -> None:
-    from translator_core.profiles import load_profile, save_profile
+    from traduko.profiles import load_profile, save_profile
 
     profile = Profile(name="p", stages=[ProfileStage(type="noop", pause_after=True)])
     save_profile(tmp_path, profile)

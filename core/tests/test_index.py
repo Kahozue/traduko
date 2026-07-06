@@ -1,8 +1,8 @@
 from pathlib import Path
 
-from translator_core.index import TaskIndex
-from translator_core.models import StageRecord, TaskStatus
-from translator_core.tasks import TaskStore
+from traduko.index import TaskIndex
+from traduko.models import StageRecord, TaskStatus
+from traduko.tasks import TaskStore
 
 
 def test_save_with_index_lists_task(tmp_path: Path) -> None:

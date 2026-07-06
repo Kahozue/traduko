@@ -1,5 +1,5 @@
-import translator_core
+import traduko
 
 
 def test_version() -> None:
-    assert translator_core.__version__ == "0.1.0"
+    assert traduko.__version__ == "0.1.0"

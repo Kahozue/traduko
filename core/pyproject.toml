@@ -1,7 +1,7 @@
 [project]
-name = "translator-core"
+name = "traduko"
 version = "0.1.0"
-description = "Engine core for an open-source automatic translation workstation"
+description = "Engine core for Traduko, an open-source automatic translation workstation"
 requires-python = ">=3.11"
 dependencies = [
     "pydantic>=2.7",
@@ -14,11 +14,11 @@ dependencies = [
 dev = ["pytest>=8.0"]
 
 [project.scripts]
-translator-core = "translator_core.cli:app"
+traduko = "traduko.cli:app"
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/translator_core"]
+packages = ["src/traduko"]

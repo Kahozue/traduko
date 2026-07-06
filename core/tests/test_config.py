@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from translator_core.config import CoreConfig, load_config, save_config
+from traduko.config import CoreConfig, load_config, save_config
 
 
 def test_missing_file_returns_defaults(tmp_path: Path) -> None:

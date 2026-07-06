@@ -1,4 +1,4 @@
-from translator_core.events import Event, EventBus
+from traduko.events import Event, EventBus
 
 
 def make_event(event_type: str = "stage_progress") -> Event:

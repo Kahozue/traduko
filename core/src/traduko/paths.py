@@ -10,7 +10,7 @@ from pathlib import Path
 
 import platformdirs
 
-ENV_DATA_ROOT = "TRANSLATOR_DATA_ROOT"
+ENV_DATA_ROOT = "TRADUKO_DATA_ROOT"
 SUBDIRS = ("config", "profiles", "prompts", "glossaries", "projects", "sync")
 
 
@@ -20,7 +20,7 @@ def resolve_data_root(explicit: Path | None = None) -> Path:
     env = os.environ.get(ENV_DATA_ROOT)
     if env:
         return Path(env)
-    return Path(platformdirs.user_data_dir("translator-core", appauthor=False))
+    return Path(platformdirs.user_data_dir("traduko", appauthor=False))
 
 
 def ensure_layout(root: Path) -> Path:

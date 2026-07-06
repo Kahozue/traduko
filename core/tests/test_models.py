@@ -2,7 +2,7 @@ import re
 
 import pytest
 
-from translator_core.models import (
+from traduko.models import (
     InvalidTransition,
     StageRecord,
     TaskRecord,

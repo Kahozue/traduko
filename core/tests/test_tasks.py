@@ -1,8 +1,8 @@
 import json
 from pathlib import Path
 
-from translator_core.models import StageRecord, TaskStatus
-from translator_core.tasks import TaskStore
+from traduko.models import StageRecord, TaskStatus
+from traduko.tasks import TaskStore
 
 
 def make_store(tmp_path: Path) -> TaskStore:

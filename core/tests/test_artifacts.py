@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from translator_core.artifacts import ArtifactStore
+from traduko.artifacts import ArtifactStore
 
 
 def test_numbered_path(tmp_path: Path) -> None:

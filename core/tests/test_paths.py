@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from translator_core.paths import ENV_DATA_ROOT, SUBDIRS, ensure_layout, resolve_data_root
+from traduko.paths import ENV_DATA_ROOT, SUBDIRS, ensure_layout, resolve_data_root
 
 
 def test_explicit_root_wins_over_env(tmp_path: Path, monkeypatch) -> None:
