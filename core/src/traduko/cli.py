@@ -6,8 +6,10 @@ from typing import Optional
 
 import typer
 
+from .eventlog import EventLogger
 from .events import Event
 from .executor import PipelineExecutor
+from .notify import Notifier
 from .paths import ENV_DATA_ROOT
 from .preflight import PreflightReport, run_preflight
 from .profiles import load_profile, stage_records_from
@@ -82,6 +84,8 @@ def task_run(
         typer.echo(f"[{event.type}] {json.dumps(event.data, ensure_ascii=False)}")
 
     ws.bus.subscribe(print_event)
+    EventLogger(ws.root).attach(ws.bus)
+    Notifier.from_config(ws.config).attach(ws.bus)
     record = ws.store.load(project or ws.config.default_project, task_id)
     if not skip_preflight:
         report = run_preflight(record, ws.root)
