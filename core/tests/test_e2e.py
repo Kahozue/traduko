@@ -43,7 +43,11 @@ def test_subtitle_pipeline_end_to_end(tmp_path: Path) -> None:
     )
     assert translation["schema_version"] == 1
     assert [s["target"] for s in translation["segments"]] == ["[T] hello", "[T] world"]
-    srt_out = (artifacts / "03-subtitles.srt").read_text(encoding="utf-8")
+    report = json.loads(
+        (artifacts / "03-proofread-report.json").read_text(encoding="utf-8")
+    )
+    assert report["converged"] is True
+    srt_out = (artifacts / "04-subtitles.srt").read_text(encoding="utf-8")
     assert "[T] hello" in srt_out and "-->" in srt_out
 
 

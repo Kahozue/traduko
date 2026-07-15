@@ -9,7 +9,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from .budget import BUILTIN_PRICES
-from .prompts import DEFAULT_TRANSLATE_TEMPLATE
+from .prompts import DEFAULT_PROOFREAD_TEMPLATE, DEFAULT_TRANSLATE_TEMPLATE
 
 _PROFILE_AV_DEFAULT = """\
 # Default audiovisual pipeline: video or audio file in, subtitle file out.
@@ -27,6 +27,10 @@ stages:
     params:
       provider: fake
       target_language: en
+  - type: proofread
+    params:
+      provider: fake
+      intensity: fast
   - type: export_subtitles
     params:
       formats: [srt]
@@ -42,6 +46,10 @@ stages:
     params:
       provider: fake
       target_language: en
+  - type: proofread
+    params:
+      provider: fake
+      intensity: fast
   - type: export_subtitles
     params:
       formats: [srt]
@@ -76,6 +84,7 @@ def ensure_defaults(root: Path) -> None:
         "profiles/av-default.yaml": _PROFILE_AV_DEFAULT,
         "profiles/subtitle-translate.yaml": _PROFILE_SUBTITLE_TRANSLATE,
         "prompts/translate.txt": DEFAULT_TRANSLATE_TEMPLATE,
+        "prompts/proofread.txt": DEFAULT_PROOFREAD_TEMPLATE,
         "config/pricing.yaml": _pricing_yaml(),
         "config/styles.yaml": _STYLES_DEFAULT,
     }
