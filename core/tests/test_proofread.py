@@ -1,10 +1,22 @@
 import json
+from pathlib import Path
 
 import pytest
 
-from traduko.agents.proofread import ProofreadWorkspace, build_proofread_tools
+from traduko.agents.proofread import (
+    ProofreadSettings,
+    ProofreadWorkspace,
+    build_proofread_tools,
+    run_proofread,
+)
+from traduko.agents.recorder import AgentRunRecorder
 from traduko.agents.tools import ToolError
+from traduko.budget import BudgetMeter
+from traduko.config import CoreConfig
+from traduko.events import EventBus
 from traduko.glossary import GlossaryEntry
+from traduko.llm import create_llm
+from traduko.prompts import load_template
 
 
 def make_segments() -> list[dict]:
@@ -113,3 +125,76 @@ def test_build_tools_dispatch() -> None:
     assert retranslated == [(3, 4, "smoother")]
     assert ws.segments[3]["target"] == "nova 3"
     assert out == [{"id": 3, "text": "nova 3"}, {"id": 4, "text": "nova 4"}]
+
+
+def run_proofread_with(
+    tmp_path: Path, responses: list[str], *, glossary=None, max_rounds: int = 3
+):
+    meter = BudgetMeter(tmp_path, EventBus(), CoreConfig())
+    provider = create_llm({"type": "scripted", "responses": responses})
+    recorder = AgentRunRecorder(tmp_path / "agent-runs", "proof-test")
+    progress: list[tuple[int, int]] = []
+    rounds: list[int] = []
+    result = run_proofread(
+        make_segments(),
+        ProofreadSettings(
+            source_language="en", target_language="eo",
+            model="test-model", max_rounds=max_rounds,
+        ),
+        provider,
+        meter,
+        glossary or [],
+        load_template(tmp_path, "proofread"),
+        load_template(tmp_path, "translate"),
+        project="p",
+        task_id="t1",
+        recorder=recorder,
+        emit_progress=lambda current, total: progress.append((current, total)),
+        on_round=rounds.append,
+    )
+    return result, progress, rounds
+
+
+def test_proofread_edit_and_converge(tmp_path: Path) -> None:
+    responses = [
+        '{"tool": "read_segments", "arguments": {"start_id": 1, "end_id": 5, "context": 0}}',
+        '{"tool": "edit_segment", "arguments": {"id": 2, "new_target": "polished", "reason": "awkward"}}',
+        '{"tool": "end_round", "arguments": {"summary": "one fix"}}',
+        '{"tool": "read_segments", "arguments": {"start_id": 1, "end_id": 5, "context": 0}}',
+        '{"done": true, "summary": "clean"}',
+    ]
+    result, progress, rounds = run_proofread_with(tmp_path, responses)
+    assert result.converged is True
+    assert result.segments[1]["target"] == "polished"
+    assert result.report["reason"] == "done"
+    assert result.report["rounds"] == 2
+    assert result.report["edits"][0]["round"] == 1
+    assert rounds == [1, 2]
+    assert progress[0] == (5, 5)
+    assert progress[-1] == (5, 5)
+
+
+def test_proofread_retranslate_goes_through_same_meter(tmp_path: Path) -> None:
+    responses = [
+        '{"tool": "retranslate_range", "arguments": {"start_id": 1, "end_id": 2}}',
+        '[{"id": 1, "text": "nova 1"}, {"id": 2, "text": "nova 2"}]',
+        '{"done": true, "summary": "retranslated"}',
+    ]
+    result, _, _ = run_proofread_with(tmp_path, responses)
+    assert result.segments[0]["target"] == "nova 1"
+    assert result.segments[1]["target"] == "nova 2"
+    assert all(e["reason"].startswith("retranslated") for e in result.report["edits"])
+    ledger_lines = sum(
+        len(path.read_text(encoding="utf-8").strip().splitlines())
+        for path in (tmp_path / "budget").glob("ledger-*.jsonl")
+    )
+    assert ledger_lines == 3
+
+
+def test_proofread_flags_survive_into_report(tmp_path: Path) -> None:
+    responses = [
+        '{"tool": "flag_segment", "arguments": {"id": 3, "note": "idiom unclear"}}',
+        '{"done": true, "summary": "flagged one"}',
+    ]
+    result, _, _ = run_proofread_with(tmp_path, responses)
+    assert result.report["flags"] == [{"id": 3, "note": "idiom unclear", "round": 1}]

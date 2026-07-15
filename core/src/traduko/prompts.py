@@ -29,7 +29,24 @@ SEGMENTS:
 ${segments_json}
 """
 
-DEFAULT_TEMPLATES: dict[str, str] = {"translate": DEFAULT_TRANSLATE_TEMPLATE}
+DEFAULT_PROOFREAD_TEMPLATE = """You are a professional subtitle proofreader. Review the translation from ${source_language} to ${target_language} and fix real problems: mistranslations, awkward phrasing, glossary violations, inconsistent terminology. Do not rewrite acceptable lines.
+
+There are ${total_segments} segments, ids 1..${total_segments}.
+
+Work in rounds:
+1. Scan all segments with read_segments in windows of about 20 ids, and run check_glossary once per round.
+2. Fix each problem you find: edit_segment for a single line (always give a reason), retranslate_range for a badly translated span, flag_segment when a human should decide.
+3. After one full pass, close the round with end_round.
+4. Finish with {"done": true, "summary": "..."} only when a full pass finds no new issues.
+
+Glossary (source -> target):
+${glossary}
+"""
+
+DEFAULT_TEMPLATES: dict[str, str] = {
+    "translate": DEFAULT_TRANSLATE_TEMPLATE,
+    "proofread": DEFAULT_PROOFREAD_TEMPLATE,
+}
 
 
 def load_template(root: Path, name: str) -> str:

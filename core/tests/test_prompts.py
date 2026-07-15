@@ -39,3 +39,15 @@ def test_unknown_template_raises(tmp_path: Path) -> None:
 def test_missing_variable_raises() -> None:
     with pytest.raises(PromptError):
         render(DEFAULT_TEMPLATES["translate"], {"target_language": "en"})
+
+
+def test_proofread_template_renders() -> None:
+    template = load_template(Path("/nonexistent"), "proofread")
+    text = render(
+        template,
+        {
+            "source_language": "en", "target_language": "eo",
+            "total_segments": "5", "glossary": "(none)",
+        },
+    )
+    assert "proofreader" in text and "5" in text

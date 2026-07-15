@@ -8,8 +8,15 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable
+from dataclasses import dataclass
 
-from ..glossary import GlossaryEntry
+from ..budget import BudgetMeter
+from ..glossary import GlossaryEntry, format_for_prompt, relevant_entries
+from ..llm import ChatMessage, ChatRequest, LLMProvider
+from ..prompts import render
+from ..translate import TranslationError, parse_translation_response
+from .recorder import AgentRunRecorder
+from .runner import AgentLimits, AgentRunner
 from .tools import AgentTool, ToolError, ToolRegistry
 
 
@@ -189,3 +196,120 @@ def build_proofread_tools(
         )
     )
     return registry
+
+
+@dataclass
+class ProofreadSettings:
+    source_language: str
+    target_language: str
+    model: str
+    max_rounds: int = 1
+    max_turns: int = 60
+    temperature: float | None = None
+
+
+@dataclass
+class ProofreadResult:
+    segments: list[dict]
+    report: dict
+    converged: bool
+
+
+def run_proofread(
+    segments: list[dict],
+    settings: ProofreadSettings,
+    provider: LLMProvider,
+    meter: BudgetMeter,
+    glossary_entries: list[GlossaryEntry],
+    goal_template: str,
+    translate_template: str,
+    *,
+    project: str,
+    task_id: str,
+    recorder: AgentRunRecorder,
+    emit_progress: Callable[[int, int], None],
+    on_round: Callable[[int], None] | None = None,
+) -> ProofreadResult:
+    workspace = ProofreadWorkspace(segments)
+    total = len(segments)
+
+    def retranslate(start_id: int, end_id: int, instruction: str) -> dict[int, str]:
+        batch = [
+            {"id": seg["id"], "text": seg["source"]}
+            for seg in workspace.to_list()
+            if start_id <= seg["id"] <= end_id
+        ]
+        if not batch:
+            raise ToolError("no segments in range")
+        entries = relevant_entries(glossary_entries, [item["text"] for item in batch])
+        prompt = render(
+            translate_template,
+            {
+                "source_language": settings.source_language,
+                "target_language": settings.target_language,
+                "style": instruction or "(none)",
+                "glossary": format_for_prompt(entries),
+                "context": "(none)",
+                "segments_json": json.dumps(batch, ensure_ascii=False),
+            },
+        )
+        request = ChatRequest(
+            model=settings.model,
+            messages=[ChatMessage(role="user", content=prompt)],
+            temperature=settings.temperature,
+        )
+        response = meter.chat(provider, request, project=project, task_id=task_id)
+        try:
+            return parse_translation_response(
+                response.content, [item["id"] for item in batch]
+            )
+        except TranslationError as error:
+            raise ToolError(f"retranslation failed: {error}") from error
+
+    def on_tool_progress() -> None:
+        emit_progress(len(workspace.checked), total)
+
+    registry = build_proofread_tools(
+        workspace, glossary_entries, retranslate, on_tool_progress
+    )
+
+    def handle_round(round_number: int) -> None:
+        workspace.start_round(round_number)
+        if on_round:
+            on_round(round_number)
+
+    goal = render(
+        goal_template,
+        {
+            "source_language": settings.source_language,
+            "target_language": settings.target_language,
+            "total_segments": str(total),
+            "glossary": format_for_prompt(glossary_entries),
+        },
+    )
+    runner = AgentRunner(
+        provider=provider,
+        meter=meter,
+        model=settings.model,
+        project=project,
+        task_id=task_id,
+        registry=registry,
+        recorder=recorder,
+        limits=AgentLimits(max_rounds=settings.max_rounds, max_turns=settings.max_turns),
+        temperature=settings.temperature,
+        on_round=handle_round,
+    )
+    run = runner.run(goal)
+    emit_progress(total, total)
+    report = {
+        "converged": run.converged,
+        "reason": run.reason,
+        "summary": run.summary,
+        "rounds": run.rounds,
+        "turns": run.turns,
+        "edits": workspace.edits,
+        "flags": workspace.flags,
+    }
+    return ProofreadResult(
+        segments=workspace.to_list(), report=report, converged=run.converged
+    )
