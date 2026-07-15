@@ -93,3 +93,49 @@ def event_payload(event: Event) -> dict:
         "project": event.project,
         "data": event.data,
     }
+
+
+@register_channel("webhook")
+class WebhookChannel:
+    """POST the full event as JSON to an arbitrary URL."""
+
+    def __init__(
+        self,
+        url: str,
+        events: list[str] | None = None,
+        timeout: float = 10.0,
+        transport: httpx.BaseTransport | None = None,
+        **_ignored,
+    ) -> None:
+        self.url = url
+        self.events = resolve_events(events, DEFAULT_EVENTS)
+        self._client = httpx.Client(timeout=timeout, transport=transport)
+
+    def send(self, event: Event) -> None:
+        response = self._client.post(self.url, json=event_payload(event))
+        if response.status_code >= 300:
+            raise NotifyError(f"webhook failed: http {response.status_code}")
+
+
+@register_channel("discord")
+class DiscordChannel:
+    """Post a human-readable line to a Discord webhook URL."""
+
+    def __init__(
+        self,
+        webhook_url: str,
+        events: list[str] | None = None,
+        timeout: float = 10.0,
+        transport: httpx.BaseTransport | None = None,
+        **_ignored,
+    ) -> None:
+        self.webhook_url = webhook_url
+        self.events = resolve_events(events, DEFAULT_EVENTS)
+        self._client = httpx.Client(timeout=timeout, transport=transport)
+
+    def send(self, event: Event) -> None:
+        response = self._client.post(
+            self.webhook_url, json={"content": format_event(event)}
+        )
+        if response.status_code >= 300:
+            raise NotifyError(f"discord webhook failed: http {response.status_code}")

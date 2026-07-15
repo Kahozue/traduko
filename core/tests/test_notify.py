@@ -1,10 +1,15 @@
+import json
+
+import httpx
 import pytest
 
 from traduko.events import EVENT_TYPES, Event
 from traduko.notify import (
     DEFAULT_EVENTS,
     EMAIL_DEFAULT_EVENTS,
+    DiscordChannel,
     NotifyError,
+    WebhookChannel,
     create_channel,
     event_payload,
     format_event,
@@ -58,3 +63,59 @@ def test_resolve_events_rejects_unknown_names() -> None:
 def test_create_channel_unknown_type() -> None:
     with pytest.raises(NotifyError):
         create_channel({"type": "carrier-pigeon"})
+
+
+def make_transport(captured: list) -> httpx.MockTransport:
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured.append(request)
+        return httpx.Response(204)
+
+    return httpx.MockTransport(handler)
+
+
+def test_webhook_posts_event_payload() -> None:
+    captured: list[httpx.Request] = []
+    channel = WebhookChannel(
+        url="http://example.invalid/hook", transport=make_transport(captured)
+    )
+    channel.send(make_event("task_completed", {"stage_total": 3}))
+    assert len(captured) == 1
+    assert str(captured[0].url) == "http://example.invalid/hook"
+    body = json.loads(captured[0].content)
+    assert body["type"] == "task_completed" and body["task_id"] == "t1"
+    assert body["data"] == {"stage_total": 3} and "ts" in body
+
+
+def test_webhook_error_status_raises() -> None:
+    transport = httpx.MockTransport(lambda request: httpx.Response(500))
+    channel = WebhookChannel(url="http://example.invalid/hook", transport=transport)
+    with pytest.raises(NotifyError):
+        channel.send(make_event())
+
+
+def test_webhook_default_and_custom_events() -> None:
+    transport = httpx.MockTransport(lambda request: httpx.Response(204))
+    default = WebhookChannel(url="http://example.invalid/h", transport=transport)
+    assert default.events == DEFAULT_EVENTS
+    custom = WebhookChannel(
+        url="http://example.invalid/h", events=["task_failed"], transport=transport
+    )
+    assert custom.events == frozenset({"task_failed"})
+
+
+def test_discord_posts_content_text() -> None:
+    captured: list[httpx.Request] = []
+    channel = DiscordChannel(
+        webhook_url="http://example.invalid/wh", transport=make_transport(captured)
+    )
+    channel.send(make_event("task_failed", {"error": "boom"}))
+    body = json.loads(captured[0].content)
+    assert body == {"content": "[traduko] p/t1 task_failed | error=boom"}
+
+
+def test_create_channel_builds_webhook() -> None:
+    transport = httpx.MockTransport(lambda request: httpx.Response(204))
+    channel = create_channel(
+        {"type": "webhook", "url": "http://example.invalid/h"}, transport=transport
+    )
+    assert isinstance(channel, WebhookChannel)
