@@ -190,3 +190,33 @@ class EmailChannel:
             if self.username and self.password:
                 smtp.login(self.username, self.password)
             smtp.send_message(msg)
+
+
+class Notifier:
+    """Dispatch bus events to configured channels; failures never propagate."""
+
+    def __init__(self, channels: list) -> None:
+        self.channels = channels
+
+    @classmethod
+    def from_config(cls, config: CoreConfig, **overrides) -> "Notifier":
+        return cls(
+            [create_channel(c, **overrides) for c in config.notifications.channels]
+        )
+
+    def handle(self, event: Event) -> None:
+        for channel in self.channels:
+            if event.type not in channel.events:
+                continue
+            try:
+                channel.send(event)
+            except Exception:
+                logger.warning(
+                    "notification channel %s failed for %s",
+                    type(channel).__name__,
+                    event.type,
+                    exc_info=True,
+                )
+
+    def attach(self, bus: EventBus) -> Callable[[], None]:
+        return bus.subscribe(self.handle)

@@ -4,12 +4,14 @@ from email.message import EmailMessage
 import httpx
 import pytest
 
-from traduko.events import EVENT_TYPES, Event
+from traduko.config import CoreConfig, NotificationsConfig
+from traduko.events import EVENT_TYPES, Event, EventBus
 from traduko.notify import (
     DEFAULT_EVENTS,
     EMAIL_DEFAULT_EVENTS,
     DiscordChannel,
     EmailChannel,
+    Notifier,
     NotifyError,
     WebhookChannel,
     create_channel,
@@ -158,3 +160,67 @@ def test_email_password_from_env(monkeypatch) -> None:
         lambda msg: None, password_env="TRADUKO_SMTP_TEST"
     )
     assert channel.password == "sekret"
+
+
+class StubChannel:
+    def __init__(self, events: frozenset[str], fail: bool = False) -> None:
+        self.events = events
+        self.fail = fail
+        self.sent: list[Event] = []
+
+    def send(self, event: Event) -> None:
+        if self.fail:
+            raise NotifyError("boom")
+        self.sent.append(event)
+
+
+def test_notifier_filters_by_channel_events() -> None:
+    channel = StubChannel(frozenset({"task_completed"}))
+    notifier = Notifier([channel])
+    notifier.handle(make_event("task_started"))
+    notifier.handle(make_event("task_completed"))
+    assert [e.type for e in channel.sent] == ["task_completed"]
+
+
+def test_notifier_isolates_channel_failures() -> None:
+    bad = StubChannel(frozenset({"task_completed"}), fail=True)
+    good = StubChannel(frozenset({"task_completed"}))
+    notifier = Notifier([bad, good])
+    notifier.handle(make_event("task_completed"))
+    assert len(good.sent) == 1
+
+
+def test_notifier_from_config_builds_channels() -> None:
+    captured: list[httpx.Request] = []
+    config = CoreConfig(
+        notifications=NotificationsConfig(
+            channels=[
+                {
+                    "type": "webhook",
+                    "url": "http://example.invalid/hook",
+                    "events": ["task_completed"],
+                }
+            ]
+        )
+    )
+    notifier = Notifier.from_config(config, transport=make_transport(captured))
+    notifier.handle(make_event("task_completed"))
+    notifier.handle(make_event("task_started"))
+    assert len(captured) == 1
+
+
+def test_notifier_from_empty_config_is_noop() -> None:
+    notifier = Notifier.from_config(CoreConfig())
+    notifier.handle(make_event("task_completed"))
+    assert notifier.channels == []
+
+
+def test_notifier_attach_and_unsubscribe() -> None:
+    channel = StubChannel(frozenset({"task_completed"}))
+    notifier = Notifier([channel])
+    bus = EventBus()
+    unsubscribe = notifier.attach(bus)
+    bus.publish(make_event("task_completed"))
+    unsubscribe()
+    bus.publish(make_event("task_completed"))
+    assert len(channel.sent) == 1
