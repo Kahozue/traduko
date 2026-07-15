@@ -42,7 +42,7 @@ def _load_partial(partial_path: Path) -> list[dict]:
     return json.loads(partial_path.read_text(encoding="utf-8"))
 
 
-def _parse_response(content: str, expected_ids: list[int]) -> dict[int, str]:
+def parse_translation_response(content: str, expected_ids: list[int]) -> dict[int, str]:
     match = _ARRAY_RE.search(content)
     if not match:
         raise TranslationError("response contains no JSON array")
@@ -111,7 +111,7 @@ def translate_segments(
         response = meter.chat(provider, request, project=project, task_id=task_id)
         expected_ids = [s["id"] for s in batch]
         try:
-            translations = _parse_response(response.content, expected_ids)
+            translations = parse_translation_response(response.content, expected_ids)
         except TranslationError:
             retry = ChatRequest(
                 model=settings.model,
@@ -129,7 +129,7 @@ def translate_segments(
                 temperature=settings.temperature,
             )
             response = meter.chat(provider, retry, project=project, task_id=task_id)
-            translations = _parse_response(response.content, expected_ids)
+            translations = parse_translation_response(response.content, expected_ids)
 
         for seg in batch:
             done.append(
