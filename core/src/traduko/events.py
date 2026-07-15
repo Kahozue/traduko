@@ -21,6 +21,7 @@ EVENT_TYPES = frozenset(
         "task_paused",
         "budget_warning",
         "budget_exceeded",
+        "agent_round",
     }
 )
 

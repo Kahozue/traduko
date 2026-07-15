@@ -15,7 +15,7 @@ from ..budget import BudgetExceededError, BudgetMeter
 from ..config import load_config
 from ..fsutil import atomic_write_text
 from ..glossary import load_glossary
-from ..llm import LLMError, create_llm
+from ..llm import LLMError
 from ..media import (
     MediaError,
     build_extract_audio_cmd,
@@ -38,6 +38,7 @@ from ..subtitles import (
 from ..translate import TranslationError, TranslationSettings, translate_segments
 from . import registry
 from .base import PauseRequested, StageContext, StageError, StageResult
+from .common import resolve_llm
 
 
 @registry.register
@@ -167,23 +168,7 @@ class TranslateStage:
             source_language = data.get("language", "unknown")
 
         config = load_config(ctx.data_root)
-        provider_name = ctx.params.get("provider", "fake")
-        provider_config = config.llm_providers.get(provider_name)
-        if provider_config is None:
-            if provider_name == "fake":
-                provider_config = {"type": "fake"}
-            else:
-                raise StageError(
-                    f"unknown llm provider: {provider_name} "
-                    "(define it under llm_providers in config/core.yaml)"
-                )
-        provider_config = dict(provider_config)
-        default_model = provider_config.pop("model", None)
-        model = ctx.params.get("model") or default_model or "fake-model"
-        try:
-            provider = create_llm(provider_config)
-        except LLMError as error:
-            raise StageError(str(error)) from error
+        provider, model = resolve_llm(ctx.params, config)
 
         meter = BudgetMeter(ctx.data_root, ctx.bus, config)
         settings = TranslationSettings(
