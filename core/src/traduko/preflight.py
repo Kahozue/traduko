@@ -85,3 +85,87 @@ def run_preflight(record: TaskRecord, root: Path) -> PreflightReport:
             check.name = f"stage {i + 1} ({stage.type}): {check.name}"
             checks.append(check)
     return PreflightReport(checks)
+
+
+@register_check("extract_audio")
+@register_check("hardburn")
+def _check_ffmpeg(
+    stage: StageRecord, root: Path, config: CoreConfig
+) -> list[PreflightCheck]:
+    if ffmpeg_available():
+        return [PreflightCheck("ffmpeg", OK, "ffmpeg and ffprobe found")]
+    return [PreflightCheck("ffmpeg", FAIL, "ffmpeg/ffprobe not found on PATH")]
+
+
+@register_check("asr")
+def _check_asr(
+    stage: StageRecord, root: Path, config: CoreConfig
+) -> list[PreflightCheck]:
+    provider = stage.params.get("provider", "faster_whisper")
+    if provider != "faster_whisper":
+        return []
+    if find_spec("faster_whisper") is None:
+        return [
+            PreflightCheck(
+                "asr model", FAIL,
+                "faster-whisper is not installed; install the asr extra: "
+                "uv sync --extra asr",
+            )
+        ]
+    model_size = stage.params.get("options", {}).get("model_size", "small")
+    return [
+        PreflightCheck(
+            "asr model", OK,
+            f"faster-whisper installed; model '{model_size}' downloads "
+            "on first use if not cached",
+        )
+    ]
+
+
+@register_check("translate")
+@register_check("proofread")
+def _check_llm(
+    stage: StageRecord, root: Path, config: CoreConfig
+) -> list[PreflightCheck]:
+    provider_name = stage.params.get("provider", "fake")
+    if provider_name == "fake":
+        return [
+            PreflightCheck("llm provider", OK, "fake provider (offline dry run)")
+        ]
+    provider_config = config.llm_providers.get(provider_name)
+    if provider_config is None:
+        return [
+            PreflightCheck(
+                "llm provider", FAIL,
+                f"unknown llm provider: {provider_name} "
+                "(define it under llm_providers in config/core.yaml)",
+            )
+        ]
+    if provider_config.get("api_key"):
+        return [
+            PreflightCheck("llm provider", OK, f"{provider_name}: api key configured")
+        ]
+    env_name = provider_config.get("api_key_env")
+    if env_name:
+        if os.environ.get(env_name):
+            return [
+                PreflightCheck(
+                    "llm provider", OK, f"{provider_name}: api key from {env_name}"
+                )
+            ]
+        return [
+            PreflightCheck(
+                "llm provider", FAIL,
+                f"{provider_name}: environment variable {env_name} is not set",
+            )
+        ]
+    if provider_config.get("type") == "openai_compat":
+        return [
+            PreflightCheck(
+                "llm provider", WARN,
+                f"{provider_name}: no api key configured (fine for local endpoints)",
+            )
+        ]
+    return [
+        PreflightCheck("llm provider", OK, f"{provider_name}: no api key required")
+    ]

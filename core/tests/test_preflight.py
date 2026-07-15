@@ -3,7 +3,7 @@ from pathlib import Path
 from traduko import preflight
 from traduko.config import BudgetConfig, CoreConfig, save_config
 from traduko.models import StageRecord, StageStatus, TaskRecord, utc_now_iso
-from traduko.preflight import FAIL, OK, PreflightCheck, run_preflight
+from traduko.preflight import FAIL, OK, WARN, PreflightCheck, run_preflight
 
 
 def make_record(
@@ -68,3 +68,126 @@ def test_unknown_stage_type_produces_no_checks(tmp_path: Path) -> None:
     record = make_record(tmp_path, [StageRecord(type="mystery")])
     report = run_preflight(record, tmp_path)
     assert [c.name for c in report.checks] == ["input", "budget"]
+
+
+def test_ffmpeg_missing_fails_for_media_stages(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(preflight, "ffmpeg_available", lambda: False)
+    record = make_record(
+        tmp_path, [StageRecord(type="extract_audio"), StageRecord(type="hardburn")]
+    )
+    report = run_preflight(record, tmp_path)
+    assert [c.name for c in report.failures()] == [
+        "stage 1 (extract_audio): ffmpeg",
+        "stage 2 (hardburn): ffmpeg",
+    ]
+
+
+def test_ffmpeg_present_is_ok(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(preflight, "ffmpeg_available", lambda: True)
+    record = make_record(tmp_path, [StageRecord(type="extract_audio")])
+    assert run_preflight(record, tmp_path).ok is True
+
+
+def test_asr_missing_package_fails(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(preflight, "find_spec", lambda name: None)
+    record = make_record(tmp_path, [StageRecord(type="asr")])
+    report = run_preflight(record, tmp_path)
+    failures = report.failures()
+    assert len(failures) == 1 and "uv sync --extra asr" in failures[0].message
+
+
+def test_asr_installed_notes_model_size(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(preflight, "find_spec", lambda name: object())
+    record = make_record(
+        tmp_path,
+        [StageRecord(type="asr", params={"options": {"model_size": "medium"}})],
+    )
+    report = run_preflight(record, tmp_path)
+    assert report.ok is True
+    check = next(c for c in report.checks if "asr model" in c.name)
+    assert "medium" in check.message
+
+
+def test_asr_custom_provider_produces_no_check(tmp_path: Path) -> None:
+    record = make_record(
+        tmp_path, [StageRecord(type="asr", params={"provider": "e2e-fake-asr"})]
+    )
+    report = run_preflight(record, tmp_path)
+    assert [c.name for c in report.checks] == ["input", "budget"]
+
+
+def test_llm_fake_provider_is_ok(tmp_path: Path) -> None:
+    record = make_record(tmp_path, [StageRecord(type="translate")])
+    report = run_preflight(record, tmp_path)
+    assert report.ok is True
+    check = next(c for c in report.checks if "llm provider" in c.name)
+    assert check.level == OK
+
+
+def test_llm_unknown_provider_fails(tmp_path: Path) -> None:
+    record = make_record(
+        tmp_path, [StageRecord(type="proofread", params={"provider": "nope"})]
+    )
+    report = run_preflight(record, tmp_path)
+    failures = report.failures()
+    assert len(failures) == 1 and "unknown llm provider" in failures[0].message
+
+
+def test_llm_api_key_env_checked(tmp_path: Path, monkeypatch) -> None:
+    save_config(
+        tmp_path,
+        CoreConfig(
+            llm_providers={
+                "cloud": {
+                    "type": "openai_compat",
+                    "base_url": "https://api.example.com/v1",
+                    "api_key_env": "TRADUKO_TEST_KEY",
+                }
+            }
+        ),
+    )
+    record = make_record(
+        tmp_path, [StageRecord(type="translate", params={"provider": "cloud"})]
+    )
+    monkeypatch.delenv("TRADUKO_TEST_KEY", raising=False)
+    report = run_preflight(record, tmp_path)
+    assert report.ok is False
+    assert "TRADUKO_TEST_KEY" in report.failures()[0].message
+
+    monkeypatch.setenv("TRADUKO_TEST_KEY", "sk-test")
+    assert run_preflight(record, tmp_path).ok is True
+
+
+def test_llm_keyless_openai_compat_warns(tmp_path: Path) -> None:
+    save_config(
+        tmp_path,
+        CoreConfig(
+            llm_providers={
+                "local": {
+                    "type": "openai_compat",
+                    "base_url": "http://localhost:11434/v1",
+                }
+            }
+        ),
+    )
+    record = make_record(
+        tmp_path, [StageRecord(type="translate", params={"provider": "local"})]
+    )
+    report = run_preflight(record, tmp_path)
+    assert report.ok is True
+    check = next(c for c in report.checks if "llm provider" in c.name)
+    assert check.level == WARN
+
+
+def test_llm_scripted_provider_needs_no_key(tmp_path: Path) -> None:
+    save_config(
+        tmp_path,
+        CoreConfig(llm_providers={"agent": {"type": "scripted", "responses": []}}),
+    )
+    record = make_record(
+        tmp_path, [StageRecord(type="proofread", params={"provider": "agent"})]
+    )
+    report = run_preflight(record, tmp_path)
+    assert report.ok is True
+    check = next(c for c in report.checks if "llm provider" in c.name)
+    assert check.level == OK
