@@ -9,6 +9,7 @@ import typer
 from .events import Event
 from .executor import PipelineExecutor
 from .paths import ENV_DATA_ROOT
+from .preflight import PreflightReport, run_preflight
 from .profiles import load_profile, stage_records_from
 from .workspace import Workspace
 
@@ -47,11 +48,33 @@ def task_create(
     typer.echo(record.id)
 
 
+def _print_report(report: PreflightReport) -> None:
+    for check in report.checks:
+        typer.echo(f"[{check.level}] {check.name}: {check.message}")
+
+
+@task_app.command("preflight")
+def task_preflight(
+    ctx: typer.Context,
+    task_id: str = typer.Argument(...),
+    project: Optional[str] = typer.Option(None, "--project"),
+) -> None:
+    ws: Workspace = ctx.obj
+    record = ws.store.load(project or ws.config.default_project, task_id)
+    report = run_preflight(record, ws.root)
+    _print_report(report)
+    if not report.ok:
+        raise typer.Exit(code=1)
+
+
 @task_app.command("run")
 def task_run(
     ctx: typer.Context,
     task_id: str = typer.Argument(...),
     project: Optional[str] = typer.Option(None, "--project"),
+    skip_preflight: bool = typer.Option(
+        False, "--skip-preflight", help="Run without preflight checks."
+    ),
 ) -> None:
     ws: Workspace = ctx.obj
 
@@ -60,6 +83,12 @@ def task_run(
 
     ws.bus.subscribe(print_event)
     record = ws.store.load(project or ws.config.default_project, task_id)
+    if not skip_preflight:
+        report = run_preflight(record, ws.root)
+        if not report.ok:
+            _print_report(report)
+            typer.echo("preflight failed (fix the issues or use --skip-preflight)")
+            raise typer.Exit(code=1)
     result = PipelineExecutor(ws.store, ws.bus, ws.root).run(record)
     typer.echo(result.status.value)
 

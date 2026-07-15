@@ -49,3 +49,45 @@ def test_create_rejects_missing_input(tmp_path: Path) -> None:
         env=env,
     )
     assert result.exit_code != 0
+
+
+def test_preflight_command_reports_ok(tmp_path: Path) -> None:
+    env = setup_workspace(tmp_path)
+    input_file = tmp_path / "in.srt"
+    input_file.write_text("1\n00:00:00,000 --> 00:00:01,000\nhi\n", encoding="utf-8")
+    created = runner.invoke(
+        app, ["task", "create", str(input_file), "--profile", "passthrough"], env=env
+    )
+    task_id = created.output.strip().splitlines()[-1]
+
+    result = runner.invoke(app, ["task", "preflight", task_id], env=env)
+    assert result.exit_code == 0, result.output
+    assert "[ok] input" in result.output
+    assert "[ok] budget: uncapped" in result.output
+
+
+def test_run_gates_on_preflight_failure(tmp_path: Path) -> None:
+    env = setup_workspace(tmp_path)
+    input_file = tmp_path / "in.srt"
+    input_file.write_text("1\n00:00:00,000 --> 00:00:01,000\nhi\n", encoding="utf-8")
+    created = runner.invoke(
+        app, ["task", "create", str(input_file), "--profile", "passthrough"], env=env
+    )
+    task_id = created.output.strip().splitlines()[-1]
+    input_file.unlink()
+
+    pre = runner.invoke(app, ["task", "preflight", task_id], env=env)
+    assert pre.exit_code == 1
+    assert "[fail] input" in pre.output
+
+    ran = runner.invoke(app, ["task", "run", task_id], env=env)
+    assert ran.exit_code == 1
+    assert "preflight failed" in ran.output
+    shown = runner.invoke(app, ["task", "show", task_id], env=env)
+    assert json.loads(shown.output)["status"] == "pending"
+
+    forced = runner.invoke(
+        app, ["task", "run", task_id, "--skip-preflight"], env=env
+    )
+    assert forced.exit_code == 0, forced.output
+    assert "completed" in forced.output
