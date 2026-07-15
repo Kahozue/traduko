@@ -25,3 +25,15 @@ def test_budget_and_providers_defaults_and_roundtrip(tmp_path: Path) -> None:
     loaded = load_config(tmp_path)
     assert loaded.budget.task_usd_limit == 5.0
     assert loaded.llm_providers["local"]["base_url"] == "http://localhost:11434/v1"
+
+
+def test_notifications_defaults_and_roundtrip(tmp_path: Path) -> None:
+    config = load_config(tmp_path)
+    assert config.notifications.channels == []
+    config.notifications.channels.append(
+        {"type": "webhook", "url": "http://127.0.0.1:9/hook", "events": ["task_completed"]}
+    )
+    save_config(tmp_path, config)
+    loaded = load_config(tmp_path)
+    assert loaded.notifications.channels[0]["type"] == "webhook"
+    assert loaded.notifications.channels[0]["events"] == ["task_completed"]

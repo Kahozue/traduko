@@ -13,11 +13,16 @@ class BudgetConfig(BaseModel):
     monthly_usd_limit: float | None = None
 
 
+class NotificationsConfig(BaseModel):
+    channels: list[dict] = Field(default_factory=list)
+
+
 class CoreConfig(BaseModel):
     schema_version: int = 1
     default_project: str = "default"
     budget: BudgetConfig = Field(default_factory=BudgetConfig)
     llm_providers: dict[str, dict] = Field(default_factory=dict)
+    notifications: NotificationsConfig = Field(default_factory=NotificationsConfig)
 
 
 def load_config(root: Path) -> CoreConfig:
