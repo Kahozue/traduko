@@ -7,6 +7,7 @@ from typer.testing import CliRunner
 
 from traduko.asr import AsrResult, AsrSegment, register_asr
 from traduko.cli import app
+from traduko.config import CoreConfig, save_config
 from traduko.media import ffmpeg_available
 
 runner = CliRunner()
@@ -121,3 +122,79 @@ def test_av_pipeline_with_hardburn(tmp_path: Path) -> None:
     assert (artifacts / "05-subtitles.srt").exists()
     assert (artifacts / "05-subtitles.ass").exists()
     assert (artifacts / "06-video.mp4").stat().st_size > 0
+
+
+PROOFREAD_SCRIPT = [
+    '{"tool": "read_segments", "arguments": {"start_id": 1, "end_id": 2, "context": 0}}',
+    '{"tool": "check_glossary", "arguments": {}}',
+    '{"tool": "edit_segment", "arguments": {"id": 2, "new_target": "Mondo!", "reason": "punchier"}}',
+    '{"tool": "end_round", "arguments": {"summary": "fixed one"}}',
+    '{"tool": "read_segments", "arguments": {"start_id": 1, "end_id": 2, "context": 0}}',
+    '{"done": true, "summary": "no remaining issues"}',
+]
+
+PROOFREAD_PROFILE = """schema_version: 1
+name: sub-proofread
+stages:
+  - type: ingest_subtitle
+  - type: translate
+    params:
+      provider: fake
+      target_language: eo
+  - type: proofread
+    params:
+      provider: agent
+      model: test-model
+      intensity: deep
+      max_rounds: 2
+  - type: export_subtitles
+    params:
+      formats: [srt]
+"""
+
+
+def test_subtitle_pipeline_with_agent_proofread(tmp_path: Path) -> None:
+    env = {"TRADUKO_DATA_ROOT": str(tmp_path)}
+    src = tmp_path / "in.srt"
+    src.write_text(SRT_INPUT, encoding="utf-8")
+    save_config(
+        tmp_path,
+        CoreConfig(
+            llm_providers={"agent": {"type": "scripted", "responses": PROOFREAD_SCRIPT}}
+        ),
+    )
+    (tmp_path / "profiles").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "profiles" / "sub-proofread.yaml").write_text(
+        PROOFREAD_PROFILE, encoding="utf-8"
+    )
+
+    created = runner.invoke(
+        app, ["task", "create", str(src), "--profile", "sub-proofread"], env=env
+    )
+    assert created.exit_code == 0, created.output
+    task_id = created.output.strip().splitlines()[-1]
+
+    ran = runner.invoke(app, ["task", "run", task_id], env=env)
+    assert ran.exit_code == 0, ran.output
+    assert "completed" in ran.output
+
+    task_dir = tmp_path / "projects" / "default" / "tasks" / task_id
+    artifacts = task_dir / "artifacts"
+
+    translation = json.loads(
+        (artifacts / "03-translation.json").read_text(encoding="utf-8")
+    )
+    assert translation["segments"][0]["target"] == "[T] hello"
+    assert translation["segments"][1]["target"] == "Mondo!"
+
+    report = json.loads(
+        (artifacts / "03-proofread-report.json").read_text(encoding="utf-8")
+    )
+    assert report["converged"] is True and report["rounds"] == 2
+    assert len(report["edits"]) == 1
+
+    srt_out = (artifacts / "04-subtitles.srt").read_text(encoding="utf-8")
+    assert "Mondo!" in srt_out and "[T] hello" in srt_out
+
+    runs = list((task_dir / "agent-runs").glob("03-proofread-*.jsonl"))
+    assert len(runs) == 1 and runs[0].stat().st_size > 0
