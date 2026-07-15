@@ -1,4 +1,5 @@
 import json
+from email.message import EmailMessage
 
 import httpx
 import pytest
@@ -8,6 +9,7 @@ from traduko.notify import (
     DEFAULT_EVENTS,
     EMAIL_DEFAULT_EVENTS,
     DiscordChannel,
+    EmailChannel,
     NotifyError,
     WebhookChannel,
     create_channel,
@@ -119,3 +121,40 @@ def test_create_channel_builds_webhook() -> None:
         {"type": "webhook", "url": "http://example.invalid/h"}, transport=transport
     )
     assert isinstance(channel, WebhookChannel)
+
+
+def make_email_channel(sender, **kwargs) -> EmailChannel:
+    return EmailChannel(
+        smtp_host="smtp.example.invalid",
+        from_addr="bot@example.invalid",
+        to_addrs=["a@example.invalid", "b@example.invalid"],
+        sender=sender,
+        **kwargs,
+    )
+
+
+def test_email_builds_message() -> None:
+    sent: list[EmailMessage] = []
+    channel = make_email_channel(sent.append)
+    channel.send(make_event("task_failed", {"error": "boom"}))
+    assert len(sent) == 1
+    msg = sent[0]
+    assert msg["Subject"] == "[traduko] task_failed: p/t1"
+    assert msg["From"] == "bot@example.invalid"
+    assert msg["To"] == "a@example.invalid, b@example.invalid"
+    body = msg.get_content()
+    assert "[traduko] p/t1 task_failed | error=boom" in body
+    assert '"error": "boom"' in body
+
+
+def test_email_default_events_are_important_only_channel() -> None:
+    channel = make_email_channel(lambda msg: None)
+    assert channel.events == EMAIL_DEFAULT_EVENTS
+
+
+def test_email_password_from_env(monkeypatch) -> None:
+    monkeypatch.setenv("TRADUKO_SMTP_TEST", "sekret")
+    channel = make_email_channel(
+        lambda msg: None, password_env="TRADUKO_SMTP_TEST"
+    )
+    assert channel.password == "sekret"

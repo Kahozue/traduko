@@ -139,3 +139,54 @@ class DiscordChannel:
         )
         if response.status_code >= 300:
             raise NotifyError(f"discord webhook failed: http {response.status_code}")
+
+
+@register_channel("email")
+class EmailChannel:
+    """Send important events over SMTP. The sender is injectable for tests."""
+
+    def __init__(
+        self,
+        smtp_host: str,
+        from_addr: str,
+        to_addrs: list[str],
+        smtp_port: int = 587,
+        username: str | None = None,
+        password: str | None = None,
+        password_env: str | None = None,
+        use_tls: bool = True,
+        events: list[str] | None = None,
+        sender: Callable[[EmailMessage], None] | None = None,
+        **_ignored,
+    ) -> None:
+        if password is None and password_env:
+            password = os.environ.get(password_env)
+        self.smtp_host = smtp_host
+        self.smtp_port = smtp_port
+        self.from_addr = from_addr
+        self.to_addrs = list(to_addrs)
+        self.username = username
+        self.password = password
+        self.use_tls = use_tls
+        self.events = resolve_events(events, EMAIL_DEFAULT_EVENTS)
+        self._sender = sender or self._smtp_send
+
+    def send(self, event: Event) -> None:
+        msg = EmailMessage()
+        msg["Subject"] = f"[traduko] {event.type}: {event.project}/{event.task_id}"
+        msg["From"] = self.from_addr
+        msg["To"] = ", ".join(self.to_addrs)
+        msg.set_content(
+            format_event(event)
+            + "\n\n"
+            + json.dumps(event.data, ensure_ascii=False, indent=2)
+        )
+        self._sender(msg)
+
+    def _smtp_send(self, msg: EmailMessage) -> None:
+        with smtplib.SMTP(self.smtp_host, self.smtp_port, timeout=30) as smtp:
+            if self.use_tls:
+                smtp.starttls()
+            if self.username and self.password:
+                smtp.login(self.username, self.password)
+            smtp.send_message(msg)
