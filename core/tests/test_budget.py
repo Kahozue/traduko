@@ -6,7 +6,7 @@ import pytest
 from traduko.budget import BUILTIN_PRICES, BudgetExceededError, BudgetMeter, load_prices
 from traduko.config import BudgetConfig, CoreConfig
 from traduko.events import Event, EventBus
-from traduko.llm import ChatMessage, ChatRequest, ChatResponse, Usage
+from traduko.llm import ChatMessage, ChatRequest, ChatResponse, Usage, create_llm
 
 
 class StubProvider:
@@ -95,3 +95,28 @@ def test_load_prices_merges_override(tmp_path: Path) -> None:
     assert prices["stub-model"] == (1000.0, 1000.0)
     for model in BUILTIN_PRICES:
         assert model in prices
+
+
+def test_remaining_usd_uncapped_is_none(tmp_path: Path) -> None:
+    meter = BudgetMeter(tmp_path / "a", EventBus(), CoreConfig())
+    assert meter.remaining_usd("t1") is None
+
+
+def test_remaining_usd_is_min_of_caps(tmp_path: Path) -> None:
+    config = CoreConfig(
+        budget=BudgetConfig(task_usd_limit=1.0, monthly_usd_limit=0.5)
+    )
+    meter = BudgetMeter(tmp_path / "b", EventBus(), config)
+    assert meter.remaining_usd("t1") == 0.5
+
+
+def test_remaining_usd_decreases_with_spend(tmp_path: Path) -> None:
+    config = CoreConfig(budget=BudgetConfig(task_usd_limit=1.0))
+    meter = BudgetMeter(tmp_path / "c", EventBus(), config)
+    provider = create_llm({"type": "fake"})
+    request = ChatRequest(
+        model="gpt-4o", messages=[ChatMessage(role="user", content="x" * 4000)]
+    )
+    meter.chat(provider, request, project="p", task_id="t1")
+    remaining = meter.remaining_usd("t1")
+    assert remaining is not None and 0 < remaining < 1.0

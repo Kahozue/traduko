@@ -76,6 +76,19 @@ class BudgetMeter:
     def month_usage_usd(self) -> float:
         return self._month_usd
 
+    def remaining_usd(self, task_id: str) -> float | None:
+        """Smallest remaining headroom across task and month caps; None = uncapped."""
+        remains = []
+        task_limit = self.config.budget.task_usd_limit
+        if task_limit is not None:
+            remains.append(task_limit - self.task_usage_usd(task_id))
+        month_limit = self.config.budget.monthly_usd_limit
+        if month_limit is not None:
+            remains.append(month_limit - self.month_usage_usd())
+        if not remains:
+            return None
+        return max(0.0, min(remains))
+
     def _emit(self, event_type: str, project: str, task_id: str, data: dict) -> None:
         self.bus.publish(
             Event(type=event_type, task_id=task_id, project=project, data=data)
