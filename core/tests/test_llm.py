@@ -45,3 +45,30 @@ def test_fake_reports_usage() -> None:
     provider = create_llm({"type": "fake"})
     usage = provider.chat(make_request(SEGMENTS_PROMPT)).usage
     assert usage.prompt_tokens > 0 and usage.completion_tokens > 0
+
+
+def test_scripted_provider_returns_in_order_then_raises() -> None:
+    provider = create_llm({"type": "scripted", "responses": ["one", "two"]})
+    assert provider.chat(make_request("a")).content == "one"
+    assert provider.chat(make_request("b")).content == "two"
+    with pytest.raises(LLMError):
+        provider.chat(make_request("c"))
+
+
+def test_scripted_reports_usage() -> None:
+    provider = create_llm({"type": "scripted", "responses": ["out"]})
+    usage = provider.chat(make_request("prompt")).usage
+    assert usage.prompt_tokens > 0 and usage.completion_tokens > 0
+
+
+def test_fake_finishes_agent_protocol_conversations() -> None:
+    provider = create_llm({"type": "fake"})
+    request = ChatRequest(
+        model="fake-model",
+        messages=[
+            ChatMessage(role="system", content="Goal...\nAGENT_TOOLS:\n[]"),
+            ChatMessage(role="user", content="Begin round 1."),
+        ],
+    )
+    action = json.loads(provider.chat(request).content)
+    assert action["done"] is True

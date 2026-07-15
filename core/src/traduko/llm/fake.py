@@ -15,7 +15,20 @@ class FakeLLMProvider:
         self.prefix = prefix
 
     def chat(self, request: ChatRequest) -> ChatResponse:
+        full_prompt = "\n".join(m.content for m in request.messages)
         prompt = request.messages[-1].content
+        if "AGENT_TOOLS:" in full_prompt:
+            content = json.dumps(
+                {"done": True, "summary": "fake provider: no issues found"}
+            )
+            return ChatResponse(
+                content=content,
+                model=request.model,
+                usage=Usage(
+                    prompt_tokens=max(1, len(full_prompt) // 4),
+                    completion_tokens=max(1, len(content) // 4),
+                ),
+            )
         content = prompt
         if "SEGMENTS:" in prompt:
             tail = prompt.rsplit("SEGMENTS:", 1)[-1]
