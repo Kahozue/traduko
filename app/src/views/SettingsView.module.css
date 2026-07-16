@@ -1,0 +1,61 @@
+.title {
+  margin: 0 0 20px;
+  font-size: 22px;
+  font-weight: 700;
+}
+
+.card {
+  padding: 20px;
+  border-radius: var(--radius-m);
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-1);
+}
+
+.list {
+  margin: 0;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.row:last-child {
+  border-bottom: none;
+}
+
+.row dt {
+  width: 140px;
+  flex-shrink: 0;
+  color: var(--text-secondary);
+  font-size: 12.5px;
+}
+
+.row dd {
+  margin: 0;
+  font-size: 13px;
+  word-break: break-all;
+}
+
+.mono {
+  font-family: var(--font-mono);
+}
+
+.retry {
+  margin-left: 12px;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-s);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font-size: 12px;
+  cursor: pointer;
+  transition: background var(--transition);
+}
+
+.retry:hover {
+  background: var(--bg-inset);
+}

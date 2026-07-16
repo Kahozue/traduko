@@ -1,0 +1,38 @@
+.title {
+  margin: 0 0 20px;
+  font-size: 22px;
+  font-weight: 700;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.stat {
+  padding: 20px;
+  border-radius: var(--radius-m);
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-1);
+}
+
+.statLabel {
+  color: var(--text-secondary);
+  font-size: 12.5px;
+}
+
+.statValue {
+  margin-top: 8px;
+  font-size: 26px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.barCard {
+  padding: 20px;
+  border-radius: var(--radius-m);
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-1);
+}
