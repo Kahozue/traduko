@@ -23,6 +23,7 @@ from fastapi import (
     WebSocket,
     WebSocketDisconnect,
 )
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from ..budget import BudgetMeter
@@ -219,6 +220,13 @@ def create_app(data_root: Path | None = None) -> FastAPI:
 
     app = FastAPI(
         title="traduko core", docs_url=None, redoc_url=None, lifespan=lifespan
+    )
+    # Browser-based clients (the Tauri desktop shell's webview) fetch from a
+    # non-http origin such as tauri://localhost. The service binds to
+    # 127.0.0.1 and every data endpoint requires the bearer token, so the
+    # token is the security boundary; CORS only unblocks the webview.
+    app.add_middleware(
+        CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"]
     )
     app.state.workspace = workspace
     app.state.worker = worker

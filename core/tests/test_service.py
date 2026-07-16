@@ -50,6 +50,12 @@ def test_budget_endpoint_reports_usage_and_limits(tmp_path: Path) -> None:
         }
 
 
+def test_cors_allows_browser_based_clients(tmp_path: Path) -> None:
+    with service(tmp_path) as (client, headers, token):
+        response = client.get("/health", headers={"Origin": "tauri://localhost"})
+        assert response.headers["access-control-allow-origin"] == "*"
+
+
 def test_token_is_stable_across_restarts(tmp_path: Path) -> None:
     with service(tmp_path) as (client, headers, token):
         first = token
