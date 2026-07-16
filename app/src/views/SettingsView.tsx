@@ -7,6 +7,7 @@ import { BasicsSection } from "../components/settings/BasicsSection";
 import { ProvidersSection } from "../components/settings/ProvidersSection";
 import { ChannelsSection } from "../components/settings/ChannelsSection";
 import { BotSection } from "../components/settings/BotSection";
+import { SyncSection } from "../components/settings/SyncSection";
 import styles from "./SettingsView.module.css";
 
 function clone(config: CoreConfigDoc): CoreConfigDoc {
@@ -20,6 +21,37 @@ export function SettingsView() {
   const conn = useConnection();
   const queryClient = useQueryClient();
   const { data } = useQuery({ queryKey: ["config"], queryFn: () => api.getConfig() });
+  const { data: syncStatus } = useQuery({
+    queryKey: ["sync-status"],
+    queryFn: () => api.getSyncStatus(),
+  });
+
+  const runSync = useMutation({
+    mutationFn: () => api.runSync(),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["sync-status"] }),
+  });
+  const resolveConflict = useMutation({
+    mutationFn: ({
+      file,
+      source,
+      choice,
+    }: {
+      file: string;
+      source: string;
+      choice: "local" | "remote";
+    }) => api.resolveSyncConflict(file, source, choice),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["sync-status"] }),
+  });
+
+  const EMPTY_STATUS = {
+    enabled: false,
+    mode: "folder" as const,
+    syncing: false,
+    last_sync: null,
+    last_result: null,
+    conflicts: [],
+    peers: [],
+  };
 
   const [draft, setDraft] = useState<CoreConfigDoc | null>(null);
   const [resetKey, setResetKey] = useState(0);
@@ -27,6 +59,7 @@ export function SettingsView() {
   const [providersValid, setProvidersValid] = useState(true);
   const [channelsValid, setChannelsValid] = useState(true);
   const [botValid, setBotValid] = useState(true);
+  const [syncValid, setSyncValid] = useState(true);
 
   useEffect(() => {
     if (data && draft === null) setDraft(clone(data));
@@ -39,7 +72,7 @@ export function SettingsView() {
   );
   const projectValid = draft !== null && draft.default_project.trim() !== "";
   const valid =
-    numbersValid && providersValid && channelsValid && botValid && projectValid;
+    numbersValid && providersValid && channelsValid && botValid && syncValid && projectValid;
 
   const save = useMutation({
     mutationFn: () => api.saveConfig(draft as CoreConfigDoc),
@@ -57,6 +90,7 @@ export function SettingsView() {
     setProvidersValid(true);
     setChannelsValid(true);
     setBotValid(true);
+    setSyncValid(true);
     setResetKey((key) => key + 1);
   }
 
@@ -137,6 +171,21 @@ export function SettingsView() {
                 setDraft((prev) => (prev ? { ...prev, discord_bot: value } : prev));
               }
             }}
+          />
+          <SyncSection
+            key={`sync-${resetKey}`}
+            sync={draft.sync}
+            status={syncStatus ?? EMPTY_STATUS}
+            onChange={(value) => {
+              setSyncValid(value !== null);
+              if (value !== null) {
+                setDraft((prev) => (prev ? { ...prev, sync: value } : prev));
+              }
+            }}
+            onSyncNow={() => runSync.mutate()}
+            onResolve={(file, source, choice) =>
+              resolveConflict.mutate({ file, source, choice })
+            }
           />
           {(dirty || save.isSuccess) && (
             <div className={styles.saveBar}>

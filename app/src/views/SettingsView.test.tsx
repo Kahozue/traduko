@@ -35,6 +35,15 @@ function setup(overrides: Partial<ApiClient> = {}) {
   const saveConfig = vi.fn().mockImplementation((body) => Promise.resolve(body));
   const api: Partial<ApiClient> = {
     getConfig: vi.fn().mockResolvedValue(DEFAULT_CONFIG),
+    getSyncStatus: vi.fn().mockResolvedValue({
+      enabled: false,
+      mode: "folder",
+      syncing: false,
+      last_sync: null,
+      last_result: null,
+      conflicts: [],
+      peers: [],
+    }),
     saveConfig,
     ...overrides,
   };
@@ -81,4 +90,28 @@ test("bot section edits mark the draft dirty", async () => {
   await screen.findByLabelText("預設專案");
   await userEvent.click(screen.getByLabelText("啟用 Discord bot"));
   expect(screen.getByText("有未儲存的變更")).toBeInTheDocument();
+});
+
+test("sync now triggers a sync run", async () => {
+  const runSync = vi.fn().mockResolvedValue({
+    ok: true,
+    pushed: [],
+    pulled: [],
+    merged: [],
+    conflicts: 0,
+    error: null,
+  });
+  const getSyncStatus = vi.fn().mockResolvedValue({
+    enabled: true,
+    mode: "folder",
+    syncing: false,
+    last_sync: null,
+    last_result: null,
+    conflicts: [],
+    peers: [],
+  });
+  setup({ runSync, getSyncStatus });
+  await screen.findByLabelText("預設專案");
+  await userEvent.click(await screen.findByRole("button", { name: "立即同步" }));
+  await waitFor(() => expect(runSync).toHaveBeenCalled());
 });
