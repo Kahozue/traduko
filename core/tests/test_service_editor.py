@@ -191,3 +191,53 @@ def test_render_frame_returns_png(tmp_path):
         assert resp.status_code == 200
         assert resp.headers["content-type"] == "image/png"
         assert resp.content[:8] == b"\x89PNG\r\n\x1a\n"
+
+
+def test_create_task_with_custom_name(tmp_path):
+    with service(tmp_path) as (client, headers):
+        (tmp_path / "in.srt").write_text(SRT, encoding="utf-8")
+        resp = client.post(
+            "/tasks", headers=headers,
+            json={"input_path": str(tmp_path / "in.srt"),
+                  "profile": "subtitle-translate", "name": "第三集"},
+        )
+        assert resp.status_code == 201
+        assert resp.json()["name"] == "第三集"
+
+
+def test_create_task_defaults_name_to_stem(tmp_path):
+    with service(tmp_path) as (client, headers):
+        (tmp_path / "movie.srt").write_text(SRT, encoding="utf-8")
+        resp = client.post(
+            "/tasks", headers=headers,
+            json={"input_path": str(tmp_path / "movie.srt"),
+                  "profile": "subtitle-translate"},
+        )
+        assert resp.json()["name"] == "movie"
+
+
+def test_rename_task(tmp_path):
+    with service(tmp_path) as (client, headers):
+        task = make_task_with_translation(client, headers, tmp_path)
+        resp = client.patch(
+            f"/tasks/{task['project']}/{task['id']}",
+            headers=headers, json={"name": "改名後"},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["name"] == "改名後"
+        shown = client.get(
+            f"/tasks/{task['project']}/{task['id']}", headers=headers
+        ).json()
+        assert shown["name"] == "改名後"
+        rows = client.get("/tasks", headers=headers).json()
+        assert rows[0]["name"] == "改名後"
+
+
+def test_rename_task_rejects_blank(tmp_path):
+    with service(tmp_path) as (client, headers):
+        task = make_task_with_translation(client, headers, tmp_path)
+        resp = client.patch(
+            f"/tasks/{task['project']}/{task['id']}",
+            headers=headers, json={"name": "   "},
+        )
+        assert resp.status_code == 422

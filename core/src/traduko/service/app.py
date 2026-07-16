@@ -104,6 +104,7 @@ class TaskCreateRequest(BaseModel):
     input_path: str
     profile: str
     project: str | None = None
+    name: str | None = None
 
 
 def _load_task(ws: Workspace, project: str, task_id: str) -> TaskRecord:
@@ -140,6 +141,7 @@ def create_task(request: Request, body: TaskCreateRequest) -> dict:
         input_path=str(input_path.resolve()),
         profile_name=body.profile,
         stages=stage_records_from(profile),
+        name=body.name,
     )
     return record.model_dump()
 
@@ -148,6 +150,24 @@ def create_task(request: Request, body: TaskCreateRequest) -> dict:
 def show_task(request: Request, project: str, task_id: str) -> dict:
     ws: Workspace = request.app.state.workspace
     return _load_task(ws, project, task_id).model_dump()
+
+
+class TaskRenameRequest(BaseModel):
+    name: str
+
+
+@router.patch("/tasks/{project}/{task_id}")
+def rename_task(
+    request: Request, project: str, task_id: str, body: TaskRenameRequest
+) -> dict:
+    ws: Workspace = request.app.state.workspace
+    record = _load_task(ws, project, task_id)
+    name = body.name.strip()
+    if not name:
+        raise HTTPException(status_code=422, detail="name must not be empty")
+    record.name = name
+    ws.store.save(record)
+    return record.model_dump()
 
 
 @router.get("/tasks/{project}/{task_id}/preflight")
