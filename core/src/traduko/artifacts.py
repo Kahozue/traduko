@@ -44,3 +44,55 @@ class ArtifactStore:
         if "schema_version" not in data:
             raise ValueError(f"artifact missing schema_version: {path}")
         return data
+
+    def list_artifacts(self) -> list[dict]:
+        if not self.dir.exists():
+            return []
+        items: list[dict] = []
+        for path in sorted(self.dir.glob("*")):
+            if not path.is_file() or path.suffix == ".tmp":
+                continue
+            stem = path.name
+            index: int | None = None
+            name = stem
+            if len(stem) >= 3 and stem[:2].isdigit() and stem[2] == "-":
+                index = int(stem[:2])
+                name = stem[3:]
+            schema_version: int | None = None
+            if path.suffix == ".json":
+                try:
+                    schema_version = json.loads(path.read_text(encoding="utf-8")).get(
+                        "schema_version"
+                    )
+                except (ValueError, OSError):
+                    schema_version = None
+            stat = path.stat()
+            items.append(
+                {
+                    "file": stem,
+                    "index": index if index is not None else 0,
+                    "name": name,
+                    "schema_version": schema_version,
+                    "size": stat.st_size,
+                    "mtime": stat.st_mtime,
+                }
+            )
+        return items
+
+    def next_index_for(self, name: str) -> int:
+        matches = sorted(self.dir.glob(f"*-{name}")) if self.dir.exists() else []
+        if not matches:
+            return 1
+        return int(matches[-1].name[:2]) + 1
+
+    def write_next_json(
+        self, name: str, payload: dict, schema_version: int = 1
+    ) -> Path:
+        return self.write_json(self.next_index_for(name), name, payload, schema_version)
+
+    def read_named_json(self, file: str) -> dict:
+        path = self.dir / file
+        data = json.loads(path.read_text(encoding="utf-8"))
+        if "schema_version" not in data:
+            raise ValueError(f"artifact missing schema_version: {path}")
+        return data

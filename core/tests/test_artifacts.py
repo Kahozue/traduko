@@ -37,3 +37,39 @@ def test_read_latest_json(tmp_path: Path) -> None:
     assert store.latest_path("segments.json").name == "03-segments.json"
     with pytest.raises(FileNotFoundError):
         store.read_latest_json("missing.json")
+
+
+def test_next_index_for_increments_over_highest(tmp_path):
+    store = ArtifactStore(tmp_path)
+    assert store.next_index_for("translation.json") == 1
+    store.write_json(5, "translation.json", {"segments": []})
+    assert store.next_index_for("translation.json") == 6
+
+
+def test_write_next_json_writes_higher_numbered_version(tmp_path):
+    store = ArtifactStore(tmp_path)
+    store.write_json(5, "translation.json", {"segments": [{"id": 1}]})
+    path = store.write_next_json("translation.json", {"segments": [{"id": 2}]})
+    assert path.name == "06-translation.json"
+    assert store.read_latest_json("translation.json")["segments"] == [{"id": 2}]
+
+
+def test_list_artifacts_reports_index_name_and_metadata(tmp_path):
+    store = ArtifactStore(tmp_path)
+    store.write_json(2, "asr.json", {"segments": []})
+    store.write_json(5, "translation.json", {"segments": []})
+    listing = store.list_artifacts()
+    assert [item["file"] for item in listing] == ["02-asr.json", "05-translation.json"]
+    first = listing[0]
+    assert first["index"] == 2
+    assert first["name"] == "asr.json"
+    assert first["schema_version"] == 1
+    assert first["size"] > 0
+    assert first["mtime"] > 0
+
+
+def test_read_named_json_reads_exact_file(tmp_path):
+    store = ArtifactStore(tmp_path)
+    store.write_json(5, "translation.json", {"segments": [{"id": 1}]})
+    data = store.read_named_json("05-translation.json")
+    assert data["segments"] == [{"id": 1}]
