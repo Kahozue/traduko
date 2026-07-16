@@ -147,6 +147,17 @@ export interface DiscordBotConfigDoc {
   [key: string]: unknown;
 }
 
+export interface SyncConfigDoc {
+  enabled: boolean;
+  mode: "folder" | "webdav";
+  folder_path: string;
+  webdav_url: string;
+  webdav_username: string;
+  webdav_password: string;
+  auto_interval_minutes: number;
+  [key: string]: unknown;
+}
+
 export interface CoreConfigDoc {
   schema_version: number;
   default_project: string;
@@ -154,7 +165,56 @@ export interface CoreConfigDoc {
   llm_providers: Record<string, ProviderConfigDoc>;
   notifications: NotificationsConfigDoc;
   discord_bot: DiscordBotConfigDoc;
+  sync: SyncConfigDoc;
   [key: string]: unknown;
+}
+
+export interface GlossaryRow {
+  source: string;
+  target: string;
+  notes: string;
+  scope: string;
+}
+
+export interface SyncConflict {
+  file: string;
+  source: string;
+  local: GlossaryRow;
+  remote: GlossaryRow;
+}
+
+export interface SyncReport {
+  ok: boolean;
+  pushed: string[];
+  pulled: string[];
+  merged: string[];
+  conflicts: number;
+  error: string | null;
+}
+
+export interface SyncPeerTask {
+  id: string;
+  project: string;
+  name: string;
+  status: string;
+  profile: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SyncPeer {
+  machine: string;
+  tasks: SyncPeerTask[];
+}
+
+export interface SyncStatus {
+  enabled: boolean;
+  mode: "folder" | "webdav";
+  syncing: boolean;
+  last_sync: string | null;
+  last_result: SyncReport | null;
+  conflicts: SyncConflict[];
+  peers: SyncPeer[];
 }
 
 export interface NotifyTestResult {

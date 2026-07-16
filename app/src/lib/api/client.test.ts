@@ -118,6 +118,15 @@ test("config endpoints round trip", async () => {
       channel_id: "",
       allowed_user_ids: [],
     },
+    sync: {
+      enabled: false,
+      mode: "folder",
+      folder_path: "",
+      webdav_url: "",
+      webdav_username: "",
+      webdav_password: "",
+      auto_interval_minutes: 0,
+    },
   } as CoreConfigDoc;
   const fetchFn = vi.fn().mockResolvedValue(jsonResponse(200, doc));
   const client = new ApiClient("http://127.0.0.1:8686", "tok", fetchFn);
@@ -154,4 +163,46 @@ test("pauseTask posts to the pause endpoint", async () => {
   const [url, init] = fetchFn.mock.calls[0] as [string, RequestInit];
   expect(url).toBe("http://127.0.0.1:8686/tasks/p/t1/pause");
   expect(init.method).toBe("POST");
+});
+
+test("getSyncStatus fetches the sync status", async () => {
+  const status = {
+    enabled: true,
+    mode: "folder",
+    syncing: false,
+    last_sync: null,
+    last_result: null,
+    conflicts: [],
+    peers: [],
+  };
+  const fetchFn = vi.fn().mockResolvedValue(jsonResponse(200, status));
+  const client = new ApiClient("http://127.0.0.1:8686", "tok", fetchFn);
+  const result = await client.getSyncStatus();
+  expect(result.enabled).toBe(true);
+  expect(fetchFn.mock.calls[0][0]).toBe("http://127.0.0.1:8686/sync/status");
+});
+
+test("runSync posts to the run endpoint", async () => {
+  const report = { ok: true, pushed: [], pulled: [], merged: [], conflicts: 0, error: null };
+  const fetchFn = vi.fn().mockResolvedValue(jsonResponse(200, report));
+  const client = new ApiClient("http://127.0.0.1:8686", "tok", fetchFn);
+  const result = await client.runSync();
+  expect(result.ok).toBe(true);
+  const [url, init] = fetchFn.mock.calls[0];
+  expect(url).toBe("http://127.0.0.1:8686/sync/run");
+  expect(init.method).toBe("POST");
+});
+
+test("resolveSyncConflict posts file, source and choice", async () => {
+  const fetchFn = vi.fn().mockResolvedValue(jsonResponse(200, { resolved: true }));
+  const client = new ApiClient("http://127.0.0.1:8686", "tok", fetchFn);
+  await client.resolveSyncConflict("glossaries/global.csv", "term", "remote");
+  const [url, init] = fetchFn.mock.calls[0];
+  expect(url).toBe("http://127.0.0.1:8686/sync/resolve");
+  expect(init.method).toBe("POST");
+  expect(JSON.parse(init.body)).toEqual({
+    file: "glossaries/global.csv",
+    source: "term",
+    choice: "remote",
+  });
 });

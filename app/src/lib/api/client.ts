@@ -6,6 +6,8 @@ import type {
   NotifyTestResult,
   PreflightReport,
   SubtitleStylePreset,
+  SyncReport,
+  SyncStatus,
   TaskIndexRow,
   TaskRecord,
 } from "./types";
@@ -186,6 +188,25 @@ export class ApiClient {
       throw new ApiError(response.status, await response.json().catch(() => null));
     }
     return response.blob();
+  }
+
+  getSyncStatus(): Promise<SyncStatus> {
+    return this.request("/sync/status");
+  }
+
+  runSync(): Promise<SyncReport> {
+    return this.request("/sync/run", { method: "POST" });
+  }
+
+  resolveSyncConflict(
+    file: string,
+    source: string,
+    choice: "local" | "remote",
+  ): Promise<{ resolved: boolean }> {
+    return this.request("/sync/resolve", {
+      method: "POST",
+      body: JSON.stringify({ file, source, choice }),
+    });
   }
 
   wsUrl(): string {

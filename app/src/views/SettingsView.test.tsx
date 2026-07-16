@@ -20,6 +20,15 @@ const DEFAULT_CONFIG: CoreConfigDoc = {
     channel_id: "",
     allowed_user_ids: [],
   },
+  sync: {
+    enabled: false,
+    mode: "folder",
+    folder_path: "",
+    webdav_url: "",
+    webdav_username: "",
+    webdav_password: "",
+    auto_interval_minutes: 0,
+  },
 };
 
 function setup(overrides: Partial<ApiClient> = {}) {
