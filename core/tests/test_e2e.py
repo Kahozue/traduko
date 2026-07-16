@@ -1,11 +1,15 @@
 import json
 import subprocess
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
 import pytest
+from fastapi.testclient import TestClient
 from typer.testing import CliRunner
+
+from traduko.service.app import create_app
 
 from traduko.asr import AsrResult, AsrSegment, register_asr
 from traduko.cli import app
@@ -268,3 +272,84 @@ def test_pipeline_notifies_webhook_and_logs_events(tmp_path: Path) -> None:
     assert types[0] == "task_started"
     assert types[-1] == "task_completed"
     assert "stage_progress" in types
+
+
+def test_service_api_full_pipeline_with_ws_events(tmp_path: Path) -> None:
+    received: list[dict] = []
+
+    class Hook(BaseHTTPRequestHandler):
+        def do_POST(self) -> None:
+            length = int(self.headers.get("Content-Length", 0))
+            received.append(json.loads(self.rfile.read(length)))
+            self.send_response(204)
+            self.end_headers()
+
+        def log_message(self, *args) -> None:
+            pass
+
+    server = HTTPServer(("127.0.0.1", 0), Hook)
+    port = server.server_address[1]
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        save_config(
+            tmp_path,
+            CoreConfig(
+                notifications=NotificationsConfig(
+                    channels=[
+                        {
+                            "type": "webhook",
+                            "url": f"http://127.0.0.1:{port}/hook",
+                            "events": ["task_completed"],
+                        }
+                    ]
+                )
+            ),
+        )
+        src = tmp_path / "in.srt"
+        src.write_text(SRT_INPUT, encoding="utf-8")
+
+        app_instance = create_app(tmp_path)
+        token = (
+            (tmp_path / "config" / "api-token").read_text(encoding="utf-8").strip()
+        )
+        headers = {"Authorization": f"Bearer {token}"}
+        with TestClient(app_instance) as client:
+            created = client.post(
+                "/tasks",
+                json={"input_path": str(src), "profile": "subtitle-translate"},
+                headers=headers,
+            )
+            assert created.status_code == 201, created.text
+            task_id = created.json()["id"]
+
+            with client.websocket_connect(f"/ws/events?token={token}") as stream:
+                ran = client.post(f"/tasks/default/{task_id}/run", headers=headers)
+                assert ran.status_code == 202, ran.text
+
+                deadline = time.monotonic() + 10
+                shown = client.get(f"/tasks/default/{task_id}", headers=headers).json()
+                while time.monotonic() < deadline:
+                    shown = client.get(
+                        f"/tasks/default/{task_id}", headers=headers
+                    ).json()
+                    if shown["status"] == "completed":
+                        break
+                    time.sleep(0.01)
+                assert shown["status"] == "completed"
+
+                types: list[str] = []
+                while "task_completed" not in types:
+                    types.append(stream.receive_json()["type"])
+    finally:
+        server.shutdown()
+        thread.join()
+
+    assert types[0] == "task_started"
+    assert "stage_progress" in types
+
+    assert [p["type"] for p in received] == ["task_completed"]
+    assert received[0]["task_id"] == task_id
+
+    artifacts = tmp_path / "projects" / "default" / "tasks" / task_id / "artifacts"
+    assert (artifacts / "04-subtitles.srt").exists()
