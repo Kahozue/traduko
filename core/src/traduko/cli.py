@@ -133,3 +133,29 @@ def serve(
 
     ws: Workspace = ctx.obj
     uvicorn.run(create_app(ws.root), host=host, port=port, log_level="info")
+
+
+@app.command("sync")
+def sync(ctx: typer.Context) -> None:
+    """Run one cloud sync pass against the configured target."""
+    from .sync.engine import SyncConfigError, SyncEngine, create_target
+
+    ws: Workspace = ctx.obj
+    if not ws.config.sync.enabled:
+        typer.echo("sync is not enabled (see config/core.yaml)")
+        raise typer.Exit(code=1)
+    try:
+        target = create_target(ws.config.sync)
+    except SyncConfigError as error:
+        typer.echo(str(error))
+        raise typer.Exit(code=1) from None
+    report = SyncEngine(ws.root, target).run()
+    typer.echo(f"pushed: {len(report.pushed)}")
+    typer.echo(f"pulled: {len(report.pulled)}")
+    typer.echo(f"merged: {len(report.merged)}")
+    typer.echo(f"conflicts: {report.conflicts}")
+    if report.conflicts:
+        typer.echo("resolve glossary conflicts in the desktop app settings page")
+    if not report.ok:
+        typer.echo(f"sync failed: {report.error}")
+        raise typer.Exit(code=1)

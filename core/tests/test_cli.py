@@ -97,3 +97,29 @@ def test_serve_command_exists() -> None:
     result = runner.invoke(app, ["serve", "--help"])
     assert result.exit_code == 0
     assert "--port" in result.output
+
+
+def test_sync_command_runs_and_reports(tmp_path: Path) -> None:
+    data_root = tmp_path / "data"
+    data_root.mkdir()
+    env = {"TRADUKO_DATA_ROOT": str(data_root)}
+    (data_root / "config").mkdir(parents=True)
+    (data_root / "config" / "core.yaml").write_text(
+        "sync:\n"
+        "  enabled: true\n"
+        "  mode: folder\n"
+        f"  folder_path: {tmp_path / 'cloud'}\n",
+        encoding="utf-8",
+    )
+    result = runner.invoke(app, ["sync"], env=env)
+    assert result.exit_code == 0, result.output
+    assert "pushed:" in result.output
+    assert "conflicts: 0" in result.output
+    assert (tmp_path / "cloud" / "prompts" / "translate.txt").exists()
+
+
+def test_sync_command_fails_when_disabled(tmp_path: Path) -> None:
+    env = setup_workspace(tmp_path)
+    result = runner.invoke(app, ["sync"], env=env)
+    assert result.exit_code == 1
+    assert "not enabled" in result.output
