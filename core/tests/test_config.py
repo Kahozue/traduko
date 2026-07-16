@@ -1,6 +1,8 @@
 from pathlib import Path
 
+import pytest
 import yaml
+from pydantic import ValidationError
 
 from traduko.config import CoreConfig, DiscordBotConfig, load_config, save_config
 
@@ -79,6 +81,40 @@ def test_discord_bot_defaults_and_snowflakes_stay_strings(tmp_path: Path) -> Non
     empty = load_config(tmp_path / "nowhere")
     assert empty.discord_bot.enabled is False
     assert empty.discord_bot.allowed_user_ids == []
+
+
+def test_sync_defaults_and_yaml_load(tmp_path: Path) -> None:
+    empty = load_config(tmp_path)
+    assert empty.sync.enabled is False
+    assert empty.sync.mode == "folder"
+    assert empty.sync.folder_path == ""
+    assert empty.sync.webdav_url == ""
+    assert empty.sync.auto_interval_minutes == 0
+
+    path = tmp_path / "config" / "core.yaml"
+    path.parent.mkdir(parents=True)
+    path.write_text(
+        "sync:\n"
+        "  enabled: true\n"
+        "  mode: webdav\n"
+        "  webdav_url: https://dav.example.com/traduko/\n"
+        "  webdav_username: kaho\n"
+        "  webdav_password: secret\n"
+        "  auto_interval_minutes: 15\n",
+        encoding="utf-8",
+    )
+    config = load_config(tmp_path)
+    assert config.sync.enabled is True
+    assert config.sync.mode == "webdav"
+    assert config.sync.webdav_url == "https://dav.example.com/traduko/"
+    assert config.sync.webdav_username == "kaho"
+    assert config.sync.webdav_password == "secret"
+    assert config.sync.auto_interval_minutes == 15
+
+
+def test_sync_mode_rejects_unknown_values() -> None:
+    with pytest.raises(ValidationError):
+        CoreConfig.model_validate({"sync": {"mode": "ftp"}})
 
 
 def test_discord_bot_token_resolution(monkeypatch) -> None:

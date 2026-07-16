@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from typing import Literal
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -56,6 +57,22 @@ class DiscordBotConfig(BaseModel):
         return ""
 
 
+class SyncConfig(BaseModel):
+    """Cloud sync settings (design doc section 9). The target is always
+    "a folder": either a local directory (which may itself be a Dropbox,
+    Google Drive or iCloud synced folder) or a WebDAV collection."""
+
+    model_config = ConfigDict(extra="allow")
+
+    enabled: bool = False
+    mode: Literal["folder", "webdav"] = "folder"
+    folder_path: str = ""
+    webdav_url: str = ""
+    webdav_username: str = ""
+    webdav_password: str = ""
+    auto_interval_minutes: int = 0
+
+
 class CoreConfig(BaseModel):
     model_config = ConfigDict(extra="allow")
 
@@ -65,6 +82,7 @@ class CoreConfig(BaseModel):
     llm_providers: dict[str, dict] = Field(default_factory=dict)
     notifications: NotificationsConfig = Field(default_factory=NotificationsConfig)
     discord_bot: DiscordBotConfig = Field(default_factory=DiscordBotConfig)
+    sync: SyncConfig = Field(default_factory=SyncConfig)
 
 
 def load_config(root: Path) -> CoreConfig:
