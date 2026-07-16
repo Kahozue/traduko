@@ -12,9 +12,10 @@ body,
 body {
   font-family: var(--font-sans);
   font-size: 14px;
+  font-weight: 450;
   color: var(--text-primary);
   background: var(--bg-app);
-  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
 button {
