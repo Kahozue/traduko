@@ -127,3 +127,88 @@ def test_profiles_lists_seeded_profiles(tmp_path: Path) -> None:
     with service(tmp_path) as (client, headers, token):
         names = client.get("/profiles", headers=headers).json()
         assert "subtitle-translate" in names and "av-default" in names
+
+
+PASSTHROUGH = "schema_version: 1\nname: passthrough\nstages:\n  - type: noop\n"
+
+
+def write_passthrough(tmp_path: Path) -> None:
+    (tmp_path / "profiles").mkdir(exist_ok=True)
+    (tmp_path / "profiles" / "passthrough.yaml").write_text(
+        PASSTHROUGH, encoding="utf-8"
+    )
+
+
+def wait_completed(
+    client, headers, project: str, task_id: str, timeout: float = 5.0
+) -> dict:
+    deadline = time.monotonic() + timeout
+    shown = client.get(f"/tasks/{project}/{task_id}", headers=headers).json()
+    while time.monotonic() < deadline:
+        shown = client.get(f"/tasks/{project}/{task_id}", headers=headers).json()
+        if shown["status"] in {"completed", "failed", "canceled"}:
+            return shown
+        time.sleep(0.01)
+    raise AssertionError(f"timed out, last status {shown['status']}")
+
+
+def test_run_executes_task(tmp_path: Path) -> None:
+    write_passthrough(tmp_path)
+    with service(tmp_path) as (client, headers, token):
+        task_id = create_task(client, headers, tmp_path, profile="passthrough")
+        response = client.post(f"/tasks/default/{task_id}/run", headers=headers)
+        assert response.status_code == 202, response.text
+        assert response.json() == {"queued": True}
+        shown = wait_completed(client, headers, "default", task_id)
+        assert shown["status"] == "completed"
+
+
+def test_run_gates_on_preflight(tmp_path: Path) -> None:
+    write_passthrough(tmp_path)
+    with service(tmp_path) as (client, headers, token):
+        task_id = create_task(client, headers, tmp_path, profile="passthrough")
+        (tmp_path / "in.srt").unlink()
+        denied = client.post(f"/tasks/default/{task_id}/run", headers=headers)
+        assert denied.status_code == 409
+        assert denied.json()["detail"]["checks"][0]["name"] == "input"
+        shown = client.get(f"/tasks/default/{task_id}", headers=headers).json()
+        assert shown["status"] == "pending"
+
+        forced = client.post(
+            f"/tasks/default/{task_id}/run",
+            json={"skip_preflight": True},
+            headers=headers,
+        )
+        assert forced.status_code == 202
+        assert wait_completed(client, headers, "default", task_id)["status"] == "completed"
+
+
+def test_run_rejects_completed_task(tmp_path: Path) -> None:
+    write_passthrough(tmp_path)
+    with service(tmp_path) as (client, headers, token):
+        task_id = create_task(client, headers, tmp_path, profile="passthrough")
+        client.post(f"/tasks/default/{task_id}/run", headers=headers)
+        wait_completed(client, headers, "default", task_id)
+        again = client.post(f"/tasks/default/{task_id}/run", headers=headers)
+        assert again.status_code == 409
+
+
+def test_cancel_pending_task(tmp_path: Path) -> None:
+    write_passthrough(tmp_path)
+    with service(tmp_path) as (client, headers, token):
+        task_id = create_task(client, headers, tmp_path, profile="passthrough")
+        response = client.post(f"/tasks/default/{task_id}/cancel", headers=headers)
+        assert response.status_code == 202
+        assert response.json() == {"canceled": True}
+        shown = client.get(f"/tasks/default/{task_id}", headers=headers).json()
+        assert shown["status"] == "canceled"
+
+
+def test_cancel_completed_task_is_409(tmp_path: Path) -> None:
+    write_passthrough(tmp_path)
+    with service(tmp_path) as (client, headers, token):
+        task_id = create_task(client, headers, tmp_path, profile="passthrough")
+        client.post(f"/tasks/default/{task_id}/run", headers=headers)
+        wait_completed(client, headers, "default", task_id)
+        response = client.post(f"/tasks/default/{task_id}/cancel", headers=headers)
+        assert response.status_code == 409

@@ -9,6 +9,7 @@ the whole app lifetime; handlers reach it through request.app.state.
 from __future__ import annotations
 
 import secrets
+from contextlib import asynccontextmanager
 from dataclasses import asdict
 from pathlib import Path
 
@@ -16,11 +17,13 @@ from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request
 from pydantic import BaseModel
 
 from ..budget import BudgetMeter
-from ..models import TaskRecord
+from ..events import Event
+from ..models import InvalidTransition, TaskRecord, TaskStatus, transition
 from ..preflight import run_preflight
 from ..profiles import load_profile, stage_records_from
 from ..workspace import Workspace
 from .auth import load_or_create_token
+from .worker import TaskWorker
 
 
 def require_token(request: Request) -> None:
@@ -102,6 +105,63 @@ def preflight_task(request: Request, project: str, task_id: str) -> dict:
     return {"ok": report.ok, "checks": [asdict(check) for check in report.checks]}
 
 
+_RUNNABLE = {
+    TaskStatus.PENDING,
+    TaskStatus.PAUSED,
+    TaskStatus.WAITING_REVIEW,
+    TaskStatus.FAILED,
+}
+
+
+class RunRequest(BaseModel):
+    skip_preflight: bool = False
+
+
+@router.post("/tasks/{project}/{task_id}/run", status_code=202)
+def run_task(
+    request: Request, project: str, task_id: str, body: RunRequest | None = None
+) -> dict:
+    ws: Workspace = request.app.state.workspace
+    worker: TaskWorker = request.app.state.worker
+    record = _load_task(ws, project, task_id)
+    if record.status not in _RUNNABLE:
+        raise HTTPException(
+            status_code=409,
+            detail=f"cannot run task in status {record.status.value}",
+        )
+    if not (body and body.skip_preflight):
+        report = run_preflight(record, ws.root)
+        if not report.ok:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "error": "preflight failed",
+                    "checks": [asdict(check) for check in report.failures()],
+                },
+            )
+    if not worker.enqueue(project, task_id):
+        raise HTTPException(status_code=409, detail="task already queued or running")
+    return {"queued": True}
+
+
+@router.post("/tasks/{project}/{task_id}/cancel", status_code=202)
+def cancel_task(request: Request, project: str, task_id: str) -> dict:
+    ws: Workspace = request.app.state.workspace
+    worker: TaskWorker = request.app.state.worker
+    record = _load_task(ws, project, task_id)
+    if worker.cancel(project, task_id):
+        return {"canceling": True}
+    try:
+        transition(record, TaskStatus.CANCELED)
+    except InvalidTransition as error:
+        raise HTTPException(status_code=409, detail=str(error)) from None
+    ws.store.save(record)
+    ws.bus.publish(
+        Event(type="task_canceled", task_id=task_id, project=project, data={})
+    )
+    return {"canceled": True}
+
+
 @router.get("/profiles")
 def list_profiles(request: Request) -> list[str]:
     ws: Workspace = request.app.state.workspace
@@ -110,8 +170,19 @@ def list_profiles(request: Request) -> list[str]:
 
 def create_app(data_root: Path | None = None) -> FastAPI:
     workspace = Workspace.open(data_root)
-    app = FastAPI(title="traduko core", docs_url=None, redoc_url=None)
+    worker = TaskWorker(workspace)
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        worker.start()
+        yield
+        worker.stop()
+
+    app = FastAPI(
+        title="traduko core", docs_url=None, redoc_url=None, lifespan=lifespan
+    )
     app.state.workspace = workspace
+    app.state.worker = worker
     app.state.token = load_or_create_token(workspace.root)
 
     @app.get("/health")
