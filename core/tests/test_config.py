@@ -2,7 +2,7 @@ from pathlib import Path
 
 import yaml
 
-from traduko.config import CoreConfig, load_config, save_config
+from traduko.config import CoreConfig, DiscordBotConfig, load_config, save_config
 
 
 def test_missing_file_returns_defaults(tmp_path: Path) -> None:
@@ -57,3 +57,36 @@ def test_round_trip_preserves_unknown_keys(tmp_path: Path) -> None:
     data = yaml.safe_load(path.read_text(encoding="utf-8"))
     assert data["future_section"] == {"key": "value"}
     assert data["budget"]["custom_note"] == "hello"
+
+
+def test_discord_bot_defaults_and_snowflakes_stay_strings(tmp_path: Path) -> None:
+    path = tmp_path / "config" / "core.yaml"
+    path.parent.mkdir(parents=True)
+    path.write_text(
+        "discord_bot:\n"
+        "  enabled: true\n"
+        "  guild_id: 123456789012345678\n"
+        "  channel_id: 234567890123456789\n"
+        "  allowed_user_ids: [345678901234567890]\n",
+        encoding="utf-8",
+    )
+    config = load_config(tmp_path)
+    assert config.discord_bot.enabled is True
+    assert config.discord_bot.guild_id == "123456789012345678"
+    assert config.discord_bot.channel_id == "234567890123456789"
+    assert config.discord_bot.allowed_user_ids == ["345678901234567890"]
+
+    empty = load_config(tmp_path / "nowhere")
+    assert empty.discord_bot.enabled is False
+    assert empty.discord_bot.allowed_user_ids == []
+
+
+def test_discord_bot_token_resolution(monkeypatch) -> None:
+    direct = DiscordBotConfig(bot_token="literal", bot_token_env="TRADUKO_TEST_BOT")
+    assert direct.resolve_token() == "literal"
+
+    monkeypatch.setenv("TRADUKO_TEST_BOT", "from-env")
+    via_env = DiscordBotConfig(bot_token_env="TRADUKO_TEST_BOT")
+    assert via_env.resolve_token() == "from-env"
+
+    assert DiscordBotConfig().resolve_token() == ""

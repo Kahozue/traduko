@@ -12,6 +12,7 @@ dependencies = [
     "fastapi>=0.111",
     "uvicorn>=0.30",
     "websockets>=12",
+    "discord-py>=2.4",
 ]
 
 [project.optional-dependencies]
