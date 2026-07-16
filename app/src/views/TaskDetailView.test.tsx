@@ -197,3 +197,40 @@ test("rename flow calls renameTask", async () => {
   await userEvent.click(screen.getByText("儲存"));
   await waitFor(() => expect(renameTask).toHaveBeenCalledWith("default", "t1", "第三集X"));
 });
+
+test("pause button pauses a running task", async () => {
+  const running = { ...task, status: "running" as const };
+  const pauseTask = vi.fn().mockResolvedValue({ pausing: true });
+  const api: Partial<ApiClient> = {
+    showTask: vi.fn().mockResolvedValue(running),
+    pauseTask,
+  };
+  renderWithConnection(
+    <TaskDetailView
+      project="default"
+      taskId="t1"
+      onBack={() => {}}
+      onOpenSubtitleEditor={() => {}}
+      onOpenStyleEditor={() => {}}
+    />,
+    { api },
+  );
+  await waitFor(() => expect(screen.getByText("暫停")).toBeEnabled());
+  await userEvent.click(screen.getByText("暫停"));
+  await waitFor(() => expect(pauseTask).toHaveBeenCalledWith("default", "t1"));
+});
+
+test("pause button is disabled when task is not running", async () => {
+  const api: Partial<ApiClient> = { showTask: vi.fn().mockResolvedValue(task) };
+  renderWithConnection(
+    <TaskDetailView
+      project="default"
+      taskId="t1"
+      onBack={() => {}}
+      onOpenSubtitleEditor={() => {}}
+      onOpenStyleEditor={() => {}}
+    />,
+    { api },
+  );
+  await waitFor(() => expect(screen.getByText("暫停")).toBeDisabled());
+});

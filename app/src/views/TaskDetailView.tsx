@@ -12,6 +12,7 @@ import styles from "./TaskDetailView.module.css";
 
 const RUNNABLE = new Set(["pending", "paused", "waiting_review", "failed"]);
 const CANCELABLE = new Set(["pending", "running", "waiting_review", "paused"]);
+const PAUSABLE = new Set(["running"]);
 
 function formatTime(iso: string): string {
   return new Date(iso).toLocaleString();
@@ -57,6 +58,11 @@ export function TaskDetailView({
 
   const cancel = useMutation({
     mutationFn: () => api.cancelTask(project, taskId),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["task", project, taskId] }),
+  });
+
+  const pause = useMutation({
+    mutationFn: () => api.pauseTask(project, taskId),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["task", project, taskId] }),
   });
 
@@ -133,6 +139,14 @@ export function TaskDetailView({
             onClick={() => run.mutate(false)}
           >
             {t("task.run")}
+          </button>
+          <button
+            type="button"
+            className={styles.secondary}
+            disabled={!PAUSABLE.has(task.status) || pause.isPending}
+            onClick={() => pause.mutate()}
+          >
+            {t("task.pause")}
           </button>
           <button
             type="button"

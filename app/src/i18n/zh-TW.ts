@@ -39,6 +39,7 @@ export const zhTW = {
   "task.back": "返回任務列表",
   "task.run": "執行",
   "task.cancel": "取消任務",
+  "task.pause": "暫停",
   "task.stages": "階段",
   "task.events": "事件",
   "task.eventsEmpty": "尚無事件，執行任務後即時顯示",

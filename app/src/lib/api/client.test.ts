@@ -137,3 +137,13 @@ test("test notification posts channel body", async () => {
     channel: { type: "discord", webhook_url: "https://discord.example/hook" },
   });
 });
+
+test("pauseTask posts to the pause endpoint", async () => {
+  const fetchFn = vi.fn().mockResolvedValue(jsonResponse(202, { pausing: true }));
+  const client = new ApiClient("http://127.0.0.1:8686", "tok", fetchFn);
+  const result = await client.pauseTask("p", "t1");
+  expect(result.pausing).toBe(true);
+  const [url, init] = fetchFn.mock.calls[0] as [string, RequestInit];
+  expect(url).toBe("http://127.0.0.1:8686/tasks/p/t1/pause");
+  expect(init.method).toBe("POST");
+});

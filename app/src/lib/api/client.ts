@@ -116,6 +116,10 @@ export class ApiClient {
     return this.request(`/tasks/${project}/${taskId}/cancel`, { method: "POST" });
   }
 
+  pauseTask(project: string, taskId: string): Promise<{ pausing: boolean }> {
+    return this.request(`/tasks/${project}/${taskId}/pause`, { method: "POST" });
+  }
+
   renameTask(project: string, taskId: string, name: string): Promise<TaskRecord> {
     return this.request(`/tasks/${project}/${taskId}`, {
       method: "PATCH",
