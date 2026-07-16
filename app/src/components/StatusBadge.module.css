@@ -1,0 +1,50 @@
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 500;
+  background: var(--neutral-soft);
+  color: var(--text-secondary);
+}
+
+.badge[data-status="running"],
+.badge[data-status="waiting_review"] {
+  background: var(--info-soft);
+  color: var(--info);
+}
+
+.badge[data-status="paused"] {
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+
+.badge[data-status="completed"] {
+  background: var(--ok-soft);
+  color: var(--ok);
+}
+
+.badge[data-status="failed"] {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.pulse {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
