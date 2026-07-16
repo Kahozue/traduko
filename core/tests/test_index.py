@@ -1,3 +1,4 @@
+import sqlite3
 from pathlib import Path
 
 from traduko.index import TaskIndex
@@ -31,3 +32,38 @@ def test_rebuild_from_files(tmp_path: Path) -> None:
     count = index.rebuild(plain_store)
     assert count == 1
     assert index.list(project="p1")[0]["id"] == a.id
+
+
+def test_index_rows_include_name(tmp_path: Path) -> None:
+    store = TaskStore(tmp_path)
+    index = TaskIndex(tmp_path)
+    record = store.create(
+        project="p", input_path="/tmp/in.srt",
+        profile_name="x", stages=[], name="第三集",
+    )
+    index.upsert(record)
+    rows = index.list()
+    assert rows[0]["name"] == "第三集"
+    index.close()
+
+
+def test_index_migrates_legacy_db_without_name_column(tmp_path: Path) -> None:
+    conn = sqlite3.connect(tmp_path / "index.sqlite3")
+    conn.execute(
+        """
+        CREATE TABLE tasks (
+            id TEXT PRIMARY KEY, project TEXT NOT NULL, status TEXT NOT NULL,
+            profile TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+        )
+        """
+    )
+    conn.execute(
+        "INSERT INTO tasks VALUES ('t1', 'p', 'completed', 'x', '2026', '2026')"
+    )
+    conn.commit()
+    conn.close()
+
+    index = TaskIndex(tmp_path)
+    rows = index.list()
+    assert rows[0]["name"] == ""
+    index.close()

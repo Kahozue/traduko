@@ -29,6 +29,7 @@ class TaskStore:
         input_path: str,
         profile_name: str,
         stages: list[StageRecord],
+        name: str | None = None,
     ) -> TaskRecord:
         now = utc_now_iso()
         record = TaskRecord(
@@ -36,6 +37,7 @@ class TaskStore:
             project=project,
             input_path=input_path,
             profile=profile_name,
+            name=name or Path(input_path).stem,
             stages=stages,
             created_at=now,
             updated_at=now,

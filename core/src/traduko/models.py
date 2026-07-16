@@ -41,6 +41,7 @@ class TaskRecord(BaseModel):
     project: str
     input_path: str
     profile: str
+    name: str | None = None
     status: TaskStatus = TaskStatus.PENDING
     stages: list[StageRecord]
     created_at: str

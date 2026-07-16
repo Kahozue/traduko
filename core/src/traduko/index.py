@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS tasks (
     project TEXT NOT NULL,
     status TEXT NOT NULL,
     profile TEXT NOT NULL,
+    name TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 )
@@ -28,16 +29,22 @@ class TaskIndex:
         self._conn.row_factory = sqlite3.Row
         self._lock = threading.Lock()
         self._conn.execute(_SCHEMA)
+        columns = {row[1] for row in self._conn.execute("PRAGMA table_info(tasks)")}
+        if "name" not in columns:
+            self._conn.execute(
+                "ALTER TABLE tasks ADD COLUMN name TEXT NOT NULL DEFAULT ''"
+            )
         self._conn.commit()
 
     def upsert(self, record: TaskRecord) -> None:
         with self._lock:
             self._conn.execute(
                 """
-                INSERT INTO tasks (id, project, status, profile, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?)
+                INSERT INTO tasks (id, project, status, profile, name, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                     status = excluded.status,
+                    name = excluded.name,
                     updated_at = excluded.updated_at
                 """,
                 (
@@ -45,6 +52,7 @@ class TaskIndex:
                     record.project,
                     record.status.value,
                     record.profile,
+                    record.name or "",
                     record.created_at,
                     record.updated_at,
                 ),

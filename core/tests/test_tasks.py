@@ -54,3 +54,23 @@ def test_iter_tasks(tmp_path: Path) -> None:
     assert len(all_ids) == 2
     p1_ids = {t.id for t in store.iter_tasks("p1")}
     assert p1_ids == {a.id}
+
+
+def test_create_defaults_name_to_input_stem(tmp_path: Path) -> None:
+    store = make_store(tmp_path)
+    record = store.create(
+        project="p", input_path="/tmp/movie final.srt",
+        profile_name="x", stages=[],
+    )
+    assert record.name == "movie final"
+
+
+def test_create_accepts_explicit_name(tmp_path: Path) -> None:
+    store = make_store(tmp_path)
+    record = store.create(
+        project="p", input_path="/tmp/in.srt",
+        profile_name="x", stages=[], name="第三集",
+    )
+    assert record.name == "第三集"
+    reloaded = store.load("p", record.id)
+    assert reloaded.name == "第三集"
