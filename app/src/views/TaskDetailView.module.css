@@ -1,0 +1,263 @@
+.back {
+  margin-bottom: 14px;
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-s);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  font-size: 12.5px;
+  cursor: pointer;
+  transition: background var(--transition);
+}
+
+.back:hover {
+  background: var(--bg-inset);
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 18px;
+}
+
+.headline {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.title {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 19px;
+}
+
+.actions {
+  display: flex;
+  gap: 10px;
+}
+
+.primary,
+.danger,
+.secondary {
+  padding: 8px 16px;
+  border-radius: var(--radius-s);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background var(--transition), transform var(--transition);
+}
+
+.primary {
+  border: none;
+  background: var(--accent);
+  color: #ffffff;
+  box-shadow: var(--shadow-1);
+}
+
+.primary:hover:not(:disabled) {
+  background: var(--accent-strong);
+}
+
+.danger {
+  border: 1px solid var(--danger);
+  background: transparent;
+  color: var(--danger);
+}
+
+.danger:hover:not(:disabled) {
+  background: var(--danger-soft);
+}
+
+.secondary {
+  border: 1px solid var(--border);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+}
+
+.primary:disabled,
+.danger:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.card {
+  margin-bottom: 16px;
+  padding: 20px;
+  border-radius: var(--radius-m);
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-1);
+}
+
+.preflight {
+  margin-bottom: 16px;
+  padding: 16px 20px;
+  border: 1px solid var(--warn);
+  border-radius: var(--radius-m);
+  background: var(--warn-soft);
+}
+
+.checkList {
+  margin: 8px 0 12px;
+  padding-left: 18px;
+  font-size: 13px;
+}
+
+.preflightActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.sectionTitle {
+  margin: 0 0 14px;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-secondary);
+}
+
+.meta {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px 24px;
+  margin: 0 0 18px;
+}
+
+.meta dt {
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.meta dd {
+  margin: 2px 0 0;
+  font-size: 13px;
+  word-break: break-all;
+}
+
+.mono {
+  font-family: var(--font-mono);
+}
+
+.stages {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.stage {
+  display: flex;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.stage:last-child {
+  border-bottom: none;
+}
+
+.stageDot {
+  width: 10px;
+  height: 10px;
+  margin-top: 5px;
+  border-radius: 50%;
+  background: var(--border);
+  flex-shrink: 0;
+}
+
+.stage[data-status="running"] .stageDot {
+  background: var(--info);
+  animation: pulse 1.4s ease-in-out infinite;
+}
+
+.stage[data-status="completed"] .stageDot {
+  background: var(--ok);
+}
+
+.stage[data-status="failed"] .stageDot {
+  background: var(--danger);
+}
+
+.stageBody {
+  flex: 1;
+  min-width: 0;
+}
+
+.stageHead {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.stageType {
+  font-family: var(--font-mono);
+  font-size: 13px;
+}
+
+.stageStatus {
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.stageError {
+  margin: 6px 0 0;
+  color: var(--danger);
+  font-size: 12.5px;
+}
+
+.events {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.event {
+  display: flex;
+  gap: 12px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 12.5px;
+}
+
+.event:last-child {
+  border-bottom: none;
+}
+
+.eventTs {
+  flex-shrink: 0;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+}
+
+.eventType {
+  flex-shrink: 0;
+  font-weight: 600;
+}
+
+.eventData {
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.eventsEmpty {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
