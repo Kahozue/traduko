@@ -26,7 +26,7 @@ from fastapi import (
 )
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 import yaml
 
@@ -36,12 +36,13 @@ from ..artifacts import (
     validate_translation_payload,
 )
 from ..budget import BudgetMeter
+from ..config import CoreConfig, save_config
 from ..eventlog import EventLogger
 from ..executor import reset_stages_after_artifact
 from ..events import Event
 from ..media import MediaError, ffmpeg_available
 from ..models import InvalidTransition, TaskRecord, TaskStatus, transition
-from ..notify import Notifier
+from ..notify import Notifier, NotifyError
 from ..preflight import run_preflight
 from ..profiles import load_profile, stage_records_from
 from ..styles import SubtitleStyle
@@ -98,6 +99,34 @@ def get_budget(request: Request) -> dict:
         "task_usd_limit": ws.config.budget.task_usd_limit,
         "monthly_usd_limit": ws.config.budget.monthly_usd_limit,
     }
+
+
+@router.get("/config")
+def get_config(request: Request) -> dict:
+    ws: Workspace = request.app.state.workspace
+    return ws.config.model_dump()
+
+
+@router.put("/config")
+def put_config(request: Request, body: dict) -> dict:
+    ws: Workspace = request.app.state.workspace
+    try:
+        config = CoreConfig.model_validate(body)
+    except ValidationError as error:
+        raise HTTPException(
+            status_code=422, detail=error.errors(include_url=False)
+        ) from None
+    if not config.default_project.strip():
+        raise HTTPException(status_code=422, detail="default_project must not be empty")
+    try:
+        notifier = Notifier.from_config(config)
+    except NotifyError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from None
+    save_config(ws.root, config)
+    ws.config = config
+    request.app.state.detach_notifier()
+    request.app.state.detach_notifier = notifier.attach(ws.bus)
+    return config.model_dump()
 
 
 class TaskCreateRequest(BaseModel):
@@ -376,7 +405,9 @@ def create_app(data_root: Path | None = None) -> FastAPI:
 
     setup_system_log(workspace.root)
     EventLogger(workspace.root).attach(workspace.bus)
-    Notifier.from_config(workspace.config).attach(workspace.bus)
+    app.state.detach_notifier = Notifier.from_config(workspace.config).attach(
+        workspace.bus
+    )
     logging.getLogger(__name__).info("service initialized at %s", workspace.root)
 
     @app.get("/health")

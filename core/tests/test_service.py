@@ -10,7 +10,9 @@ import pytest
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
+from traduko.config import load_config
 from traduko.events import Event
+from traduko.notify import _CHANNELS, DEFAULT_EVENTS, register_channel, resolve_events
 from traduko.service.app import create_app
 from traduko.service.broadcast import WsBroadcaster
 from traduko.service.systemlog import setup_system_log
@@ -23,6 +25,25 @@ def service(tmp_path: Path):
     headers = {"Authorization": f"Bearer {token}"}
     with TestClient(app) as client:
         yield client, headers, token
+
+
+@contextmanager
+def memo_channel(name: str = "memo"):
+    """Register an in-memory channel type; yields the captured events."""
+    captured: list[Event] = []
+
+    @register_channel(name)
+    class MemoChannel:
+        def __init__(self, events: list[str] | None = None, **_ignored) -> None:
+            self.events = resolve_events(events, DEFAULT_EVENTS)
+
+        def send(self, event: Event) -> None:
+            captured.append(event)
+
+    try:
+        yield captured
+    finally:
+        _CHANNELS.pop(name, None)
 
 
 def test_health_needs_no_token(tmp_path: Path) -> None:
@@ -292,3 +313,80 @@ def test_run_via_api_writes_task_event_log(tmp_path: Path) -> None:
     ]
     assert types[0] == "task_started"
     assert types[-1] == "task_completed"
+
+
+def test_get_config_returns_defaults(tmp_path: Path) -> None:
+    with service(tmp_path) as (client, headers, token):
+        response = client.get("/config", headers=headers)
+        assert response.status_code == 200
+        body = response.json()
+        assert body["default_project"] == "default"
+        assert body["budget"]["task_usd_limit"] is None
+        assert body["notifications"]["channels"] == []
+
+
+def test_put_config_persists_and_takes_effect(tmp_path: Path) -> None:
+    with service(tmp_path) as (client, headers, token):
+        config = client.get("/config", headers=headers).json()
+        config["default_project"] = "movies"
+        config["budget"]["monthly_usd_limit"] = 25.0
+        config["llm_providers"]["deepseek"] = {
+            "type": "openai_compat",
+            "base_url": "https://api.deepseek.com/v1",
+            "api_key_env": "DEEPSEEK_API_KEY",
+        }
+        response = client.put("/config", headers=headers, json=config)
+        assert response.status_code == 200
+        assert response.json()["default_project"] == "movies"
+
+        on_disk = load_config(tmp_path)
+        assert on_disk.default_project == "movies"
+        assert on_disk.budget.monthly_usd_limit == 25.0
+        assert on_disk.llm_providers["deepseek"]["api_key_env"] == "DEEPSEEK_API_KEY"
+
+        budget = client.get("/budget", headers=headers).json()
+        assert budget["monthly_usd_limit"] == 25.0
+
+
+def test_put_config_rejects_invalid_document(tmp_path: Path) -> None:
+    with service(tmp_path) as (client, headers, token):
+        original = client.get("/config", headers=headers).json()
+
+        bad_types = dict(original)
+        bad_types["budget"] = {"task_usd_limit": "lots"}
+        assert client.put("/config", headers=headers, json=bad_types).status_code == 422
+
+        bad_channel = dict(original)
+        bad_channel["notifications"] = {"channels": [{"type": "carrier_pigeon"}]}
+        assert (
+            client.put("/config", headers=headers, json=bad_channel).status_code == 422
+        )
+
+        empty_project = dict(original)
+        empty_project["default_project"] = "  "
+        assert (
+            client.put("/config", headers=headers, json=empty_project).status_code
+            == 422
+        )
+
+        on_disk = load_config(tmp_path)
+        assert on_disk.default_project == "default"
+
+
+def test_put_config_rebuilds_notification_channels(tmp_path: Path) -> None:
+    with memo_channel() as captured:
+        with service(tmp_path) as (client, headers, token):
+            config = client.get("/config", headers=headers).json()
+            config["notifications"] = {"channels": [{"type": "memo"}]}
+            assert client.put("/config", headers=headers, json=config).status_code == 200
+
+            bus = client.app.state.workspace.bus
+            bus.publish(
+                Event(type="task_completed", task_id="t1", project="p", data={})
+            )
+            assert [e.type for e in captured] == ["task_completed"]
+
+            config["notifications"] = {"channels": []}
+            assert client.put("/config", headers=headers, json=config).status_code == 200
+            bus.publish(Event(type="task_failed", task_id="t1", project="p", data={}))
+            assert [e.type for e in captured] == ["task_completed"]

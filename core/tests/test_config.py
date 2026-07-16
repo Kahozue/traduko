@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import yaml
+
 from traduko.config import CoreConfig, load_config, save_config
 
 
@@ -37,3 +39,21 @@ def test_notifications_defaults_and_roundtrip(tmp_path: Path) -> None:
     loaded = load_config(tmp_path)
     assert loaded.notifications.channels[0]["type"] == "webhook"
     assert loaded.notifications.channels[0]["events"] == ["task_completed"]
+
+
+def test_round_trip_preserves_unknown_keys(tmp_path: Path) -> None:
+    path = tmp_path / "config" / "core.yaml"
+    path.parent.mkdir(parents=True)
+    path.write_text(
+        "schema_version: 1\n"
+        "future_section:\n"
+        "  key: value\n"
+        "budget:\n"
+        "  custom_note: hello\n",
+        encoding="utf-8",
+    )
+    config = load_config(tmp_path)
+    save_config(tmp_path, config)
+    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    assert data["future_section"] == {"key": "value"}
+    assert data["budget"]["custom_note"] == "hello"

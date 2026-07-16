@@ -3,21 +3,27 @@ from __future__ import annotations
 from pathlib import Path
 
 import yaml
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 CONFIG_FILE = "config/core.yaml"
 
 
 class BudgetConfig(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
     task_usd_limit: float | None = None
     monthly_usd_limit: float | None = None
 
 
 class NotificationsConfig(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
     channels: list[dict] = Field(default_factory=list)
 
 
 class CoreConfig(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
     schema_version: int = 1
     default_project: str = "default"
     budget: BudgetConfig = Field(default_factory=BudgetConfig)
