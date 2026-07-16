@@ -20,10 +20,14 @@ export function TaskDetailView({
   project,
   taskId,
   onBack,
+  onOpenSubtitleEditor,
+  onOpenStyleEditor,
 }: {
   project: string;
   taskId: string;
   onBack: () => void;
+  onOpenSubtitleEditor: () => void;
+  onOpenStyleEditor: () => void;
 }) {
   const api = useApi();
   const queryClient = useQueryClient();
@@ -88,8 +92,23 @@ export function TaskDetailView({
           >
             {t("task.cancel")}
           </button>
+          <button type="button" className={styles.secondary} onClick={onOpenStyleEditor}>
+            {t("task.openStyleEditor")}
+          </button>
         </div>
       </header>
+
+      {task.status === "waiting_review" && (
+        <section className={styles.checkpoint}>
+          <div>
+            <h2 className={styles.sectionTitle}>{t("task.checkpoint.title")}</h2>
+            <p className={styles.checkpointHint}>{t("task.checkpoint.hint")}</p>
+          </div>
+          <button type="button" className={styles.primary} onClick={onOpenSubtitleEditor}>
+            {t("task.openSubtitleEditor")}
+          </button>
+        </section>
+      )}
 
       {failedChecks && (
         <section className={styles.preflight}>

@@ -38,7 +38,13 @@ const task: TaskRecord = {
 
 test("renders stages and metadata", async () => {
   const api: Partial<ApiClient> = { showTask: vi.fn().mockResolvedValue(task) };
-  renderWithConnection(<TaskDetailView project="default" taskId="t1" onBack={() => {}} />, {
+  renderWithConnection(<TaskDetailView
+      project="default"
+      taskId="t1"
+      onBack={() => {}}
+      onOpenSubtitleEditor={() => {}}
+      onOpenStyleEditor={() => {}}
+    />, {
     api,
   });
   await waitFor(() => expect(screen.getByText("t1")).toBeInTheDocument());
@@ -50,7 +56,13 @@ test("renders stages and metadata", async () => {
 test("run button queues the task", async () => {
   const runTask = vi.fn().mockResolvedValue({ queued: true });
   const api: Partial<ApiClient> = { showTask: vi.fn().mockResolvedValue(task), runTask };
-  renderWithConnection(<TaskDetailView project="default" taskId="t1" onBack={() => {}} />, {
+  renderWithConnection(<TaskDetailView
+      project="default"
+      taskId="t1"
+      onBack={() => {}}
+      onOpenSubtitleEditor={() => {}}
+      onOpenStyleEditor={() => {}}
+    />, {
     api,
   });
   await waitFor(() => expect(screen.getByText("執行")).toBeEnabled());
@@ -70,7 +82,13 @@ test("preflight failure offers skip and re-run", async () => {
     .mockRejectedValueOnce(new ApiError(409, detail))
     .mockResolvedValueOnce({ queued: true });
   const api: Partial<ApiClient> = { showTask: vi.fn().mockResolvedValue(task), runTask };
-  renderWithConnection(<TaskDetailView project="default" taskId="t1" onBack={() => {}} />, {
+  renderWithConnection(<TaskDetailView
+      project="default"
+      taskId="t1"
+      onBack={() => {}}
+      onOpenSubtitleEditor={() => {}}
+      onOpenStyleEditor={() => {}}
+    />, {
     api,
   });
   await waitFor(() => expect(screen.getByText("執行")).toBeEnabled());
@@ -86,10 +104,52 @@ test("preflight failure offers skip and re-run", async () => {
 test("cancel button cancels the task", async () => {
   const cancelTask = vi.fn().mockResolvedValue({ canceled: true });
   const api: Partial<ApiClient> = { showTask: vi.fn().mockResolvedValue(task), cancelTask };
-  renderWithConnection(<TaskDetailView project="default" taskId="t1" onBack={() => {}} />, {
+  renderWithConnection(<TaskDetailView
+      project="default"
+      taskId="t1"
+      onBack={() => {}}
+      onOpenSubtitleEditor={() => {}}
+      onOpenStyleEditor={() => {}}
+    />, {
     api,
   });
   await waitFor(() => expect(screen.getByText("取消任務")).toBeEnabled());
   await userEvent.click(screen.getByText("取消任務"));
   await waitFor(() => expect(cancelTask).toHaveBeenCalledWith("default", "t1"));
+});
+
+test("shows checkpoint banner and opens subtitle editor when waiting_review", async () => {
+  const onOpenSubtitleEditor = vi.fn();
+  const waiting: TaskRecord = { ...task, status: "waiting_review" };
+  const api: Partial<ApiClient> = { showTask: vi.fn().mockResolvedValue(waiting) };
+  renderWithConnection(
+    <TaskDetailView
+      project="default"
+      taskId="t1"
+      onBack={() => {}}
+      onOpenSubtitleEditor={onOpenSubtitleEditor}
+      onOpenStyleEditor={() => {}}
+    />,
+    { api },
+  );
+  expect(await screen.findByText("任務停於人工檢查點")).toBeInTheDocument();
+  await userEvent.click(screen.getByText("開啟字幕編輯器"));
+  expect(onOpenSubtitleEditor).toHaveBeenCalled();
+});
+
+test("style editor entry opens from the header actions", async () => {
+  const onOpenStyleEditor = vi.fn();
+  const api: Partial<ApiClient> = { showTask: vi.fn().mockResolvedValue(task) };
+  renderWithConnection(
+    <TaskDetailView
+      project="default"
+      taskId="t1"
+      onBack={() => {}}
+      onOpenSubtitleEditor={() => {}}
+      onOpenStyleEditor={onOpenStyleEditor}
+    />,
+    { api },
+  );
+  await userEvent.click(await screen.findByText("字幕樣式"));
+  expect(onOpenStyleEditor).toHaveBeenCalled();
 });

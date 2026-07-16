@@ -5,6 +5,8 @@ import { t } from "./i18n";
 import { ConnectionProvider, useConnection } from "./lib/connection";
 import { BudgetView } from "./views/BudgetView";
 import { SettingsView } from "./views/SettingsView";
+import { StyleEditorView } from "./views/StyleEditorView";
+import { SubtitleEditorView } from "./views/SubtitleEditorView";
 import { TaskDetailView } from "./views/TaskDetailView";
 import { TasksView } from "./views/TasksView";
 import styles from "./App.module.css";
@@ -12,6 +14,8 @@ import styles from "./App.module.css";
 export type View =
   | { name: "tasks" }
   | { name: "task"; project: string; taskId: string }
+  | { name: "subtitle-editor"; project: string; taskId: string }
+  | { name: "style-editor"; project: string; taskId: string }
   | { name: "budget" }
   | { name: "settings" };
 
@@ -41,7 +45,10 @@ function ConnectionGate() {
 function Main() {
   const conn = useConnection();
   const [view, setView] = useState<View>({ name: "tasks" });
-  const active: NavKey = view.name === "task" ? "tasks" : view.name;
+  const active: NavKey =
+    view.name === "task" || view.name === "subtitle-editor" || view.name === "style-editor"
+      ? "tasks"
+      : view.name;
   return (
     <AppShell active={active} onNavigate={(key) => setView({ name: key } as View)}>
       {conn.status !== "ready" ? (
@@ -53,6 +60,24 @@ function Main() {
           project={view.project}
           taskId={view.taskId}
           onBack={() => setView({ name: "tasks" })}
+          onOpenSubtitleEditor={() =>
+            setView({ name: "subtitle-editor", project: view.project, taskId: view.taskId })
+          }
+          onOpenStyleEditor={() =>
+            setView({ name: "style-editor", project: view.project, taskId: view.taskId })
+          }
+        />
+      ) : view.name === "subtitle-editor" ? (
+        <SubtitleEditorView
+          project={view.project}
+          taskId={view.taskId}
+          onBack={() => setView({ name: "task", project: view.project, taskId: view.taskId })}
+        />
+      ) : view.name === "style-editor" ? (
+        <StyleEditorView
+          project={view.project}
+          taskId={view.taskId}
+          onBack={() => setView({ name: "task", project: view.project, taskId: view.taskId })}
         />
       ) : view.name === "budget" ? (
         <BudgetView />

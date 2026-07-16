@@ -82,6 +82,29 @@
   cursor: default;
 }
 
+.checkpoint {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  background: var(--accent-soft);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius-m);
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+.checkpoint .sectionTitle {
+  margin-bottom: 0;
+  color: var(--text-primary);
+}
+
+.checkpointHint {
+  margin: 4px 0 0;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
 .card {
   margin-bottom: 16px;
   padding: 20px;

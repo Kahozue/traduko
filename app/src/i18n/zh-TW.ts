@@ -86,4 +86,8 @@ export const zhTW = {
   "editor.style.noFfmpeg": "核心未偵測到 ffmpeg，無法產生精確幀",
   "editor.style.save": "儲存樣式",
   "editor.style.saved": "樣式已儲存",
+  "task.checkpoint.title": "任務停於人工檢查點",
+  "task.checkpoint.hint": "可開啟字幕編輯器修改譯稿，存回後按執行自該階段續跑。",
+  "task.openSubtitleEditor": "開啟字幕編輯器",
+  "task.openStyleEditor": "字幕樣式",
 } as const;
