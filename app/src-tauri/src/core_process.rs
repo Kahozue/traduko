@@ -31,10 +31,34 @@ fn core_command() -> Command {
         .ok()
         .and_then(|exe| exe.parent().map(|d| d.to_path_buf()))
         .and_then(|dir| find_core_binary(&dir));
-    match sidecar {
+    let mut command = match sidecar {
         Some(path) => Command::new(path),
         None => Command::new("traduko"),
+    };
+    command.env("PATH", augmented_path());
+    command
+}
+
+/// A GUI app launched from Finder/Dock inherits a minimal PATH that omits
+/// Homebrew and other common install locations, so the core cannot find
+/// ffmpeg/ffprobe. Prepend the usual tool directories to whatever PATH we
+/// were given.
+fn augmented_path() -> String {
+    let extra = [
+        "/opt/homebrew/bin",
+        "/usr/local/bin",
+        "/opt/local/bin",
+        "/usr/bin",
+        "/bin",
+    ];
+    let current = std::env::var("PATH").unwrap_or_default();
+    let mut parts: Vec<&str> = extra.to_vec();
+    for entry in current.split(':').filter(|segment| !segment.is_empty()) {
+        if !parts.contains(&entry) {
+            parts.push(entry);
+        }
     }
+    parts.join(":")
 }
 
 #[tauri::command]
@@ -79,5 +103,18 @@ mod tests {
         let bin = dir.path().join("traduko-core");
         std::fs::write(&bin, b"stub").unwrap();
         assert_eq!(find_core_binary(dir.path()), Some(bin));
+    }
+
+    #[test]
+    fn augmented_path_prepends_homebrew_without_duplicates() {
+        let path = augmented_path();
+        let dirs: Vec<&str> = path.split(':').collect();
+        assert!(dirs.contains(&"/opt/homebrew/bin"));
+        assert!(dirs.contains(&"/usr/local/bin"));
+        // No directory appears twice even if the inherited PATH overlaps.
+        let mut seen = std::collections::HashSet::new();
+        for dir in dirs {
+            assert!(seen.insert(dir), "duplicate path entry: {dir}");
+        }
     }
 }

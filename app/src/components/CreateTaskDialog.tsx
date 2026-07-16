@@ -40,7 +40,36 @@ export function CreateTaskDialog({
   });
 
   async function pickFile(): Promise<void> {
-    const chosen = await open({ multiple: false });
+    const chosen = await open({
+      multiple: false,
+      filters: [
+        {
+          name: t("create.fileFilter"),
+          // Subtitle inputs plus the common video/audio containers the AV
+          // pipeline can extract audio from. Keeps users from picking a .png
+          // and hitting an opaque ingest failure downstream.
+          extensions: [
+            "srt",
+            "vtt",
+            "ass",
+            "txt",
+            "mp4",
+            "mkv",
+            "mov",
+            "webm",
+            "avi",
+            "flv",
+            "m4v",
+            "mp3",
+            "wav",
+            "m4a",
+            "aac",
+            "flac",
+            "ogg",
+          ],
+        },
+      ],
+    });
     if (typeof chosen === "string") setInputPath(chosen);
   }
 

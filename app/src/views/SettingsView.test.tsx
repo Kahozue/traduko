@@ -115,3 +115,13 @@ test("sync now triggers a sync run", async () => {
   await userEvent.click(await screen.findByRole("button", { name: "立即同步" }));
   await waitFor(() => expect(runSync).toHaveBeenCalled());
 });
+
+test("config from an older core without a sync section does not crash", async () => {
+  const legacy = { ...DEFAULT_CONFIG } as Record<string, unknown>;
+  delete legacy.sync;
+  delete legacy.discord_bot;
+  setup({ getConfig: vi.fn().mockResolvedValue(legacy) });
+  // Reaching the sync section's control proves normalize backfilled it
+  // instead of throwing on draft.sync.mode.
+  expect(await screen.findByLabelText("同步方式")).toBeInTheDocument();
+});

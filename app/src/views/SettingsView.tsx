@@ -16,6 +16,39 @@ function clone(config: CoreConfigDoc): CoreConfigDoc {
   return JSON.parse(JSON.stringify(config)) as CoreConfigDoc;
 }
 
+// An older core may return a config without newer sections (e.g. sync,
+// discord_bot). Backfill them so the settings sections never read into
+// undefined and blank the window; the user can still save and upgrade.
+function normalize(config: CoreConfigDoc): CoreConfigDoc {
+  const next = clone(config);
+  if (!next.budget) next.budget = { task_usd_limit: null, monthly_usd_limit: null };
+  if (!next.llm_providers) next.llm_providers = {};
+  if (!next.notifications) next.notifications = { channels: [] };
+  if (!next.notifications.channels) next.notifications.channels = [];
+  if (!next.discord_bot) {
+    next.discord_bot = {
+      enabled: false,
+      bot_token: "",
+      bot_token_env: "",
+      guild_id: "",
+      channel_id: "",
+      allowed_user_ids: [],
+    };
+  }
+  if (!next.sync) {
+    next.sync = {
+      enabled: false,
+      mode: "folder",
+      folder_path: "",
+      webdav_url: "",
+      webdav_username: "",
+      webdav_password: "",
+      auto_interval_minutes: 0,
+    };
+  }
+  return next;
+}
+
 export function SettingsView() {
   const api = useApi();
   const conn = useConnection();
@@ -62,7 +95,7 @@ export function SettingsView() {
   const [syncValid, setSyncValid] = useState(true);
 
   useEffect(() => {
-    if (data && draft === null) setDraft(clone(data));
+    if (data && draft === null) setDraft(normalize(data));
   }, [data, draft]);
 
   const dirty = useMemo(
@@ -78,14 +111,14 @@ export function SettingsView() {
     mutationFn: () => api.saveConfig(draft as CoreConfigDoc),
     onSuccess: (saved) => {
       queryClient.setQueryData(["config"], saved);
-      setDraft(clone(saved));
+      setDraft(normalize(saved));
       setResetKey((key) => key + 1);
       queryClient.invalidateQueries({ queryKey: ["budget"] });
     },
   });
 
   function discard() {
-    if (data) setDraft(clone(data));
+    if (data) setDraft(normalize(data));
     setNumbersValid(true);
     setProvidersValid(true);
     setChannelsValid(true);

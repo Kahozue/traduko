@@ -1,6 +1,8 @@
 import { useState } from "react";
+import type { ReactNode } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AppShell, type NavKey } from "./components/AppShell";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 import { t } from "./i18n";
 import { ConnectionProvider, useConnection } from "./lib/connection";
 import { BudgetView } from "./views/BudgetView";
@@ -53,9 +55,28 @@ function Main() {
     <AppShell active={active} onNavigate={(key) => setView({ name: key } as View)}>
       {conn.status !== "ready" ? (
         <ConnectionGate />
-      ) : view.name === "tasks" ? (
-        <TasksView onOpenTask={(project, taskId) => setView({ name: "task", project, taskId })} />
-      ) : view.name === "task" ? (
+      ) : (
+        <ErrorBoundary key={view.name}>{renderView(conn, view, setView)}</ErrorBoundary>
+      )}
+    </AppShell>
+  );
+}
+
+function renderView(
+  conn: Extract<ReturnType<typeof useConnection>, { status: "ready" }>,
+  view: View,
+  setView: (view: View) => void,
+): ReactNode {
+  void conn;
+  switch (view.name) {
+    case "tasks":
+      return (
+        <TasksView
+          onOpenTask={(project, taskId) => setView({ name: "task", project, taskId })}
+        />
+      );
+    case "task":
+      return (
         <TaskDetailView
           project={view.project}
           taskId={view.taskId}
@@ -67,25 +88,28 @@ function Main() {
             setView({ name: "style-editor", project: view.project, taskId: view.taskId })
           }
         />
-      ) : view.name === "subtitle-editor" ? (
+      );
+    case "subtitle-editor":
+      return (
         <SubtitleEditorView
           project={view.project}
           taskId={view.taskId}
           onBack={() => setView({ name: "task", project: view.project, taskId: view.taskId })}
         />
-      ) : view.name === "style-editor" ? (
+      );
+    case "style-editor":
+      return (
         <StyleEditorView
           project={view.project}
           taskId={view.taskId}
           onBack={() => setView({ name: "task", project: view.project, taskId: view.taskId })}
         />
-      ) : view.name === "budget" ? (
-        <BudgetView />
-      ) : (
-        <SettingsView />
-      )}
-    </AppShell>
-  );
+      );
+    case "budget":
+      return <BudgetView />;
+    case "settings":
+      return <SettingsView />;
+  }
 }
 
 export default function App() {

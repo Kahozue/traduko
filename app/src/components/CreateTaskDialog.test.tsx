@@ -36,6 +36,20 @@ test("picks file, selects profile and submits", async () => {
   await waitFor(() => expect(onCreated).toHaveBeenCalledWith("default", "t-new"));
 });
 
+test("file picker restricts to subtitle and media extensions", async () => {
+  openMock.mockResolvedValue("/tmp/in.srt");
+  const api: Partial<ApiClient> = { profiles: vi.fn().mockResolvedValue(["av-default"]) };
+  renderWithConnection(<CreateTaskDialog onClose={() => {}} onCreated={() => {}} />, { api });
+  await userEvent.click(screen.getByText("選擇檔案"));
+  const arg = openMock.mock.calls[0][0] as {
+    filters?: { extensions: string[] }[];
+  };
+  const extensions = arg.filters?.[0]?.extensions ?? [];
+  expect(extensions).toContain("srt");
+  expect(extensions).toContain("mp4");
+  expect(extensions).not.toContain("png");
+});
+
 test("close button calls onClose", async () => {
   const api: Partial<ApiClient> = { profiles: vi.fn().mockResolvedValue([]) };
   const onClose = vi.fn();
