@@ -110,6 +110,14 @@ test("config endpoints round trip", async () => {
     budget: { task_usd_limit: null, monthly_usd_limit: null },
     llm_providers: {},
     notifications: { channels: [] },
+    discord_bot: {
+      enabled: false,
+      bot_token: "",
+      bot_token_env: "",
+      guild_id: "",
+      channel_id: "",
+      allowed_user_ids: [],
+    },
   } as CoreConfigDoc;
   const fetchFn = vi.fn().mockResolvedValue(jsonResponse(200, doc));
   const client = new ApiClient("http://127.0.0.1:8686", "tok", fetchFn);

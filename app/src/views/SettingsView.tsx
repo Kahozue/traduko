@@ -6,6 +6,7 @@ import type { CoreConfigDoc } from "../lib/api/types";
 import { BasicsSection } from "../components/settings/BasicsSection";
 import { ProvidersSection } from "../components/settings/ProvidersSection";
 import { ChannelsSection } from "../components/settings/ChannelsSection";
+import { BotSection } from "../components/settings/BotSection";
 import styles from "./SettingsView.module.css";
 
 function clone(config: CoreConfigDoc): CoreConfigDoc {
@@ -25,6 +26,7 @@ export function SettingsView() {
   const [numbersValid, setNumbersValid] = useState(true);
   const [providersValid, setProvidersValid] = useState(true);
   const [channelsValid, setChannelsValid] = useState(true);
+  const [botValid, setBotValid] = useState(true);
 
   useEffect(() => {
     if (data && draft === null) setDraft(clone(data));
@@ -36,7 +38,8 @@ export function SettingsView() {
     [draft, data],
   );
   const projectValid = draft !== null && draft.default_project.trim() !== "";
-  const valid = numbersValid && providersValid && channelsValid && projectValid;
+  const valid =
+    numbersValid && providersValid && channelsValid && botValid && projectValid;
 
   const save = useMutation({
     mutationFn: () => api.saveConfig(draft as CoreConfigDoc),
@@ -53,6 +56,7 @@ export function SettingsView() {
     setNumbersValid(true);
     setProvidersValid(true);
     setChannelsValid(true);
+    setBotValid(true);
     setResetKey((key) => key + 1);
   }
 
@@ -123,6 +127,16 @@ export function SettingsView() {
               }
             }}
             onTest={(channel) => api.testNotification(channel)}
+          />
+          <BotSection
+            key={`bot-${resetKey}`}
+            bot={draft.discord_bot}
+            onChange={(value) => {
+              setBotValid(value !== null);
+              if (value !== null) {
+                setDraft((prev) => (prev ? { ...prev, discord_bot: value } : prev));
+              }
+            }}
           />
           {(dirty || save.isSuccess) && (
             <div className={styles.saveBar}>

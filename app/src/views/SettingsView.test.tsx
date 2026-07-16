@@ -12,6 +12,14 @@ const DEFAULT_CONFIG: CoreConfigDoc = {
   budget: { task_usd_limit: null, monthly_usd_limit: null },
   llm_providers: {},
   notifications: { channels: [] },
+  discord_bot: {
+    enabled: false,
+    bot_token: "",
+    bot_token_env: "",
+    guild_id: "",
+    channel_id: "",
+    allowed_user_ids: [],
+  },
 };
 
 function setup(overrides: Partial<ApiClient> = {}) {
@@ -57,4 +65,11 @@ test("discard restores server values", async () => {
   await userEvent.click(screen.getByRole("button", { name: "放棄變更" }));
   expect(screen.getByLabelText("預設專案")).toHaveValue("default");
   expect(screen.queryByText("有未儲存的變更")).not.toBeInTheDocument();
+});
+
+test("bot section edits mark the draft dirty", async () => {
+  setup();
+  await screen.findByLabelText("預設專案");
+  await userEvent.click(screen.getByLabelText("啟用 Discord bot"));
+  expect(screen.getByText("有未儲存的變更")).toBeInTheDocument();
 });

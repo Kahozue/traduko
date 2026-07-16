@@ -137,12 +137,23 @@ export interface NotificationsConfigDoc {
   [key: string]: unknown;
 }
 
+export interface DiscordBotConfigDoc {
+  enabled: boolean;
+  bot_token: string;
+  bot_token_env: string;
+  guild_id: string;
+  channel_id: string;
+  allowed_user_ids: string[];
+  [key: string]: unknown;
+}
+
 export interface CoreConfigDoc {
   schema_version: number;
   default_project: string;
   budget: BudgetConfigDoc;
   llm_providers: Record<string, ProviderConfigDoc>;
   notifications: NotificationsConfigDoc;
+  discord_bot: DiscordBotConfigDoc;
   [key: string]: unknown;
 }
 
