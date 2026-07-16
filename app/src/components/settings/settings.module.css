@@ -1,0 +1,145 @@
+.section {
+  margin-top: 20px;
+  padding: 20px;
+  border-radius: var(--radius-m);
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-1);
+}
+
+.sectionHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.sectionTitle {
+  margin: 0 0 12px;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.sectionHeader .sectionTitle {
+  margin-bottom: 0;
+}
+
+.card {
+  margin-top: 12px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-s);
+  background: var(--bg-inset);
+}
+
+.cardHeader {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.cardHeader .field {
+  flex: 1;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 10px;
+}
+
+.fieldRow {
+  display: flex;
+  gap: 16px;
+}
+
+.fieldRow .field {
+  flex: 1;
+}
+
+.label {
+  color: var(--text-secondary);
+  font-size: 12.5px;
+}
+
+.input {
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-s);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font-size: 13px;
+}
+
+.inline {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.inline .input {
+  flex: 1;
+}
+
+.error {
+  color: var(--danger);
+  font-size: 12px;
+}
+
+.empty {
+  margin: 8px 0 0;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.secondary {
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-s);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font-size: 12.5px;
+  cursor: pointer;
+  transition: background var(--transition);
+}
+
+.secondary:hover {
+  background: var(--bg-inset);
+}
+
+.typeTag {
+  padding: 4px 10px;
+  border-radius: var(--radius-s);
+  background: var(--bg-inset);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.checkGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px 14px;
+  margin-top: 8px;
+}
+
+.checkItem {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+}
+
+.testResult {
+  font-size: 12.5px;
+  color: var(--text-secondary);
+}
+
+.testError {
+  font-size: 12.5px;
+  color: var(--danger);
+  word-break: break-all;
+}
