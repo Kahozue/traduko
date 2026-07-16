@@ -4,6 +4,7 @@ import { t } from "../i18n";
 import { useApi, useConnection } from "../lib/connection";
 import type { CoreConfigDoc } from "../lib/api/types";
 import { BasicsSection } from "../components/settings/BasicsSection";
+import { ProvidersSection } from "../components/settings/ProvidersSection";
 import styles from "./SettingsView.module.css";
 
 function clone(config: CoreConfigDoc): CoreConfigDoc {
@@ -96,6 +97,16 @@ export function SettingsView() {
               setDraft((prev) => (prev ? { ...prev, budget: value } : prev))
             }
             onValidity={setNumbersValid}
+          />
+          <ProvidersSection
+            key={`providers-${resetKey}`}
+            providers={draft.llm_providers}
+            onChange={(value) => {
+              setProvidersValid(value !== null);
+              if (value !== null) {
+                setDraft((prev) => (prev ? { ...prev, llm_providers: value } : prev));
+              }
+            }}
           />
           {(dirty || save.isSuccess) && (
             <div className={styles.saveBar}>
