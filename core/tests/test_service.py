@@ -16,6 +16,8 @@ from traduko.notify import _CHANNELS, DEFAULT_EVENTS, register_channel, resolve_
 from traduko.service.app import create_app
 from traduko.service.broadcast import WsBroadcaster
 from traduko.service.systemlog import setup_system_log
+from traduko.stages import registry
+from traduko.stages.base import StageContext, StageResult
 
 
 @contextmanager
@@ -101,6 +103,26 @@ def create_task(client, headers, tmp_path: Path, profile: str = "subtitle-transl
     )
     assert response.status_code == 201, response.text
     return response.json()["id"]
+
+
+@registry.register
+class ServiceGateStage:
+    type = "svc-gate"
+    gate = threading.Event()
+    started = threading.Event()
+
+    def run(self, ctx: StageContext) -> StageResult:
+        type(self).started.set()
+        assert type(self).gate.wait(timeout=10)
+        return StageResult()
+
+
+def create_profile(tmp_path: Path, name: str, stages: list[str]) -> None:
+    (tmp_path / "profiles").mkdir(exist_ok=True)
+    stage_lines = "".join(f"  - type: {s}\n" for s in stages)
+    (tmp_path / "profiles" / f"{name}.yaml").write_text(
+        f"schema_version: 1\nname: {name}\nstages:\n{stage_lines}", encoding="utf-8"
+    )
 
 
 def test_create_show_list_roundtrip(tmp_path: Path) -> None:
@@ -439,3 +461,34 @@ def test_notification_test_endpoint_rejects_bad_channel(tmp_path: Path) -> None:
             json={"channel": {"type": "webhook"}},
         )
         assert missing_field.status_code == 422
+
+
+def test_pause_endpoint_validates_task_state(tmp_path: Path) -> None:
+    with service(tmp_path) as (client, headers, token):
+        missing = client.post("/tasks/default/none/pause", headers=headers)
+        assert missing.status_code == 404
+        task_id = create_task(client, headers, tmp_path)
+        idle = client.post(f"/tasks/default/{task_id}/pause", headers=headers)
+        assert idle.status_code == 409
+
+
+def test_pause_endpoint_pauses_running_task(tmp_path: Path) -> None:
+    ServiceGateStage.gate = threading.Event()
+    ServiceGateStage.started = threading.Event()
+    with service(tmp_path) as (client, headers, token):
+        create_profile(tmp_path, "gated", ["svc-gate", "noop"])
+        task_id = create_task(client, headers, tmp_path, profile="gated")
+        url = f"/tasks/default/{task_id}"
+        assert client.post(f"{url}/run", headers=headers).status_code == 202
+        assert ServiceGateStage.started.wait(timeout=5)
+        response = client.post(f"{url}/pause", headers=headers)
+        assert response.status_code == 202
+        assert response.json() == {"pausing": True}
+        ServiceGateStage.gate.set()
+        status = ""
+        for _ in range(250):
+            status = client.get(url, headers=headers).json()["status"]
+            if status == "paused":
+                break
+            time.sleep(0.02)
+        assert status == "paused"

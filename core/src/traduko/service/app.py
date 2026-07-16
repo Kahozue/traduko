@@ -287,6 +287,16 @@ def cancel_task(request: Request, project: str, task_id: str) -> dict:
     return {"canceled": True}
 
 
+@router.post("/tasks/{project}/{task_id}/pause", status_code=202)
+def pause_task(request: Request, project: str, task_id: str) -> dict:
+    ws: Workspace = request.app.state.workspace
+    worker: TaskWorker = request.app.state.worker
+    _load_task(ws, project, task_id)
+    if not worker.pause(project, task_id):
+        raise HTTPException(status_code=409, detail="task not queued or running")
+    return {"pausing": True}
+
+
 @router.get("/profiles")
 def list_profiles(request: Request) -> list[str]:
     ws: Workspace = request.app.state.workspace

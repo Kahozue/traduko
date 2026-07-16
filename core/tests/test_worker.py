@@ -2,7 +2,7 @@ import threading
 import time
 from pathlib import Path
 
-from traduko.models import StageRecord, TaskRecord, TaskStatus
+from traduko.models import StageRecord, StageStatus, TaskRecord, TaskStatus
 from traduko.service.worker import TaskWorker
 from traduko.stages import registry
 from traduko.stages.base import StageContext, StageResult
@@ -118,3 +118,28 @@ def test_cancel_inactive_task_returns_false(tmp_path: Path) -> None:
     ws = Workspace.open(tmp_path)
     worker = TaskWorker(ws)
     assert worker.cancel("p", "missing") is False
+
+
+def test_running_task_can_be_paused(tmp_path: Path) -> None:
+    reset_gate()
+    ws = Workspace.open(tmp_path)
+    worker = TaskWorker(ws)
+    worker.start()
+    try:
+        record = make_task(ws, ["test-gate", "noop"])
+        worker.enqueue("p", record.id)
+        assert GateStage.started.wait(timeout=5)
+        assert worker.pause("p", record.id) is True
+        GateStage.gate.set()
+        paused = wait_status(ws, record.id, {TaskStatus.PAUSED})
+        assert paused.stages[0].status == StageStatus.COMPLETED
+        assert paused.stages[1].status == StageStatus.PENDING
+    finally:
+        GateStage.gate.set()
+        worker.stop()
+
+
+def test_pause_inactive_task_returns_false(tmp_path: Path) -> None:
+    ws = Workspace.open(tmp_path)
+    worker = TaskWorker(ws)
+    assert worker.pause("p", "missing") is False

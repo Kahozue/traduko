@@ -11,7 +11,7 @@ import logging
 import queue
 import threading
 
-from ..executor import CancelToken, PipelineExecutor
+from ..executor import CancelToken, PauseToken, PipelineExecutor
 from ..models import TaskStatus, transition
 from ..workspace import Workspace
 
@@ -23,6 +23,7 @@ class TaskWorker:
         self._ws = ws
         self._queue: queue.Queue[tuple[str, str] | None] = queue.Queue()
         self._cancels: dict[tuple[str, str], CancelToken] = {}
+        self._pauses: dict[tuple[str, str], PauseToken] = {}
         self._lock = threading.Lock()
         self._thread: threading.Thread | None = None
 
@@ -45,12 +46,21 @@ class TaskWorker:
             if key in self._cancels:
                 return False
             self._cancels[key] = CancelToken()
+            self._pauses[key] = PauseToken()
         self._queue.put(key)
         return True
 
     def cancel(self, project: str, task_id: str) -> bool:
         with self._lock:
             token = self._cancels.get((project, task_id))
+        if token is None:
+            return False
+        token.set()
+        return True
+
+    def pause(self, project: str, task_id: str) -> bool:
+        with self._lock:
+            token = self._pauses.get((project, task_id))
         if token is None:
             return False
         token.set()
@@ -73,13 +83,15 @@ class TaskWorker:
             finally:
                 with self._lock:
                     self._cancels.pop(key, None)
+                    self._pauses.pop(key, None)
 
     def _execute(self, project: str, task_id: str) -> None:
         with self._lock:
             cancel = self._cancels[(project, task_id)]
+            pause = self._pauses[(project, task_id)]
         record = self._ws.store.load(project, task_id)
         PipelineExecutor(self._ws.store, self._ws.bus, self._ws.root).run(
-            record, cancel
+            record, cancel, pause
         )
 
     def _mark_failed(self, project: str, task_id: str) -> None:
