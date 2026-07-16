@@ -240,6 +240,35 @@ def read_artifact(
         raise HTTPException(status_code=404, detail=str(error)) from None
 
 
+class ArtifactSaveResult(BaseModel):
+    file: str
+    stages_reset: int
+
+
+@router.put("/tasks/{project}/{task_id}/artifacts/{name}")
+def save_artifact(
+    request: Request, project: str, task_id: str, name: str, body: dict
+) -> ArtifactSaveResult:
+    ws: Workspace = request.app.state.workspace
+    record = _load_task(ws, project, task_id)
+    if name == "translation.json":
+        try:
+            validate_translation_payload(body)
+        except ArtifactValidationError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from None
+    store = _artifact_store(ws, project, task_id)
+    path = store.write_next_json(name, body)
+    stages_reset = reset_stages_after_artifact(record, name)
+    # Editing a finished task's artifact must let it run again. COMPLETED is a
+    # terminal state the transition map won't leave and _RUNNABLE excludes, so
+    # reopen to PENDING directly. This is an edit-driven reopen, not a runtime
+    # transition — hence the direct assign rather than transition().
+    if stages_reset > 0 and record.status == TaskStatus.COMPLETED:
+        record.status = TaskStatus.PENDING
+    ws.store.save(record)
+    return ArtifactSaveResult(file=path.name, stages_reset=stages_reset)
+
+
 def create_app(data_root: Path | None = None) -> FastAPI:
     workspace = Workspace.open(data_root)
     worker = TaskWorker(workspace)
