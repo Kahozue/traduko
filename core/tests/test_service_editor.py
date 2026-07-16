@@ -2,7 +2,11 @@ import json
 from contextlib import contextmanager
 from pathlib import Path
 
+import pytest
+import yaml
 from fastapi.testclient import TestClient
+
+from traduko.media import ffmpeg_available
 
 from traduko.artifacts import ArtifactStore
 from traduko.models import StageStatus, TaskRecord
@@ -134,3 +138,56 @@ def test_save_invalid_translation_returns_422(tmp_path):
             headers=headers, json={"segments": [{"id": 1, "source": "hi"}]},
         )
         assert resp.status_code == 422
+
+
+def test_get_styles_returns_default_preset(tmp_path):
+    with service(tmp_path) as (client, headers):
+        resp = client.get("/styles", headers=headers)
+        assert resp.status_code == 200
+        assert "default" in resp.json()
+
+
+def test_put_styles_persists(tmp_path):
+    with service(tmp_path) as (client, headers):
+        preset = {"default": {"font_name": "Arial", "font_size": 60,
+                              "primary_color": "#FFFFFF", "outline_color": "#000000",
+                              "outline": 2.0, "shadow": 0.0, "bold": False,
+                              "alignment": 2, "margin_v": 40}}
+        resp = client.put("/styles", headers=headers, json=preset)
+        assert resp.status_code == 200
+        saved = yaml.safe_load((tmp_path / "config" / "styles.yaml").read_text())
+        assert saved["default"]["font_size"] == 60
+
+
+def test_render_frame_without_ffmpeg_returns_503(tmp_path, monkeypatch):
+    monkeypatch.setattr("traduko.service.app.ffmpeg_available", lambda: False)
+    with service(tmp_path) as (client, headers):
+        (tmp_path / "in.srt").write_text(SRT, encoding="utf-8")
+        task = client.post(
+            "/tasks", headers=headers,
+            json={"input_path": str(tmp_path / "in.srt"), "profile": "subtitle-translate"},
+        ).json()
+        resp = client.post(
+            f"/tasks/{task['project']}/{task['id']}/render-frame",
+            headers=headers,
+            json={"style": {"font_size": 48}, "text": "hi"},
+        )
+        assert resp.status_code == 503
+
+
+@pytest.mark.skipif(not ffmpeg_available(), reason="ffmpeg not installed")
+def test_render_frame_returns_png(tmp_path):
+    with service(tmp_path) as (client, headers):
+        (tmp_path / "in.srt").write_text(SRT, encoding="utf-8")
+        task = client.post(
+            "/tasks", headers=headers,
+            json={"input_path": str(tmp_path / "in.srt"), "profile": "subtitle-translate"},
+        ).json()
+        resp = client.post(
+            f"/tasks/{task['project']}/{task['id']}/render-frame",
+            headers=headers,
+            json={"style": {"font_size": 48, "primary_color": "#FFEE00"}, "text": "Hi 世界"},
+        )
+        assert resp.status_code == 200
+        assert resp.headers["content-type"] == "image/png"
+        assert resp.content[:8] == b"\x89PNG\r\n\x1a\n"

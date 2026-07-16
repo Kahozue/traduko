@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import logging
 import secrets
+import tempfile
 from contextlib import asynccontextmanager
 from dataclasses import asdict
 from pathlib import Path
@@ -24,7 +25,10 @@ from fastapi import (
     WebSocketDisconnect,
 )
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
 from pydantic import BaseModel
+
+import yaml
 
 from ..artifacts import (
     ArtifactStore,
@@ -35,10 +39,13 @@ from ..budget import BudgetMeter
 from ..eventlog import EventLogger
 from ..executor import reset_stages_after_artifact
 from ..events import Event
+from ..media import MediaError, ffmpeg_available
 from ..models import InvalidTransition, TaskRecord, TaskStatus, transition
 from ..notify import Notifier
 from ..preflight import run_preflight
 from ..profiles import load_profile, stage_records_from
+from ..styles import SubtitleStyle
+from ..styles_render import render_style_frame
 from ..workspace import Workspace
 from .auth import load_or_create_token
 from .broadcast import WsBroadcaster
@@ -267,6 +274,56 @@ def save_artifact(
         record.status = TaskStatus.PENDING
     ws.store.save(record)
     return ArtifactSaveResult(file=path.name, stages_reset=stages_reset)
+
+
+@router.get("/styles")
+def get_styles(request: Request) -> dict:
+    ws: Workspace = request.app.state.workspace
+    path = ws.root / "config" / "styles.yaml"
+    if not path.exists():
+        return {}
+    return yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+
+
+@router.put("/styles")
+def put_styles(request: Request, body: dict) -> dict:
+    ws: Workspace = request.app.state.workspace
+    path = ws.root / "config" / "styles.yaml"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        yaml.safe_dump(body, allow_unicode=True, sort_keys=False), encoding="utf-8"
+    )
+    return {"saved": True}
+
+
+class RenderFrameRequest(BaseModel):
+    style: dict
+    text: str
+    width: int = 1280
+    height: int = 720
+    background: str = "black"
+
+
+@router.post("/tasks/{project}/{task_id}/render-frame")
+def render_frame(
+    request: Request, project: str, task_id: str, body: RenderFrameRequest
+) -> Response:
+    ws: Workspace = request.app.state.workspace
+    _load_task(ws, project, task_id)
+    if not ffmpeg_available():
+        raise HTTPException(status_code=503, detail="ffmpeg not available")
+    style = SubtitleStyle(**body.style)
+    with tempfile.TemporaryDirectory() as work:
+        out = Path(work) / "frame.png"
+        try:
+            render_style_frame(
+                style, body.text, out,
+                width=body.width, height=body.height,
+                background=body.background, work_dir=Path(work),
+            )
+        except MediaError as error:
+            raise HTTPException(status_code=500, detail=str(error)) from None
+        return Response(content=out.read_bytes(), media_type="image/png")
 
 
 def create_app(data_root: Path | None = None) -> FastAPI:
