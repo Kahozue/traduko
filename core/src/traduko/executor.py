@@ -111,3 +111,17 @@ class PipelineExecutor:
         self.store.save(record)
         self._emit(record, "task_completed", {"stage_total": stage_total})
         return record
+
+def reset_stages_after_artifact(record: TaskRecord, artifact_name: str) -> int:
+    producer = -1
+    for i, stage in enumerate(record.stages):
+        if any(a.endswith(f"-{artifact_name}") for a in stage.artifacts):
+            producer = i
+    if producer < 0:
+        return 0
+    reset = 0
+    for stage in record.stages[producer + 1 :]:
+        if stage.status != StageStatus.PENDING:
+            stage.status = StageStatus.PENDING
+            reset += 1
+    return reset

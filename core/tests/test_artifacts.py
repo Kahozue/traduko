@@ -3,7 +3,11 @@ from pathlib import Path
 
 import pytest
 
-from traduko.artifacts import ArtifactStore
+from traduko.artifacts import (
+    ArtifactStore,
+    ArtifactValidationError,
+    validate_translation_payload,
+)
 
 
 def test_numbered_path(tmp_path: Path) -> None:
@@ -73,3 +77,21 @@ def test_read_named_json_reads_exact_file(tmp_path):
     store.write_json(5, "translation.json", {"segments": [{"id": 1}]})
     data = store.read_named_json("05-translation.json")
     assert data["segments"] == [{"id": 1}]
+
+
+def test_validate_translation_payload_accepts_well_formed():
+    validate_translation_payload(
+        {"segments": [{"id": 1, "start": 0.0, "end": 1.0, "source": "hi", "target": "嗨"}]}
+    )
+
+
+def test_validate_translation_payload_rejects_missing_target():
+    with pytest.raises(ArtifactValidationError):
+        validate_translation_payload(
+            {"segments": [{"id": 1, "start": 0.0, "end": 1.0, "source": "hi"}]}
+        )
+
+
+def test_validate_translation_payload_rejects_non_list_segments():
+    with pytest.raises(ArtifactValidationError):
+        validate_translation_payload({"segments": "nope"})

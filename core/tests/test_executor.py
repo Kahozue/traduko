@@ -3,8 +3,8 @@ from pathlib import Path
 import pytest
 
 from traduko.events import Event, EventBus
-from traduko.executor import CancelToken, PipelineExecutor
-from traduko.models import StageStatus, TaskStatus
+from traduko.executor import CancelToken, PipelineExecutor, reset_stages_after_artifact
+from traduko.models import StageRecord, StageStatus, TaskRecord, TaskStatus
 from traduko.profiles import Profile, ProfileStage, stage_records_from
 from traduko.stages import base, registry
 from traduko.tasks import TaskStore
@@ -152,3 +152,36 @@ def test_stage_context_carries_bus(tmp_path: Path) -> None:
     store, bus, events, record = build(tmp_path, [ProfileStage(type="bus_probe")])
     result = PipelineExecutor(store, bus, tmp_path).run(record)
     assert result.status == TaskStatus.COMPLETED
+
+
+def _record_with_stages():
+    stages = [
+        StageRecord(type="translate", status=StageStatus.COMPLETED,
+                    artifacts=["05-translation.json"]),
+        StageRecord(type="proofread", status=StageStatus.COMPLETED,
+                    artifacts=["06-translation.json", "06-proofread-report.json"]),
+        StageRecord(type="export_subtitles", status=StageStatus.COMPLETED,
+                    artifacts=["07-output.srt"]),
+    ]
+    return TaskRecord(
+        id="t1", project="p", input_path="/in.srt", profile="x",
+        status=TaskStatus.COMPLETED, stages=stages,
+        created_at="2026-07-16T00:00:00+00:00",
+        updated_at="2026-07-16T00:00:00+00:00",
+    )
+
+
+def test_reset_after_translation_resets_downstream_only():
+    record = _record_with_stages()
+    count = reset_stages_after_artifact(record, "translation.json")
+    assert count == 1
+    assert record.stages[0].status == StageStatus.COMPLETED
+    assert record.stages[1].status == StageStatus.COMPLETED
+    assert record.stages[2].status == StageStatus.PENDING
+
+
+def test_reset_after_unknown_artifact_changes_nothing():
+    record = _record_with_stages()
+    count = reset_stages_after_artifact(record, "nonexistent.json")
+    assert count == 0
+    assert [s.status for s in record.stages] == [StageStatus.COMPLETED] * 3

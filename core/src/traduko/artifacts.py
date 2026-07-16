@@ -7,6 +7,30 @@ from pathlib import Path
 from .fsutil import atomic_write_text
 
 
+class ArtifactValidationError(ValueError):
+    pass
+
+
+def validate_translation_payload(payload: dict) -> None:
+    segments = payload.get("segments")
+    if not isinstance(segments, list):
+        raise ArtifactValidationError("segments must be a list")
+    for i, seg in enumerate(segments):
+        if not isinstance(seg, dict):
+            raise ArtifactValidationError(f"segment {i} is not an object")
+        for key, types in (
+            ("id", int),
+            ("start", (int, float)),
+            ("end", (int, float)),
+            ("source", str),
+            ("target", str),
+        ):
+            if key not in seg or not isinstance(seg[key], types):
+                raise ArtifactValidationError(
+                    f"segment {i} missing or bad field: {key}"
+                )
+
+
 class ArtifactStore:
     def __init__(self, task_dir: Path) -> None:
         self.dir = task_dir / "artifacts"
