@@ -1,5 +1,6 @@
 import { expect, test, vi } from "vitest";
 import { ApiClient, ApiError } from "./client";
+import type { CoreConfigDoc } from "./types";
 
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -100,4 +101,39 @@ test("renameTask PATCHes the name", async () => {
   expect(url).toBe("http://x/tasks/p/t1");
   expect(init.method).toBe("PATCH");
   expect(JSON.parse(init.body as string)).toEqual({ name: "新名" });
+});
+
+test("config endpoints round trip", async () => {
+  const doc = {
+    schema_version: 1,
+    default_project: "default",
+    budget: { task_usd_limit: null, monthly_usd_limit: null },
+    llm_providers: {},
+    notifications: { channels: [] },
+  } as CoreConfigDoc;
+  const fetchFn = vi.fn().mockResolvedValue(jsonResponse(200, doc));
+  const client = new ApiClient("http://127.0.0.1:8686", "tok", fetchFn);
+  await client.getConfig();
+  expect(fetchFn.mock.calls[0][0]).toBe("http://127.0.0.1:8686/config");
+  await client.saveConfig(doc);
+  const [url, init] = fetchFn.mock.calls[1];
+  expect(url).toBe("http://127.0.0.1:8686/config");
+  expect(init.method).toBe("PUT");
+  expect(JSON.parse(init.body).default_project).toBe("default");
+});
+
+test("test notification posts channel body", async () => {
+  const fetchFn = vi.fn().mockResolvedValue(jsonResponse(200, { ok: true }));
+  const client = new ApiClient("http://127.0.0.1:8686", "tok", fetchFn);
+  const result = await client.testNotification({
+    type: "discord",
+    webhook_url: "https://discord.example/hook",
+  });
+  expect(result.ok).toBe(true);
+  const [url, init] = fetchFn.mock.calls[0];
+  expect(url).toBe("http://127.0.0.1:8686/config/notifications/test");
+  expect(init.method).toBe("POST");
+  expect(JSON.parse(init.body)).toEqual({
+    channel: { type: "discord", webhook_url: "https://discord.example/hook" },
+  });
 });

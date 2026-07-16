@@ -121,3 +121,32 @@ export interface SubtitleStylePreset {
   alignment: number;
   margin_v: number;
 }
+
+export type ProviderConfigDoc = Record<string, unknown>;
+
+export type ChannelConfigDoc = Record<string, unknown>;
+
+export interface BudgetConfigDoc {
+  task_usd_limit: number | null;
+  monthly_usd_limit: number | null;
+  [key: string]: unknown;
+}
+
+export interface NotificationsConfigDoc {
+  channels: ChannelConfigDoc[];
+  [key: string]: unknown;
+}
+
+export interface CoreConfigDoc {
+  schema_version: number;
+  default_project: string;
+  budget: BudgetConfigDoc;
+  llm_providers: Record<string, ProviderConfigDoc>;
+  notifications: NotificationsConfigDoc;
+  [key: string]: unknown;
+}
+
+export interface NotifyTestResult {
+  ok: boolean;
+  error?: string;
+}

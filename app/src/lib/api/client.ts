@@ -1,6 +1,9 @@
 import type {
   ArtifactListItem,
   BudgetInfo,
+  ChannelConfigDoc,
+  CoreConfigDoc,
+  NotifyTestResult,
   PreflightReport,
   SubtitleStylePreset,
   TaskIndexRow,
@@ -54,6 +57,21 @@ export class ApiClient {
 
   budget(): Promise<BudgetInfo> {
     return this.request("/budget");
+  }
+
+  getConfig(): Promise<CoreConfigDoc> {
+    return this.request("/config");
+  }
+
+  saveConfig(body: CoreConfigDoc): Promise<CoreConfigDoc> {
+    return this.request("/config", { method: "PUT", body: JSON.stringify(body) });
+  }
+
+  testNotification(channel: ChannelConfigDoc): Promise<NotifyTestResult> {
+    return this.request("/config/notifications/test", {
+      method: "POST",
+      body: JSON.stringify({ channel }),
+    });
   }
 
   profiles(): Promise<string[]> {
