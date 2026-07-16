@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 import threading
 import time
 from contextlib import contextmanager
@@ -12,6 +13,7 @@ from starlette.websockets import WebSocketDisconnect
 from traduko.events import Event
 from traduko.service.app import create_app
 from traduko.service.broadcast import WsBroadcaster
+from traduko.service.systemlog import setup_system_log
 
 
 @contextmanager
@@ -259,3 +261,28 @@ def test_ws_streams_bus_events(tmp_path: Path) -> None:
     assert payload["type"] == "task_started"
     assert payload["task_id"] == "t9"
     assert payload["data"] == {"stage_total": 1}
+
+
+def test_system_log_captures_package_logs(tmp_path: Path) -> None:
+    path = setup_system_log(tmp_path)
+    logging.getLogger("traduko.smoke").info("hello system log")
+    assert path == tmp_path / "logs" / "core.log"
+    assert "hello system log" in path.read_text(encoding="utf-8")
+
+
+def test_run_via_api_writes_task_event_log(tmp_path: Path) -> None:
+    write_passthrough(tmp_path)
+    with service(tmp_path) as (client, headers, token):
+        task_id = create_task(client, headers, tmp_path, profile="passthrough")
+        client.post(f"/tasks/default/{task_id}/run", headers=headers)
+        wait_completed(client, headers, "default", task_id)
+    log_path = (
+        tmp_path / "projects" / "default" / "tasks" / task_id
+        / "logs" / "events.jsonl"
+    )
+    types = [
+        json.loads(line)["type"]
+        for line in log_path.read_text(encoding="utf-8").strip().splitlines()
+    ]
+    assert types[0] == "task_started"
+    assert types[-1] == "task_completed"

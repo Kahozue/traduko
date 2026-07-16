@@ -91,3 +91,9 @@ def test_run_gates_on_preflight_failure(tmp_path: Path) -> None:
     )
     assert forced.exit_code == 0, forced.output
     assert "completed" in forced.output
+
+
+def test_serve_command_exists() -> None:
+    result = runner.invoke(app, ["serve", "--help"])
+    assert result.exit_code == 0
+    assert "--port" in result.output

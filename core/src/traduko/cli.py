@@ -119,3 +119,17 @@ def task_show(
     ws: Workspace = ctx.obj
     record = ws.store.load(project or ws.config.default_project, task_id)
     typer.echo(record.model_dump_json(indent=2))
+
+
+@app.command("serve")
+def serve(
+    ctx: typer.Context,
+    host: str = typer.Option("127.0.0.1", "--host", help="Bind address."),
+    port: int = typer.Option(8686, "--port", help="Bind port."),
+) -> None:
+    import uvicorn
+
+    from .service.app import create_app
+
+    ws: Workspace = ctx.obj
+    uvicorn.run(create_app(ws.root), host=host, port=port, log_level="info")

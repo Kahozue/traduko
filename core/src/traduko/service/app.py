@@ -8,6 +8,7 @@ the whole app lifetime; handlers reach it through request.app.state.
 """
 from __future__ import annotations
 
+import logging
 import secrets
 from contextlib import asynccontextmanager
 from dataclasses import asdict
@@ -25,13 +26,16 @@ from fastapi import (
 from pydantic import BaseModel
 
 from ..budget import BudgetMeter
+from ..eventlog import EventLogger
 from ..events import Event
 from ..models import InvalidTransition, TaskRecord, TaskStatus, transition
+from ..notify import Notifier
 from ..preflight import run_preflight
 from ..profiles import load_profile, stage_records_from
 from ..workspace import Workspace
 from .auth import load_or_create_token
 from .broadcast import WsBroadcaster
+from .systemlog import setup_system_log
 from .worker import TaskWorker
 
 
@@ -223,6 +227,11 @@ def create_app(data_root: Path | None = None) -> FastAPI:
     broadcaster = WsBroadcaster()
     broadcaster.attach(workspace.bus)
     app.state.broadcaster = broadcaster
+
+    setup_system_log(workspace.root)
+    EventLogger(workspace.root).attach(workspace.bus)
+    Notifier.from_config(workspace.config).attach(workspace.bus)
+    logging.getLogger(__name__).info("service initialized at %s", workspace.root)
 
     @app.get("/health")
     def health() -> dict:
