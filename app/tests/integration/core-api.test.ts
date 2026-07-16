@@ -176,3 +176,24 @@ test("task name: create with custom name then rename", async () => {
   const row = rows.find((r) => r.id === task.id);
   expect(row?.name).toBe("改名後");
 });
+
+test("config round trip persists budget and provider", async () => {
+  const config = await client.getConfig();
+  expect(config.default_project).toBe("default");
+
+  config.budget.monthly_usd_limit = 30;
+  config.llm_providers["deepseek"] = {
+    type: "openai_compat",
+    base_url: "https://api.deepseek.com/v1",
+    api_key_env: "DEEPSEEK_API_KEY",
+  };
+  const saved = await client.saveConfig(config);
+  expect(saved.budget.monthly_usd_limit).toBe(30);
+
+  const reloaded = await client.getConfig();
+  expect(reloaded.llm_providers["deepseek"]).toMatchObject({
+    base_url: "https://api.deepseek.com/v1",
+  });
+  const budget = await client.budget();
+  expect(budget.monthly_usd_limit).toBe(30);
+});
