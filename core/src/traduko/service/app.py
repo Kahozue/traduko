@@ -8,10 +8,11 @@ the whole app lifetime; handlers reach it through request.app.state.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 import secrets
 import tempfile
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from dataclasses import asdict
 from pathlib import Path
 
@@ -408,6 +409,14 @@ def render_frame(
         return Response(content=out.read_bytes(), media_type="image/png")
 
 
+def _log_bot_exit(task: "asyncio.Task") -> None:
+    if task.cancelled():
+        return
+    error = task.exception()
+    if error is not None:
+        logging.getLogger(__name__).error("discord bot exited: %s", error)
+
+
 def create_app(data_root: Path | None = None) -> FastAPI:
     workspace = Workspace.open(data_root)
     worker = TaskWorker(workspace)
@@ -415,7 +424,25 @@ def create_app(data_root: Path | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         worker.start()
+        bot_task: asyncio.Task | None = None
+        bot_config = workspace.config.discord_bot
+        if bot_config.enabled:
+            if bot_config.resolve_token():
+                # Imported lazily so serving without the bot never pays the
+                # discord.py import cost.
+                from ..bot import runner as bot_runner
+
+                bot_task = asyncio.create_task(bot_runner.run_bot(app, bot_config))
+                bot_task.add_done_callback(_log_bot_exit)
+            else:
+                logging.getLogger(__name__).warning(
+                    "discord bot enabled but no token configured; not starting"
+                )
         yield
+        if bot_task is not None:
+            bot_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await bot_task
         worker.stop()
 
     app = FastAPI(

@@ -492,3 +492,31 @@ def test_pause_endpoint_pauses_running_task(tmp_path: Path) -> None:
                 break
             time.sleep(0.02)
         assert status == "paused"
+
+
+def test_lifespan_starts_bot_when_enabled(tmp_path: Path, monkeypatch) -> None:
+    import traduko.bot.runner as bot_runner
+
+    started: list[str] = []
+
+    async def fake_run_bot(app, config) -> None:
+        started.append(config.bot_token)
+        await asyncio.Event().wait()
+
+    monkeypatch.setattr(bot_runner, "run_bot", fake_run_bot)
+    (tmp_path / "config").mkdir(parents=True)
+    (tmp_path / "config" / "core.yaml").write_text(
+        "discord_bot:\n  enabled: true\n  bot_token: t0k\n", encoding="utf-8"
+    )
+    with service(tmp_path) as (client, headers, token):
+        assert client.get("/health").status_code == 200
+    assert started == ["t0k"]
+
+
+def test_lifespan_skips_bot_without_token(tmp_path: Path) -> None:
+    (tmp_path / "config").mkdir(parents=True)
+    (tmp_path / "config" / "core.yaml").write_text(
+        "discord_bot:\n  enabled: true\n", encoding="utf-8"
+    )
+    with service(tmp_path) as (client, headers, token):
+        assert client.get("/health").status_code == 200
