@@ -7,6 +7,7 @@ import { ApiError } from "../lib/api/client";
 import type { PreflightCheck } from "../lib/api/types";
 import { useApi } from "../lib/connection";
 import { useTaskLive } from "../lib/events/store";
+import { stageStatusLabel, stageTypeLabel } from "../lib/labels";
 import styles from "./TaskDetailView.module.css";
 
 const RUNNABLE = new Set(["pending", "paused", "waiting_review", "failed"]);
@@ -59,6 +60,18 @@ export function TaskDetailView({
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["task", project, taskId] }),
   });
 
+  const [editingName, setEditingName] = useState(false);
+  const [draftName, setDraftName] = useState("");
+
+  const rename = useMutation({
+    mutationFn: (value: string) => api.renameTask(project, taskId, value),
+    onSuccess: () => {
+      setEditingName(false);
+      queryClient.invalidateQueries({ queryKey: ["task", project, taskId] });
+      queryClient.invalidateQueries({ queryKey: ["tasks"] });
+    },
+  });
+
   if (!task) return null;
 
   const completed = task.stages.filter((stage) => stage.status === "completed").length;
@@ -72,8 +85,45 @@ export function TaskDetailView({
       </button>
       <header className={styles.header}>
         <div className={styles.headline}>
-          <h1 className={styles.title}>{task.id}</h1>
-          <StatusBadge status={task.status} />
+          {editingName ? (
+            <>
+              <input
+                className={styles.nameInput}
+                value={draftName}
+                onChange={(e) => setDraftName(e.target.value)}
+              />
+              <button
+                type="button"
+                className={styles.secondary}
+                disabled={draftName.trim() === "" || rename.isPending}
+                onClick={() => rename.mutate(draftName.trim())}
+              >
+                {t("task.renameSave")}
+              </button>
+              <button
+                type="button"
+                className={styles.secondary}
+                onClick={() => setEditingName(false)}
+              >
+                {t("task.renameCancel")}
+              </button>
+            </>
+          ) : (
+            <>
+              <h1 className={styles.title}>{task.name ?? task.id}</h1>
+              <StatusBadge status={task.status} />
+              <button
+                type="button"
+                className={styles.renameBtn}
+                onClick={() => {
+                  setDraftName(task.name ?? task.id);
+                  setEditingName(true);
+                }}
+              >
+                {t("task.rename")}
+              </button>
+            </>
+          )}
         </div>
         <div className={styles.actions}>
           <button
@@ -138,6 +188,10 @@ export function TaskDetailView({
       <section className={styles.card}>
         <dl className={styles.meta}>
           <div>
+            <dt>ID</dt>
+            <dd className={styles.mono}>{task.id}</dd>
+          </div>
+          <div>
             <dt>{t("task.input")}</dt>
             <dd className={styles.mono}>{task.input_path}</dd>
           </div>
@@ -165,8 +219,8 @@ export function TaskDetailView({
               <span className={styles.stageDot} />
               <div className={styles.stageBody}>
                 <div className={styles.stageHead}>
-                  <span className={styles.stageType}>{stage.type}</span>
-                  <span className={styles.stageStatus}>{stage.status}</span>
+                  <span className={styles.stageType}>{stageTypeLabel(stage.type)}</span>
+                  <span className={styles.stageStatus}>{stageStatusLabel(stage.status)}</span>
                 </div>
                 {index === runningIndex && live?.stageProgress && (
                   <ProgressBar value={live.stageProgress.current} max={live.stageProgress.total} />

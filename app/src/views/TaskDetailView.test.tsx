@@ -48,9 +48,9 @@ test("renders stages and metadata", async () => {
     />, {
     api,
   });
-  await waitFor(() => expect(screen.getByText("t1")).toBeInTheDocument());
-  expect(screen.getByText("ingest_subtitle")).toBeInTheDocument();
-  expect(screen.getByText("translate")).toBeInTheDocument();
+  await waitFor(() => expect(screen.getAllByText("t1").length).toBeGreaterThan(0));
+  expect(screen.getByText("讀入字幕")).toBeInTheDocument();
+  expect(screen.getByText("翻譯")).toBeInTheDocument();
   expect(screen.getByText("/tmp/in.srt")).toBeInTheDocument();
 });
 
@@ -153,4 +153,47 @@ test("style editor entry opens from the header actions", async () => {
   );
   await userEvent.click(await screen.findByText("字幕樣式"));
   expect(onOpenStyleEditor).toHaveBeenCalled();
+});
+
+test("renders localized stage labels and named title", async () => {
+  const named = { ...task, name: "第三集" };
+  const api: Partial<ApiClient> = { showTask: vi.fn().mockResolvedValue(named) };
+  renderWithConnection(
+    <TaskDetailView
+      project="default"
+      taskId="t1"
+      onBack={() => {}}
+      onOpenSubtitleEditor={() => {}}
+      onOpenStyleEditor={() => {}}
+    />,
+    { api },
+  );
+  expect(await screen.findByText("第三集")).toBeInTheDocument();
+  expect(screen.getByText("讀入字幕")).toBeInTheDocument();
+  expect(screen.queryByText("ingest_subtitle")).not.toBeInTheDocument();
+});
+
+test("rename flow calls renameTask", async () => {
+  const named = { ...task, name: "第三集" };
+  const renameTask = vi.fn().mockResolvedValue({ ...named, name: "改名後" });
+  const api: Partial<ApiClient> = {
+    showTask: vi.fn().mockResolvedValue(named),
+    renameTask,
+  };
+  renderWithConnection(
+    <TaskDetailView
+      project="default"
+      taskId="t1"
+      onBack={() => {}}
+      onOpenSubtitleEditor={() => {}}
+      onOpenStyleEditor={() => {}}
+    />,
+    { api },
+  );
+  await screen.findByText("第三集");
+  await userEvent.click(screen.getByText("重新命名"));
+  const field = screen.getByDisplayValue("第三集");
+  await userEvent.type(field, "X");
+  await userEvent.click(screen.getByText("儲存"));
+  await waitFor(() => expect(renameTask).toHaveBeenCalledWith("default", "t1", "第三集X"));
 });

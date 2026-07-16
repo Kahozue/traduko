@@ -29,8 +29,31 @@
 
 .title {
   margin: 0;
-  font-family: var(--font-mono);
   font-size: 19px;
+}
+
+.nameInput {
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-s);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 16px;
+}
+
+.renameBtn {
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-s);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.renameBtn:hover {
+  background: var(--bg-inset);
 }
 
 .actions {
