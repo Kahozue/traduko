@@ -13,7 +13,15 @@ from contextlib import asynccontextmanager
 from dataclasses import asdict
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request
+from fastapi import (
+    APIRouter,
+    Depends,
+    FastAPI,
+    HTTPException,
+    Request,
+    WebSocket,
+    WebSocketDisconnect,
+)
 from pydantic import BaseModel
 
 from ..budget import BudgetMeter
@@ -23,6 +31,7 @@ from ..preflight import run_preflight
 from ..profiles import load_profile, stage_records_from
 from ..workspace import Workspace
 from .auth import load_or_create_token
+from .broadcast import WsBroadcaster
 from .worker import TaskWorker
 
 
@@ -34,6 +43,32 @@ def require_token(request: Request) -> None:
 
 
 router = APIRouter(dependencies=[Depends(require_token)])
+
+ws_router = APIRouter()
+
+
+@ws_router.websocket("/ws/events")
+async def ws_events(websocket: WebSocket) -> None:
+    token: str = websocket.app.state.token
+    supplied = websocket.query_params.get("token", "")
+    header = websocket.headers.get("authorization", "")
+    if not (
+        secrets.compare_digest(supplied, token)
+        or secrets.compare_digest(header, f"Bearer {token}")
+    ):
+        await websocket.close(code=1008)
+        return
+    await websocket.accept()
+    broadcaster: WsBroadcaster = websocket.app.state.broadcaster
+    client_id, queue = broadcaster.register()
+    try:
+        while True:
+            payload = await queue.get()
+            await websocket.send_json(payload)
+    except WebSocketDisconnect:
+        pass
+    finally:
+        broadcaster.unregister(client_id)
 
 
 @router.get("/budget")
@@ -185,9 +220,14 @@ def create_app(data_root: Path | None = None) -> FastAPI:
     app.state.worker = worker
     app.state.token = load_or_create_token(workspace.root)
 
+    broadcaster = WsBroadcaster()
+    broadcaster.attach(workspace.bus)
+    app.state.broadcaster = broadcaster
+
     @app.get("/health")
     def health() -> dict:
         return {"status": "ok"}
 
     app.include_router(router)
+    app.include_router(ws_router)
     return app

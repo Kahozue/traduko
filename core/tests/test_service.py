@@ -1,11 +1,17 @@
+import asyncio
 import json
+import threading
 import time
 from contextlib import contextmanager
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
+from starlette.websockets import WebSocketDisconnect
 
+from traduko.events import Event
 from traduko.service.app import create_app
+from traduko.service.broadcast import WsBroadcaster
 
 
 @contextmanager
@@ -212,3 +218,44 @@ def test_cancel_completed_task_is_409(tmp_path: Path) -> None:
         wait_completed(client, headers, "default", task_id)
         response = client.post(f"/tasks/default/{task_id}/cancel", headers=headers)
         assert response.status_code == 409
+
+
+def test_broadcaster_delivers_across_threads() -> None:
+    async def scenario() -> dict:
+        broadcaster = WsBroadcaster()
+        client_id, queue = broadcaster.register()
+        event = Event(type="task_completed", task_id="t1", project="p", data={})
+        thread = threading.Thread(target=broadcaster.handle, args=(event,))
+        thread.start()
+        thread.join()
+        payload = await asyncio.wait_for(queue.get(), timeout=2)
+        broadcaster.unregister(client_id)
+        return payload
+
+    payload = asyncio.run(scenario())
+    assert payload["type"] == "task_completed"
+    assert payload["task_id"] == "t1" and payload["project"] == "p"
+
+
+def test_ws_rejects_bad_token(tmp_path: Path) -> None:
+    with service(tmp_path) as (client, headers, token):
+        with pytest.raises(WebSocketDisconnect):
+            with client.websocket_connect("/ws/events?token=wrong"):
+                pass
+
+
+def test_ws_streams_bus_events(tmp_path: Path) -> None:
+    with service(tmp_path) as (client, headers, token):
+        with client.websocket_connect(f"/ws/events?token={token}") as stream:
+            client.app.state.workspace.bus.publish(
+                Event(
+                    type="task_started",
+                    task_id="t9",
+                    project="p",
+                    data={"stage_total": 1},
+                )
+            )
+            payload = stream.receive_json()
+    assert payload["type"] == "task_started"
+    assert payload["task_id"] == "t9"
+    assert payload["data"] == {"stage_total": 1}
