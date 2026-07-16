@@ -77,3 +77,45 @@ export interface EventPayload {
   project: string;
   data: Record<string, unknown>;
 }
+
+export interface TranslationSegment {
+  id: number;
+  start: number;
+  end: number;
+  source: string;
+  target: string;
+}
+
+export interface TranslationArtifact {
+  schema_version: number;
+  source_language: string;
+  target_language: string;
+  segments: TranslationSegment[];
+}
+
+export interface ArtifactListItem {
+  file: string;
+  index: number;
+  name: string;
+  schema_version: number | null;
+  size: number;
+  mtime: number;
+}
+
+export interface ProofreadFlag {
+  id: number;
+  note: string;
+  round: number;
+}
+
+export interface SubtitleStylePreset {
+  font_name: string;
+  font_size: number;
+  primary_color: string;
+  outline_color: string;
+  outline: number;
+  shadow: number;
+  bold: boolean;
+  alignment: number;
+  margin_v: number;
+}

@@ -1,6 +1,8 @@
 import type {
+  ArtifactListItem,
   BudgetInfo,
   PreflightReport,
+  SubtitleStylePreset,
   TaskIndexRow,
   TaskRecord,
 } from "./types";
@@ -93,6 +95,67 @@ export class ApiClient {
     taskId: string,
   ): Promise<{ canceling?: boolean; canceled?: boolean }> {
     return this.request(`/tasks/${project}/${taskId}/cancel`, { method: "POST" });
+  }
+
+  listArtifacts(project: string, taskId: string): Promise<ArtifactListItem[]> {
+    return this.request(`/tasks/${project}/${taskId}/artifacts`);
+  }
+
+  readArtifact<T>(
+    project: string,
+    taskId: string,
+    name: string,
+    version = "latest",
+  ): Promise<T> {
+    return this.request(`/tasks/${project}/${taskId}/artifacts/${name}?version=${version}`);
+  }
+
+  saveArtifact(
+    project: string,
+    taskId: string,
+    name: string,
+    body: unknown,
+  ): Promise<{ file: string; stages_reset: number }> {
+    return this.request(`/tasks/${project}/${taskId}/artifacts/${name}`, {
+      method: "PUT",
+      body: JSON.stringify(body),
+    });
+  }
+
+  getStyles(): Promise<Record<string, SubtitleStylePreset>> {
+    return this.request("/styles");
+  }
+
+  saveStyles(body: Record<string, SubtitleStylePreset>): Promise<{ saved: boolean }> {
+    return this.request("/styles", { method: "PUT", body: JSON.stringify(body) });
+  }
+
+  async renderFrame(
+    project: string,
+    taskId: string,
+    body: {
+      style: Partial<SubtitleStylePreset>;
+      text: string;
+      width?: number;
+      height?: number;
+      background?: string;
+    },
+  ): Promise<Blob> {
+    const response = await this.fetchFn(
+      `${this.baseUrl}/tasks/${project}/${taskId}/render-frame`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${this.token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(body),
+      },
+    );
+    if (!response.ok) {
+      throw new ApiError(response.status, await response.json().catch(() => null));
+    }
+    return response.blob();
   }
 
   wsUrl(): string {
