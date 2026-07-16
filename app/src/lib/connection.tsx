@@ -28,7 +28,11 @@ type ConnectionValue = ConnectionState & { retry: () => void };
 
 export const ConnectionContext = createContext<ConnectionValue | null>(null);
 
-const HEALTH_ATTEMPTS = 20;
+// The bundled core is a PyInstaller one-file binary: its first cold start
+// unpacks into a cache and can take the better part of a minute before the
+// port is listening. The app spawns and owns that process, so it waits
+// generously rather than telling the user to start the core by hand.
+const HEALTH_ATTEMPTS = 120;
 const HEALTH_INTERVAL_MS = 500;
 
 async function healthOk(baseUrl: string): Promise<boolean> {
