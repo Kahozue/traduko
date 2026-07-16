@@ -1,0 +1,59 @@
+.gate {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  height: 100%;
+  color: var(--text-secondary);
+}
+
+.gateTitle {
+  margin: 0;
+  font-size: 15px;
+  color: var(--text-primary);
+}
+
+.gateHint {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+}
+
+.gateRetry {
+  margin-top: 8px;
+  padding: 8px 16px;
+  border: none;
+  border-radius: var(--radius-s);
+  background: var(--accent);
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: var(--shadow-1);
+  transition: background var(--transition);
+}
+
+.gateRetry:hover {
+  background: var(--accent-strong);
+}
+
+.gatePulse {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  animation: gate-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes gate-pulse {
+  0%,
+  100% {
+    transform: scale(0.85);
+    opacity: 0.6;
+  }
+  50% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
