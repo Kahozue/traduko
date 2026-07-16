@@ -1,3 +1,4 @@
+mod core_process;
 mod paths;
 
 #[derive(serde::Serialize)]
@@ -21,7 +22,17 @@ fn connection_info() -> ConnectionInfo {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![connection_info])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .manage(core_process::CoreProcess(std::sync::Mutex::new(None)))
+        .invoke_handler(tauri::generate_handler![
+            connection_info,
+            core_process::ensure_core_running
+        ])
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app_handle, event| {
+            if let tauri::RunEvent::Exit = event {
+                use tauri::Manager;
+                core_process::kill_managed(&app_handle.state::<core_process::CoreProcess>());
+            }
+        });
 }
