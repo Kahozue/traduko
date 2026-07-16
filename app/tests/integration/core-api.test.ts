@@ -218,3 +218,33 @@ test("pause endpoint rejects idle tasks", async () => {
     status: 409,
   });
 });
+
+test("sync config round trip and status when disabled", async () => {
+  const config = await client.getConfig();
+  expect(config.sync.enabled).toBe(false);
+  expect(config.sync.mode).toBe("folder");
+
+  const cloud = join(dataRoot, "cloud");
+  const edited = {
+    ...config,
+    sync: { ...config.sync, enabled: true, mode: "folder" as const, folder_path: cloud },
+  };
+  const saved = await client.saveConfig(edited);
+  expect(saved.sync.folder_path).toBe(cloud);
+
+  const status = await client.getSyncStatus();
+  expect(status.enabled).toBe(true);
+  expect(status.peers).toEqual([]);
+
+  const report = await client.runSync();
+  expect(report.ok).toBe(true);
+  expect(report.pushed).toContain("config/core.yaml");
+
+  // Restore disabled state so a re-run is a 400.
+  const reset = await client.saveConfig({
+    ...saved,
+    sync: { ...saved.sync, enabled: false },
+  });
+  expect(reset.sync.enabled).toBe(false);
+  await expect(client.runSync()).rejects.toMatchObject({ status: 400 });
+});
