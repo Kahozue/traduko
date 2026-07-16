@@ -32,3 +32,23 @@ export function stageStatusLabel(status: string): string {
   const key = STAGE_STATUS_KEYS[status];
   return key ? t(key) : status;
 }
+
+const EVENT_TYPE_KEYS: Record<string, MessageKey> = {
+  task_started: "event.task_started",
+  stage_started: "event.stage_started",
+  stage_progress: "event.stage_progress",
+  stage_completed: "event.stage_completed",
+  task_waiting_review: "event.task_waiting_review",
+  task_completed: "event.task_completed",
+  task_failed: "event.task_failed",
+  task_canceled: "event.task_canceled",
+  task_paused: "event.task_paused",
+  budget_warning: "event.budget_warning",
+  budget_exceeded: "event.budget_exceeded",
+  agent_round: "event.agent_round",
+};
+
+export function eventTypeLabel(type: string): string {
+  const key = EVENT_TYPE_KEYS[type];
+  return key ? t(key) : type;
+}

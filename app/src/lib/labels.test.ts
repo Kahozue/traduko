@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { stageStatusLabel, stageTypeLabel } from "./labels";
+import { eventTypeLabel, stageStatusLabel, stageTypeLabel } from "./labels";
 
 describe("stageTypeLabel", () => {
   test("maps built-in stage types to zh-TW", () => {
@@ -23,4 +23,9 @@ describe("stageStatusLabel", () => {
   test("falls back to the raw status when unknown", () => {
     expect(stageStatusLabel("weird")).toBe("weird");
   });
+});
+
+test("event type labels localize known types and fall back", () => {
+  expect(eventTypeLabel("task_completed")).toBe("任務完成");
+  expect(eventTypeLabel("mystery_event")).toBe("mystery_event");
 });

@@ -5,6 +5,7 @@ import { useApi, useConnection } from "../lib/connection";
 import type { CoreConfigDoc } from "../lib/api/types";
 import { BasicsSection } from "../components/settings/BasicsSection";
 import { ProvidersSection } from "../components/settings/ProvidersSection";
+import { ChannelsSection } from "../components/settings/ChannelsSection";
 import styles from "./SettingsView.module.css";
 
 function clone(config: CoreConfigDoc): CoreConfigDoc {
@@ -107,6 +108,21 @@ export function SettingsView() {
                 setDraft((prev) => (prev ? { ...prev, llm_providers: value } : prev));
               }
             }}
+          />
+          <ChannelsSection
+            key={`channels-${resetKey}`}
+            channels={draft.notifications.channels}
+            onChange={(value) => {
+              setChannelsValid(value !== null);
+              if (value !== null) {
+                setDraft((prev) =>
+                  prev
+                    ? { ...prev, notifications: { ...prev.notifications, channels: value } }
+                    : prev,
+                );
+              }
+            }}
+            onTest={(channel) => api.testNotification(channel)}
           />
           {(dirty || save.isSuccess) && (
             <div className={styles.saveBar}>
