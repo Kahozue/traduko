@@ -26,8 +26,14 @@ from fastapi import (
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
+from ..artifacts import (
+    ArtifactStore,
+    ArtifactValidationError,
+    validate_translation_payload,
+)
 from ..budget import BudgetMeter
 from ..eventlog import EventLogger
+from ..executor import reset_stages_after_artifact
 from ..events import Event
 from ..models import InvalidTransition, TaskRecord, TaskStatus, transition
 from ..notify import Notifier
@@ -206,6 +212,32 @@ def cancel_task(request: Request, project: str, task_id: str) -> dict:
 def list_profiles(request: Request) -> list[str]:
     ws: Workspace = request.app.state.workspace
     return sorted(path.stem for path in (ws.root / "profiles").glob("*.yaml"))
+
+
+def _artifact_store(ws: Workspace, project: str, task_id: str) -> ArtifactStore:
+    return ArtifactStore(ws.store.task_dir(project, task_id))
+
+
+@router.get("/tasks/{project}/{task_id}/artifacts")
+def list_artifacts(request: Request, project: str, task_id: str) -> list[dict]:
+    ws: Workspace = request.app.state.workspace
+    _load_task(ws, project, task_id)
+    return _artifact_store(ws, project, task_id).list_artifacts()
+
+
+@router.get("/tasks/{project}/{task_id}/artifacts/{name}")
+def read_artifact(
+    request: Request, project: str, task_id: str, name: str, version: str = "latest"
+) -> dict:
+    ws: Workspace = request.app.state.workspace
+    _load_task(ws, project, task_id)
+    store = _artifact_store(ws, project, task_id)
+    try:
+        if version == "latest":
+            return store.read_latest_json(name)
+        return store.read_named_json(f"{int(version):02d}-{name}")
+    except (FileNotFoundError, ValueError) as error:
+        raise HTTPException(status_code=404, detail=str(error)) from None
 
 
 def create_app(data_root: Path | None = None) -> FastAPI:
