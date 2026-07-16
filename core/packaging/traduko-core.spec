@@ -8,6 +8,7 @@ from PyInstaller.utils.hooks import collect_submodules
 hiddenimports = (
     collect_submodules("uvicorn")
     + collect_submodules("websockets")
+    + collect_submodules("discord")
     + collect_submodules("traduko")
 )
 
