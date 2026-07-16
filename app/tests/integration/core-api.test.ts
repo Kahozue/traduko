@@ -197,3 +197,24 @@ test("config round trip persists budget and provider", async () => {
   const budget = await client.budget();
   expect(budget.monthly_usd_limit).toBe(30);
 });
+
+test("discord bot config defaults and round trip", async () => {
+  const config = await client.getConfig();
+  expect(config.discord_bot.enabled).toBe(false);
+  const edited = {
+    ...config,
+    discord_bot: { ...config.discord_bot, allowed_user_ids: ["345678901234567890"] },
+  };
+  const saved = await client.saveConfig(edited);
+  expect(saved.discord_bot.allowed_user_ids).toEqual(["345678901234567890"]);
+});
+
+test("pause endpoint rejects idle tasks", async () => {
+  const record = await client.createTask({
+    input_path: join(dataRoot, "in.srt"),
+    profile: "passthrough",
+  });
+  await expect(client.pauseTask(record.project, record.id)).rejects.toMatchObject({
+    status: 409,
+  });
+});
