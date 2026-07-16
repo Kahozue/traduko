@@ -520,3 +520,88 @@ def test_lifespan_skips_bot_without_token(tmp_path: Path) -> None:
     )
     with service(tmp_path) as (client, headers, token):
         assert client.get("/health").status_code == 200
+
+
+def _enable_sync(client, headers, folder: Path) -> None:
+    config = client.get("/config", headers=headers).json()
+    config["sync"] = {**config["sync"], "enabled": True, "mode": "folder",
+                      "folder_path": str(folder)}
+    assert client.put("/config", headers=headers, json=config).status_code == 200
+
+
+def test_sync_status_and_run_when_disabled(tmp_path: Path) -> None:
+    with service(tmp_path) as (client, headers, token):
+        status = client.get("/sync/status", headers=headers).json()
+        assert status["enabled"] is False
+        assert status["syncing"] is False
+        assert status["last_sync"] is None
+        assert status["conflicts"] == []
+        assert status["peers"] == []
+        assert client.post("/sync/run", headers=headers).status_code == 400
+
+
+def test_sync_run_pushes_and_status_reports(tmp_path: Path) -> None:
+    remote = tmp_path / "cloud"
+    with service(tmp_path / "data") as (client, headers, token):
+        _enable_sync(client, headers, remote)
+        response = client.post("/sync/run", headers=headers)
+        assert response.status_code == 200
+        report = response.json()
+        assert report["ok"] is True
+        assert "config/core.yaml" in report["pushed"]
+        status = client.get("/sync/status", headers=headers).json()
+        assert status["enabled"] is True
+        assert status["last_sync"]
+        assert status["last_result"]["ok"] is True
+
+
+def test_sync_pull_reloads_core_config_in_place(tmp_path: Path) -> None:
+    import os as _os
+    import yaml as _yaml
+
+    remote = tmp_path / "cloud"
+    with service(tmp_path / "data") as (client, headers, token):
+        _enable_sync(client, headers, remote)
+        assert client.post("/sync/run", headers=headers).status_code == 200
+        config = client.get("/config", headers=headers).json()
+        config["default_project"] = "from-remote"
+        remote_yaml = remote / "config" / "core.yaml"
+        remote_yaml.write_text(_yaml.safe_dump(config), encoding="utf-8")
+        future = time.time() + 3600
+        _os.utime(remote_yaml, (future, future))
+        report = client.post("/sync/run", headers=headers).json()
+        assert "config/core.yaml" in report["pulled"]
+        assert (
+            client.get("/config", headers=headers).json()["default_project"]
+            == "from-remote"
+        )
+
+
+def test_sync_resolve_unknown_conflict_is_404(tmp_path: Path) -> None:
+    with service(tmp_path) as (client, headers, token):
+        response = client.post(
+            "/sync/resolve",
+            headers=headers,
+            json={"file": "glossaries/global.csv", "source": "x", "choice": "remote"},
+        )
+        assert response.status_code == 404
+
+
+def test_sync_scheduler_fires_and_stops() -> None:
+    from traduko.service.syncsched import SyncScheduler
+
+    calls: list[float] = []
+    done = threading.Event()
+
+    def tick() -> None:
+        calls.append(time.time())
+        if len(calls) >= 2:
+            done.set()
+
+    scheduler = SyncScheduler(0.01, tick)
+    scheduler.start()
+    assert done.wait(timeout=5)
+    scheduler.stop()
+    count = len(calls)
+    time.sleep(0.05)
+    assert len(calls) == count

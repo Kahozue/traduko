@@ -12,6 +12,7 @@ import asyncio
 import logging
 import secrets
 import tempfile
+import threading
 from contextlib import asynccontextmanager, suppress
 from dataclasses import asdict
 from pathlib import Path
@@ -37,7 +38,7 @@ from ..artifacts import (
     validate_translation_payload,
 )
 from ..budget import BudgetMeter
-from ..config import CoreConfig, save_config
+from ..config import CoreConfig, load_config, save_config
 from ..eventlog import EventLogger
 from ..executor import reset_stages_after_artifact
 from ..events import Event
@@ -48,9 +49,20 @@ from ..preflight import run_preflight
 from ..profiles import load_profile, stage_records_from
 from ..styles import SubtitleStyle
 from ..styles_render import render_style_frame
+from ..sync.engine import (
+    SyncConfigError,
+    SyncEngine,
+    SyncReport,
+    create_target,
+    list_peers,
+    load_conflicts,
+    load_state,
+    resolve_conflict,
+)
 from ..workspace import Workspace
 from .auth import load_or_create_token
 from .broadcast import WsBroadcaster
+from .syncsched import SyncScheduler
 from .systemlog import setup_system_log
 from .worker import TaskWorker
 
@@ -379,6 +391,76 @@ def put_styles(request: Request, body: dict) -> dict:
     return {"saved": True}
 
 
+def _sync_once(app: FastAPI) -> SyncReport | None:
+    """Run one sync pass; returns None when a sync is already in flight.
+
+    A pulled core.yaml is reloaded into the running workspace right away
+    (with the notifier reattached) so budget limits and channels from
+    another machine take effect without a restart.
+    """
+    ws: Workspace = app.state.workspace
+    target = create_target(ws.config.sync)
+    lock: threading.Lock = app.state.sync_lock
+    if not lock.acquire(blocking=False):
+        return None
+    try:
+        report = SyncEngine(ws.root, target).run()
+    finally:
+        lock.release()
+    if "config/core.yaml" in report.pulled + report.merged:
+        ws.config = load_config(ws.root)
+        app.state.detach_notifier()
+        app.state.detach_notifier = Notifier.from_config(ws.config).attach(ws.bus)
+    return report
+
+
+@router.get("/sync/status")
+def sync_status(request: Request) -> dict:
+    ws: Workspace = request.app.state.workspace
+    state = load_state(ws.root)
+    return {
+        "enabled": ws.config.sync.enabled,
+        "mode": ws.config.sync.mode,
+        "syncing": request.app.state.sync_lock.locked(),
+        "last_sync": state.get("last_sync"),
+        "last_result": state.get("last_result"),
+        "conflicts": load_conflicts(ws.root),
+        "peers": list_peers(ws.root),
+    }
+
+
+@router.post("/sync/run")
+def sync_run(request: Request) -> dict:
+    ws: Workspace = request.app.state.workspace
+    if not ws.config.sync.enabled:
+        raise HTTPException(status_code=400, detail="sync is not enabled")
+    try:
+        report = _sync_once(request.app)
+    except SyncConfigError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from None
+    if report is None:
+        raise HTTPException(status_code=409, detail="sync already running")
+    return report.to_dict()
+
+
+class SyncResolveRequest(BaseModel):
+    file: str
+    source: str
+    choice: str
+
+
+@router.post("/sync/resolve")
+def sync_resolve(request: Request, body: SyncResolveRequest) -> dict:
+    ws: Workspace = request.app.state.workspace
+    if body.choice not in ("local", "remote"):
+        raise HTTPException(status_code=422, detail="choice must be local or remote")
+    if not resolve_conflict(ws.root, body.file, body.source, body.choice):
+        raise HTTPException(
+            status_code=404, detail=f"no conflict for {body.file}:{body.source}"
+        )
+    return {"resolved": True}
+
+
 class RenderFrameRequest(BaseModel):
     style: dict
     text: str
@@ -438,7 +520,24 @@ def create_app(data_root: Path | None = None) -> FastAPI:
                 logging.getLogger(__name__).warning(
                     "discord bot enabled but no token configured; not starting"
                 )
+        scheduler: SyncScheduler | None = None
+        sync_config = workspace.config.sync
+        if sync_config.enabled and sync_config.auto_interval_minutes > 0:
+
+            def scheduled_sync() -> None:
+                report = _sync_once(app)
+                if report is not None and not report.ok:
+                    logging.getLogger(__name__).warning(
+                        "scheduled sync failed: %s", report.error
+                    )
+
+            scheduler = SyncScheduler(
+                sync_config.auto_interval_minutes * 60, scheduled_sync
+            )
+            scheduler.start()
         yield
+        if scheduler is not None:
+            scheduler.stop()
         if bot_task is not None:
             bot_task.cancel()
             with suppress(asyncio.CancelledError):
@@ -458,6 +557,7 @@ def create_app(data_root: Path | None = None) -> FastAPI:
     app.state.workspace = workspace
     app.state.worker = worker
     app.state.token = load_or_create_token(workspace.root)
+    app.state.sync_lock = threading.Lock()
 
     broadcaster = WsBroadcaster()
     broadcaster.attach(workspace.bus)
