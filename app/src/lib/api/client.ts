@@ -24,7 +24,9 @@ export class ApiClient {
   constructor(
     private baseUrl: string,
     private token: string,
-    private fetchFn: typeof fetch = fetch,
+    // Bound to globalThis: WebKit's fetch throws "Illegal invocation" when
+    // called with any other receiver, and this.fetchFn(...) would do that.
+    private fetchFn: typeof fetch = fetch.bind(globalThis),
   ) {}
 
   private async request<T>(path: string, init?: RequestInit): Promise<T> {
