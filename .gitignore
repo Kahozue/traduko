@@ -5,3 +5,6 @@ data/
 __pycache__/
 *.pyc
 .pytest_cache/
+core/packaging/build/
+core/packaging/dist/
+app/src-tauri/binaries/
