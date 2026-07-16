@@ -159,3 +159,20 @@ test("edit artifact: save new version reopens task and rerun completes", async (
   );
   expect(latest.segments[0].target).toBe("手動改譯");
 });
+
+test("task name: create with custom name then rename", async () => {
+  writeFileSync(join(dataRoot, "in3.srt"), "1\n00:00:00,000 --> 00:00:01,000\nyo\n", "utf-8");
+  const task = await client.createTask({
+    input_path: join(dataRoot, "in3.srt"),
+    profile: "passthrough",
+    name: "第三集",
+  });
+  expect(task.name).toBe("第三集");
+
+  const renamed = await client.renameTask(task.project, task.id, "改名後");
+  expect(renamed.name).toBe("改名後");
+
+  const rows = await client.listTasks();
+  const row = rows.find((r) => r.id === task.id);
+  expect(row?.name).toBe("改名後");
+});
