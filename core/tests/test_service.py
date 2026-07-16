@@ -390,3 +390,52 @@ def test_put_config_rebuilds_notification_channels(tmp_path: Path) -> None:
             assert client.put("/config", headers=headers, json=config).status_code == 200
             bus.publish(Event(type="task_failed", task_id="t1", project="p", data={}))
             assert [e.type for e in captured] == ["task_completed"]
+
+
+def test_notification_test_endpoint_reports_success(tmp_path: Path) -> None:
+    with memo_channel() as captured:
+        with service(tmp_path) as (client, headers, token):
+            response = client.post(
+                "/config/notifications/test",
+                headers=headers,
+                json={"channel": {"type": "memo"}},
+            )
+            assert response.status_code == 200
+            assert response.json() == {"ok": True}
+            assert captured[0].type == "task_completed"
+
+
+def test_notification_test_endpoint_reports_delivery_failure(tmp_path: Path) -> None:
+    with service(tmp_path) as (client, headers, token):
+        response = client.post(
+            "/config/notifications/test",
+            headers=headers,
+            json={
+                "channel": {
+                    "type": "webhook",
+                    "url": "http://127.0.0.1:9/hook",
+                    "timeout": 0.2,
+                }
+            },
+        )
+        assert response.status_code == 200
+        body = response.json()
+        assert body["ok"] is False
+        assert body["error"]
+
+
+def test_notification_test_endpoint_rejects_bad_channel(tmp_path: Path) -> None:
+    with service(tmp_path) as (client, headers, token):
+        unknown = client.post(
+            "/config/notifications/test",
+            headers=headers,
+            json={"channel": {"type": "carrier_pigeon"}},
+        )
+        assert unknown.status_code == 422
+
+        missing_field = client.post(
+            "/config/notifications/test",
+            headers=headers,
+            json={"channel": {"type": "webhook"}},
+        )
+        assert missing_field.status_code == 422

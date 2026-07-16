@@ -42,7 +42,7 @@ from ..executor import reset_stages_after_artifact
 from ..events import Event
 from ..media import MediaError, ffmpeg_available
 from ..models import InvalidTransition, TaskRecord, TaskStatus, transition
-from ..notify import Notifier, NotifyError
+from ..notify import Notifier, NotifyError, create_channel
 from ..preflight import run_preflight
 from ..profiles import load_profile, stage_records_from
 from ..styles import SubtitleStyle
@@ -127,6 +127,29 @@ def put_config(request: Request, body: dict) -> dict:
     request.app.state.detach_notifier()
     request.app.state.detach_notifier = notifier.attach(ws.bus)
     return config.model_dump()
+
+
+class NotifyTestRequest(BaseModel):
+    channel: dict
+
+
+@router.post("/config/notifications/test")
+def send_test_notification(request: Request, body: NotifyTestRequest) -> dict:
+    try:
+        channel = create_channel(body.channel)
+    except (NotifyError, TypeError) as error:
+        raise HTTPException(status_code=422, detail=str(error)) from None
+    event = Event(
+        type="task_completed",
+        task_id="test",
+        project="traduko",
+        data={"message": "test notification from settings"},
+    )
+    try:
+        channel.send(event)
+    except Exception as error:  # delivery outcome is data, not a server error
+        return {"ok": False, "error": str(error)}
+    return {"ok": True}
 
 
 class TaskCreateRequest(BaseModel):
