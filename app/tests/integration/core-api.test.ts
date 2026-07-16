@@ -96,3 +96,66 @@ test("full round trip: create, run, stream events, complete", async () => {
   const rows = await client.listTasks();
   expect(rows.map((row) => row.id)).toContain(task.id);
 });
+
+test("edit artifact: save new version reopens task and rerun completes", async () => {
+  writeFileSync(
+    join(dataRoot, "profiles", "subtitle-simple.yaml"),
+    [
+      "schema_version: 1",
+      "name: subtitle-simple",
+      "stages:",
+      "  - type: ingest_subtitle",
+      "  - type: translate",
+      "    params:",
+      "      provider: fake",
+      "      target_language: en",
+      "  - type: export_subtitles",
+      "    params:",
+      "      formats: [srt]",
+    ].join("\n"),
+    "utf-8",
+  );
+  writeFileSync(join(dataRoot, "in2.srt"), "1\n00:00:00,000 --> 00:00:01,000\nhola\n", "utf-8");
+
+  const task = await client.createTask({
+    input_path: join(dataRoot, "in2.srt"),
+    profile: "subtitle-simple",
+  });
+  await client.runTask(task.project, task.id);
+
+  const waitForTerminal = async (): Promise<string> => {
+    let status = "";
+    for (let i = 0; i < 100; i += 1) {
+      status = (await client.showTask(task.project, task.id)).status;
+      if (["completed", "failed", "canceled"].includes(status)) break;
+      await sleep(100);
+    }
+    return status;
+  };
+  expect(await waitForTerminal()).toBe("completed");
+
+  const translation = await client.readArtifact<{
+    segments: { id: number; target: string }[];
+  }>(task.project, task.id, "translation.json");
+  expect(translation.segments.length).toBeGreaterThan(0);
+
+  translation.segments[0].target = "手動改譯";
+  const saved = await client.saveArtifact(task.project, task.id, "translation.json", translation);
+  expect(saved.file).toMatch(/-translation\.json$/);
+  expect(saved.stages_reset).toBeGreaterThanOrEqual(1);
+
+  const reopened = await client.showTask(task.project, task.id);
+  expect(reopened.status).toBe("pending");
+  const exportStage = reopened.stages.find((s) => s.type === "export_subtitles");
+  expect(exportStage?.status).toBe("pending");
+
+  await client.runTask(task.project, task.id);
+  expect(await waitForTerminal()).toBe("completed");
+
+  const latest = await client.readArtifact<{ segments: { target: string }[] }>(
+    task.project,
+    task.id,
+    "translation.json",
+  );
+  expect(latest.segments[0].target).toBe("手動改譯");
+});
