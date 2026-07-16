@@ -38,6 +38,8 @@ export const zhTW = {
   "preflight.skipRun": "略過預檢並執行",
   "preflight.dismiss": "關閉",
   "create.title": "新增任務",
+  "create.name": "任務名稱",
+  "create.namePlaceholder": "留空則使用檔名",
   "create.input": "輸入檔",
   "create.pick": "選擇檔案",
   "create.profile": "管線設定檔",

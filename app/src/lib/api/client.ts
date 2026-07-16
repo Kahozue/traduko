@@ -20,6 +20,7 @@ export interface TaskCreateBody {
   input_path: string;
   profile: string;
   project?: string;
+  name?: string;
 }
 
 export class ApiClient {
@@ -95,6 +96,13 @@ export class ApiClient {
     taskId: string,
   ): Promise<{ canceling?: boolean; canceled?: boolean }> {
     return this.request(`/tasks/${project}/${taskId}/cancel`, { method: "POST" });
+  }
+
+  renameTask(project: string, taskId: string, name: string): Promise<TaskRecord> {
+    return this.request(`/tasks/${project}/${taskId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ name }),
+    });
   }
 
   listArtifacts(project: string, taskId: string): Promise<ArtifactListItem[]> {

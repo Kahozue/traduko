@@ -16,6 +16,7 @@ export function CreateTaskDialog({
   const api = useApi();
   const queryClient = useQueryClient();
   const [inputPath, setInputPath] = useState("");
+  const [name, setName] = useState("");
   const [profile, setProfile] = useState("");
   const [project, setProject] = useState("default");
   const { data: profiles } = useQuery({ queryKey: ["profiles"], queryFn: () => api.profiles() });
@@ -25,7 +26,13 @@ export function CreateTaskDialog({
   }, [profiles, profile]);
 
   const create = useMutation({
-    mutationFn: () => api.createTask({ input_path: inputPath, profile, project }),
+    mutationFn: () =>
+      api.createTask({
+        input_path: inputPath,
+        profile,
+        project,
+        name: name.trim() === "" ? undefined : name.trim(),
+      }),
     onSuccess: (task) => {
       queryClient.invalidateQueries({ queryKey: ["tasks"] });
       onCreated(task.project, task.id);
@@ -56,6 +63,15 @@ export function CreateTaskDialog({
               {t("create.pick")}
             </button>
           </div>
+        </label>
+        <label className={styles.label}>
+          {t("create.name")}
+          <input
+            className={styles.input}
+            value={name}
+            placeholder={t("create.namePlaceholder")}
+            onChange={(event) => setName(event.target.value)}
+          />
         </label>
         <label className={styles.label}>
           {t("create.profile")}

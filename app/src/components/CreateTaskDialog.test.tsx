@@ -43,3 +43,22 @@ test("close button calls onClose", async () => {
   await userEvent.click(screen.getByText("取消"));
   expect(onClose).toHaveBeenCalled();
 });
+
+test("submits custom task name when provided", async () => {
+  openMock.mockResolvedValue("/tmp/in.srt");
+  const createTask = vi.fn().mockResolvedValue({ id: "t9", project: "default" });
+  const api: Partial<ApiClient> = {
+    profiles: vi.fn().mockResolvedValue(["subtitle-translate"]),
+    createTask,
+  };
+  renderWithConnection(<CreateTaskDialog onClose={() => {}} onCreated={() => {}} />, { api });
+
+  await waitFor(() => expect(screen.getByRole("combobox")).toBeInTheDocument());
+  await userEvent.click(screen.getByText("選擇檔案"));
+  await waitFor(() => expect(screen.getByDisplayValue("/tmp/in.srt")).toBeInTheDocument());
+  await userEvent.type(screen.getByLabelText("任務名稱"), "第三集");
+  await userEvent.click(screen.getByText("建立"));
+  await waitFor(() =>
+    expect(createTask).toHaveBeenCalledWith(expect.objectContaining({ name: "第三集" })),
+  );
+});

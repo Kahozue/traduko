@@ -84,8 +84,10 @@ export function TasksView({
               {(rows ?? []).map((row) => (
                 <tr key={row.id} onClick={() => onOpenTask(row.project, row.id)}>
                   <td>
-                    <div className={styles.taskId}>{row.id}</div>
-                    <div className={styles.project}>{row.project}</div>
+                    <div className={styles.taskId}>{row.name || row.id}</div>
+                    <div className={styles.project}>
+                      {row.id} · {row.project}
+                    </div>
                   </td>
                   <td>{row.profile}</td>
                   <td>

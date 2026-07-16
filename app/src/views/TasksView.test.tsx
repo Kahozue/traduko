@@ -11,6 +11,7 @@ const rows = [
     project: "default",
     status: "completed" as const,
     profile: "subtitle-translate",
+    name: "第三集",
     created_at: "2026-07-16T10:00:00+00:00",
     updated_at: "2026-07-16T10:05:00+00:00",
   },
@@ -20,9 +21,10 @@ test("lists tasks and opens detail on click", async () => {
   const api: Partial<ApiClient> = { listTasks: vi.fn().mockResolvedValue(rows) };
   const onOpenTask = vi.fn();
   renderWithConnection(<TasksView onOpenTask={onOpenTask} />, { api });
-  await waitFor(() => expect(screen.getByText("20260716-0001")).toBeInTheDocument());
+  await waitFor(() => expect(screen.getByText("第三集")).toBeInTheDocument());
+  expect(screen.getByText(/20260716-0001/)).toBeInTheDocument();
   expect(within(screen.getByRole("table")).getByText("已完成")).toBeInTheDocument();
-  await userEvent.click(screen.getByText("20260716-0001"));
+  await userEvent.click(screen.getByText("第三集"));
   expect(onOpenTask).toHaveBeenCalledWith("default", "20260716-0001");
 });
 

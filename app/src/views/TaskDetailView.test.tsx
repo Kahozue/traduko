@@ -13,6 +13,7 @@ const task: TaskRecord = {
   project: "default",
   input_path: "/tmp/in.srt",
   profile: "subtitle-translate",
+  name: null,
   status: "pending",
   stages: [
     {

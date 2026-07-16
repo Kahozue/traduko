@@ -90,3 +90,14 @@ test("renderFrame returns a blob", async () => {
   const out = await client.renderFrame("p", "t1", { style: { font_size: 48 }, text: "hi" });
   expect(out.type).toBe("image/png");
 });
+
+test("renameTask PATCHes the name", async () => {
+  const fetchFn = vi.fn().mockResolvedValue(jsonResponse(200, { id: "t1", name: "新名" }));
+  const client = new ApiClient("http://x", "tok", fetchFn);
+  const record = await client.renameTask("p", "t1", "新名");
+  expect(record.name).toBe("新名");
+  const [url, init] = fetchFn.mock.calls[0] as [string, RequestInit];
+  expect(url).toBe("http://x/tasks/p/t1");
+  expect(init.method).toBe("PATCH");
+  expect(JSON.parse(init.body as string)).toEqual({ name: "新名" });
+});

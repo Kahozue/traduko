@@ -24,6 +24,7 @@ export interface TaskRecord {
   project: string;
   input_path: string;
   profile: string;
+  name: string | null;
   status: TaskStatus;
   stages: StageRecord[];
   created_at: string;
@@ -35,6 +36,7 @@ export interface TaskIndexRow {
   project: string;
   status: TaskStatus;
   profile: string;
+  name: string;
   created_at: string;
   updated_at: string;
 }
