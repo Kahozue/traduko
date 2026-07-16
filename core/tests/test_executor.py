@@ -3,7 +3,12 @@ from pathlib import Path
 import pytest
 
 from traduko.events import Event, EventBus
-from traduko.executor import CancelToken, PipelineExecutor, reset_stages_after_artifact
+from traduko.executor import (
+    CancelToken,
+    PauseToken,
+    PipelineExecutor,
+    reset_stages_after_artifact,
+)
 from traduko.models import StageRecord, StageStatus, TaskRecord, TaskStatus
 from traduko.profiles import Profile, ProfileStage, stage_records_from
 from traduko.stages import base, registry
@@ -185,3 +190,48 @@ def test_reset_after_unknown_artifact_changes_nothing():
     count = reset_stages_after_artifact(record, "nonexistent.json")
     assert count == 0
     assert [s.status for s in record.stages] == [StageStatus.COMPLETED] * 3
+
+
+def test_pause_before_stage_then_resume(tmp_path: Path) -> None:
+    store, bus, events, record = build(tmp_path, [ProfileStage(type="mark")])
+    pause = PauseToken()
+    pause.set()
+    executor = PipelineExecutor(store, bus, tmp_path)
+    result = executor.run(record, pause=pause)
+    assert result.status == TaskStatus.PAUSED
+    assert result.stages[0].status == StageStatus.PENDING
+    assert events[-1].type == "task_paused"
+    assert events[-1].data["reason"] == "manual"
+    resumed = executor.run(result)
+    assert resumed.status == TaskStatus.COMPLETED
+
+
+def test_pause_set_during_stage_takes_effect_at_boundary(tmp_path: Path) -> None:
+    pause = PauseToken()
+
+    @registry.register
+    class PauseSetterStage:
+        type = "pause_setter"
+
+        def run(self, ctx: base.StageContext) -> base.StageResult:
+            pause.set()
+            return base.StageResult()
+
+    store, bus, events, record = build(
+        tmp_path, [ProfileStage(type="pause_setter"), ProfileStage(type="mark")]
+    )
+    result = PipelineExecutor(store, bus, tmp_path).run(record, pause=pause)
+    assert result.status == TaskStatus.PAUSED
+    assert result.stages[0].status == StageStatus.COMPLETED
+    assert result.stages[1].status == StageStatus.PENDING
+
+
+def test_cancel_wins_over_pause(tmp_path: Path) -> None:
+    store, bus, events, record = build(tmp_path, [ProfileStage(type="mark")])
+    cancel, pause = CancelToken(), PauseToken()
+    cancel.set()
+    pause.set()
+    result = PipelineExecutor(store, bus, tmp_path).run(
+        record, cancel=cancel, pause=pause
+    )
+    assert result.status == TaskStatus.CANCELED

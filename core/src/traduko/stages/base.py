@@ -36,6 +36,7 @@ class StageContext:
     emit_progress: Callable[[int, int], None]
     should_cancel: Callable[[], bool]
     bus: EventBus
+    should_pause: Callable[[], bool] = lambda: False
 
 
 @dataclass

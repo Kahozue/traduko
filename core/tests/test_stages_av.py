@@ -207,3 +207,14 @@ def test_translate_stage_budget_pause(tmp_path: Path) -> None:
     write_segments_artifact(ctx)
     with pytest.raises(base.PauseRequested):
         registry.create("translate").run(ctx)
+
+
+def test_translate_stage_manual_pause_raises_pause_requested(tmp_path: Path) -> None:
+    ctx, _ = make_ctx(
+        tmp_path, tmp_path / "in.srt", stage_index=1,
+        params={"provider": "fake", "target_language": "zh-TW"},
+    )
+    write_segments_artifact(ctx)
+    ctx.should_pause = lambda: True
+    with pytest.raises(base.PauseRequested):
+        registry.create("translate").run(ctx)

@@ -22,6 +22,10 @@ class CancelToken:
         return self._event.is_set()
 
 
+class PauseToken(CancelToken):
+    """Set-once signal asking the pipeline to pause at the next safe point."""
+
+
 class PipelineExecutor:
     def __init__(self, store: TaskStore, bus: EventBus, data_root: Path) -> None:
         self.store = store
@@ -34,9 +38,13 @@ class PipelineExecutor:
         )
 
     def run(
-        self, record: TaskRecord, cancel: CancelToken | None = None
+        self,
+        record: TaskRecord,
+        cancel: CancelToken | None = None,
+        pause: PauseToken | None = None,
     ) -> TaskRecord:
         cancel = cancel or CancelToken()
+        pause = pause or PauseToken()
         stage_total = len(record.stages)
         transition(record, TaskStatus.RUNNING)
         self.store.save(record)
@@ -50,6 +58,11 @@ class PipelineExecutor:
                 transition(record, TaskStatus.CANCELED)
                 self.store.save(record)
                 self._emit(record, "task_canceled", {"stage_index": i})
+                return record
+            if pause.is_set():
+                transition(record, TaskStatus.PAUSED)
+                self.store.save(record)
+                self._emit(record, "task_paused", {"stage_index": i, "reason": "manual"})
                 return record
 
             stage_record.status = StageStatus.RUNNING
@@ -71,6 +84,7 @@ class PipelineExecutor:
                 ),
                 should_cancel=cancel.is_set,
                 bus=self.bus,
+                should_pause=pause.is_set,
             )
             try:
                 stage = registry.create(stage_record.type)

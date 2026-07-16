@@ -35,7 +35,12 @@ from ..subtitles import (
     serialize_txt,
     serialize_vtt,
 )
-from ..translate import TranslationError, TranslationSettings, translate_segments
+from ..translate import (
+    TranslationError,
+    TranslationPaused,
+    TranslationSettings,
+    translate_segments,
+)
 from . import registry
 from .base import PauseRequested, StageContext, StageError, StageResult
 from .common import resolve_llm
@@ -195,8 +200,11 @@ class TranslateStage:
                 task_id=ctx.task.id,
                 partial_path=partial_path,
                 emit_progress=ctx.emit_progress,
+                should_pause=ctx.should_pause,
             )
         except BudgetExceededError as error:
+            raise PauseRequested(str(error)) from error
+        except TranslationPaused as error:
             raise PauseRequested(str(error)) from error
         except (TranslationError, LLMError) as error:
             raise StageError(str(error)) from error

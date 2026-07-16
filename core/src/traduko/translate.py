@@ -25,6 +25,10 @@ class TranslationError(Exception):
     pass
 
 
+class TranslationPaused(Exception):
+    """Manual pause between batches; completed batches are already on disk."""
+
+
 @dataclass
 class TranslationSettings:
     source_language: str
@@ -81,6 +85,7 @@ def translate_segments(
     task_id: str,
     partial_path: Path,
     emit_progress: Callable[[int, int], None],
+    should_pause: Callable[[], bool] | None = None,
 ) -> list[dict]:
     done = _load_partial(partial_path)
     done_ids = {item["id"] for item in done}
@@ -89,6 +94,8 @@ def translate_segments(
     emit_progress(len(done), total)
 
     for offset in range(0, len(pending), settings.batch_size):
+        if should_pause is not None and should_pause():
+            raise TranslationPaused("manual pause requested")
         batch = pending[offset : offset + settings.batch_size]
         entries = relevant_entries(glossary_entries, [s["text"] for s in batch])
         variables = {

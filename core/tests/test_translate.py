@@ -8,7 +8,12 @@ from traduko.config import BudgetConfig, CoreConfig
 from traduko.events import EventBus
 from traduko.llm import ChatRequest, ChatResponse, Usage, create_llm
 from traduko.prompts import DEFAULT_TEMPLATES
-from traduko.translate import TranslationError, TranslationSettings, translate_segments
+from traduko.translate import (
+    TranslationError,
+    TranslationPaused,
+    TranslationSettings,
+    translate_segments,
+)
 
 
 def seg(id_: int, text: str) -> dict:
@@ -121,3 +126,31 @@ def test_budget_exceeded_propagates_with_partial_saved(tmp_path: Path) -> None:
         run_translate(tmp_path, segments, provider, meter=meter)
     partial = json.loads((tmp_path / "partial.json").read_text(encoding="utf-8"))
     assert len(partial) == 2
+
+
+def test_manual_pause_stops_between_batches_and_resumes(tmp_path: Path) -> None:
+    provider = CountingFake()
+    segments = [seg(1, "one"), seg(2, "two"), seg(3, "three"), seg(4, "four")]
+    checks = iter([False, True])
+
+    with pytest.raises(TranslationPaused):
+        translate_segments(
+            segments,
+            make_settings(),
+            provider,
+            make_meter(tmp_path),
+            [],
+            DEFAULT_TEMPLATES["translate"],
+            project="p",
+            task_id="t1",
+            partial_path=tmp_path / "partial.json",
+            emit_progress=lambda done, total: None,
+            should_pause=lambda: next(checks),
+        )
+    partial = json.loads((tmp_path / "partial.json").read_text(encoding="utf-8"))
+    assert [item["id"] for item in partial] == [1, 2]
+    assert provider.calls == 1
+
+    result, _ = run_translate(tmp_path, segments, provider)
+    assert provider.calls == 2
+    assert [r["target"] for r in result] == ["[T] one", "[T] two", "[T] three", "[T] four"]
