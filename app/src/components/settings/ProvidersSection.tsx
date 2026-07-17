@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
 import { t } from "../../i18n";
 import type { ProviderConfigDoc } from "../../lib/api/types";
+import { Section } from "./Section";
 import styles from "./settings.module.css";
 
 interface Row {
@@ -82,14 +83,22 @@ export function ProvidersSection({
   const trimmedNames = rows.map((row) => row.name.trim());
 
   return (
-    <section className={styles.section}>
-      <div className={styles.sectionHeader}>
-        <h2 className={styles.sectionTitle}>{t("settings.providers")}</h2>
-        <button type="button" className={styles.secondary} onClick={add}>
+    <Section
+      icon="cpu"
+      tint="accent"
+      title={t("settings.providers")}
+      description={t("settings.providers.desc")}
+      action={
+        <button
+          type="button"
+          className={`${styles.secondary} ${styles.headAction}`}
+          onClick={add}
+        >
           {t("settings.addProvider")}
         </button>
-      </div>
-      {rows.length === 0 && <p className={styles.empty}>{t("settings.providersEmpty")}</p>}
+      }
+    >
+      {rows.length === 0 && <p className={styles.emptyBox}>{t("settings.providersEmpty")}</p>}
       {rows.map((row) => {
         const name = row.name.trim();
         const nameInvalid =
@@ -179,6 +188,6 @@ export function ProvidersSection({
           </div>
         );
       })}
-    </section>
+    </Section>
   );
 }

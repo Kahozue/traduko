@@ -3,12 +3,13 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { t } from "../i18n";
 import { useApi, useConnection } from "../lib/connection";
 import type { CoreConfigDoc } from "../lib/api/types";
+import { AppearanceSection } from "../components/settings/AppearanceSection";
 import { BasicsSection } from "../components/settings/BasicsSection";
 import { ProvidersSection } from "../components/settings/ProvidersSection";
 import { ChannelsSection } from "../components/settings/ChannelsSection";
 import { BotSection } from "../components/settings/BotSection";
 import { SyncSection } from "../components/settings/SyncSection";
-import styles from "./SettingsView.module.css";
+import styles from "../components/settings/settings.module.css";
 
 function clone(config: CoreConfigDoc): CoreConfigDoc {
   // Config documents come from the JSON API, so a JSON round trip is a
@@ -127,34 +128,43 @@ export function SettingsView() {
     setResetKey((key) => key + 1);
   }
 
+  const statusText =
+    conn.status === "ready"
+      ? t("conn.ready")
+      : conn.status === "connecting"
+        ? t("conn.connecting")
+        : t("conn.unavailable");
+
   return (
-    <div>
+    <div className={styles.page}>
       <h1 className={styles.title}>{t("settings.title")}</h1>
-      <div className={styles.card}>
-        <dl className={styles.list}>
-          <div className={styles.row}>
-            <dt>{t("settings.dataRoot")}</dt>
-            <dd className={styles.mono}>{conn.dataRoot ?? "--"}</dd>
-          </div>
-          <div className={styles.row}>
-            <dt>{t("settings.coreUrl")}</dt>
-            <dd className={styles.mono}>{conn.baseUrl ?? "--"}</dd>
-          </div>
-          <div className={styles.row}>
-            <dt>{t("settings.status")}</dt>
-            <dd>
-              {conn.status === "ready"
-                ? t("conn.ready")
-                : conn.status === "connecting"
-                  ? t("conn.connecting")
-                  : t("conn.unavailable")}
-              <button type="button" className={styles.retry} onClick={conn.retry}>
-                {t("conn.retry")}
-              </button>
-            </dd>
-          </div>
-        </dl>
+      <p className={styles.subtitle}>{t("settings.subtitle")}</p>
+
+      <div className={styles.statusCard}>
+        <div className={styles.statusPillRow}>
+          <span className={styles.pill} data-status={conn.status}>
+            <span className={styles.pillDot} aria-hidden="true" />
+            {statusText}
+          </span>
+          <button type="button" className={styles.retry} onClick={conn.retry}>
+            {t("conn.retry")}
+          </button>
+        </div>
+        <div className={styles.statusItem}>
+          <span className={styles.statusKey}>{t("settings.dataRoot")}</span>
+          <span className={`${styles.statusValue} ${styles.statusMono}`}>
+            {conn.dataRoot ?? "--"}
+          </span>
+        </div>
+        <div className={styles.statusItem}>
+          <span className={styles.statusKey}>{t("settings.coreUrl")}</span>
+          <span className={`${styles.statusValue} ${styles.statusMono}`}>
+            {conn.baseUrl ?? "--"}
+          </span>
+        </div>
       </div>
+
+      <AppearanceSection />
 
       {draft && (
         <>

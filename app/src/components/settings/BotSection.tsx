@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { t } from "../../i18n";
 import type { DiscordBotConfigDoc } from "../../lib/api/types";
+import { Section } from "./Section";
 import styles from "./settings.module.css";
 
 function isDigits(value: string): boolean {
@@ -55,10 +56,13 @@ export function BotSection({
     .some((item) => !isDigits(item));
 
   return (
-    <section className={styles.section}>
-      <h2 className={styles.sectionTitle}>{t("settings.bot")}</h2>
-      <p className={styles.empty}>{t("settings.bot.restartHint")}</p>
-      <label className={styles.checkItem}>
+    <Section
+      icon="bot"
+      tint="accent"
+      title={t("settings.bot")}
+      description={t("settings.bot.restartHint")}
+    >
+      <label className={`${styles.checkItem} ${styles.toggleField}`}>
         <input
           type="checkbox"
           checked={bot.enabled}
@@ -143,6 +147,6 @@ export function BotSection({
         />
         {idsInvalid && <span className={styles.error}>{t("settings.bot.idInvalid")}</span>}
       </label>
-    </section>
+    </Section>
   );
 }

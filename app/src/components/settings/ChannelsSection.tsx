@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import { t } from "../../i18n";
 import { eventTypeLabel } from "../../lib/labels";
 import type { ChannelConfigDoc, EventType, NotifyTestResult } from "../../lib/api/types";
+import { Section } from "./Section";
 import styles from "./settings.module.css";
 
 const ALL_EVENT_TYPES: EventType[] = [
@@ -185,14 +186,22 @@ export function ChannelsSection({
   }
 
   return (
-    <section className={styles.section}>
-      <div className={styles.sectionHeader}>
-        <h2 className={styles.sectionTitle}>{t("settings.channels")}</h2>
-        <button type="button" className={styles.secondary} onClick={add}>
+    <Section
+      icon="bell"
+      tint="info"
+      title={t("settings.channels")}
+      description={t("settings.channels.desc")}
+      action={
+        <button
+          type="button"
+          className={`${styles.secondary} ${styles.headAction}`}
+          onClick={add}
+        >
           {t("settings.addChannel")}
         </button>
-      </div>
-      {rows.length === 0 && <p className={styles.empty}>{t("settings.channelsEmpty")}</p>}
+      }
+    >
+      {rows.length === 0 && <p className={styles.emptyBox}>{t("settings.channelsEmpty")}</p>}
       {rows.map((row) => {
         const type = String(row.config.type ?? "");
         const custom = Array.isArray(row.config.events);
@@ -302,6 +311,6 @@ export function ChannelsSection({
           </div>
         );
       })}
-    </section>
+    </Section>
   );
 }

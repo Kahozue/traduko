@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { expect, test, vi } from "vitest";
 import type { ApiClient } from "../lib/api/client";
 import type { CoreConfigDoc } from "../lib/api/types";
+import { themeStore } from "../lib/theme";
 import { renderWithConnection } from "../test/helpers";
 import { SettingsView } from "./SettingsView";
 
@@ -124,4 +125,14 @@ test("config from an older core without a sync section does not crash", async ()
   // Reaching the sync section's control proves normalize backfilled it
   // instead of throwing on draft.sync.mode.
   expect(await screen.findByLabelText("同步方式")).toBeInTheDocument();
+});
+
+test("theme choice applies instantly and never dirties the config draft", async () => {
+  themeStore.setMode("system");
+  setup();
+  await screen.findByLabelText("預設專案");
+  await userEvent.click(screen.getByRole("radio", { name: "深色" }));
+  expect(document.documentElement.dataset.theme).toBe("dark");
+  expect(screen.queryByText("有未儲存的變更")).not.toBeInTheDocument();
+  themeStore.setMode("system");
 });

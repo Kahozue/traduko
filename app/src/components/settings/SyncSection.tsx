@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { t } from "../../i18n";
 import type { SyncConfigDoc, SyncStatus, TaskStatus } from "../../lib/api/types";
+import { Section } from "./Section";
 import styles from "./settings.module.css";
 
 export function SyncSection({
@@ -65,21 +66,23 @@ export function SyncSection({
   const intervalInvalid = !/^\d+$/.test(intervalText.trim());
 
   return (
-    <section className={styles.section}>
-      <div className={styles.sectionHeader}>
-        <h2 className={styles.sectionTitle}>{t("settings.sync")}</h2>
+    <Section
+      icon="cloud"
+      tint="ok"
+      title={t("settings.sync")}
+      description={t("settings.sync.restartHint")}
+      action={
         <button
           type="button"
-          className={styles.secondary}
+          className={`${styles.secondary} ${styles.headAction}`}
           disabled={status.syncing}
           onClick={onSyncNow}
         >
           {status.syncing ? t("settings.sync.syncing") : t("settings.sync.now")}
         </button>
-      </div>
-      <p className={styles.empty}>{t("settings.sync.restartHint")}</p>
-
-      <label className={styles.checkItem}>
+      }
+    >
+      <label className={`${styles.checkItem} ${styles.toggleField}`}>
         <input
           type="checkbox"
           checked={enabled}
@@ -255,6 +258,6 @@ export function SyncSection({
           ))}
         </div>
       )}
-    </section>
+    </Section>
   );
 }

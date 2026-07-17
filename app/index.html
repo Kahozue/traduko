@@ -4,6 +4,25 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Traduko</title>
+    <script>
+      // Resolve the theme before first paint to avoid a light flash when
+      // the stored or system preference is dark. Mirrors lib/theme.ts.
+      (function () {
+        var mode = null;
+        try {
+          mode = localStorage.getItem("traduko.theme");
+        } catch (error) {
+          mode = null;
+        }
+        if (mode !== "light" && mode !== "dark") {
+          var prefersDark =
+            typeof matchMedia === "function" &&
+            matchMedia("(prefers-color-scheme: dark)").matches;
+          mode = prefersDark ? "dark" : "light";
+        }
+        document.documentElement.dataset.theme = mode;
+      })();
+    </script>
   </head>
 
   <body>

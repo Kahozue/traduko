@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { t } from "../../i18n";
 import type { BudgetConfigDoc } from "../../lib/api/types";
+import { Section, SettingRow } from "./Section";
 import styles from "./settings.module.css";
 
 function parseLimit(raw: string): { value: number | null; valid: boolean } {
@@ -49,11 +50,19 @@ export function BasicsSection({
 
   return (
     <>
-      <section className={styles.section}>
-        <h2 className={styles.sectionTitle}>{t("settings.general")}</h2>
-        <label className={styles.field}>
-          <span className={styles.label}>{t("settings.defaultProject")}</span>
+      <Section
+        icon="sliders"
+        tint="info"
+        title={t("settings.general")}
+        description={t("settings.general.desc")}
+      >
+        <SettingRow
+          label={t("settings.defaultProject")}
+          htmlFor="settings-default-project"
+          description={t("settings.defaultProject.desc")}
+        >
           <input
+            id="settings-default-project"
             className={styles.input}
             value={defaultProject}
             onChange={(event) => onDefaultProject(event.target.value)}
@@ -61,35 +70,45 @@ export function BasicsSection({
           {defaultProject.trim() === "" && (
             <span className={styles.error}>{t("settings.projectRequired")}</span>
           )}
-        </label>
-      </section>
-      <section className={styles.section}>
-        <h2 className={styles.sectionTitle}>{t("settings.budget")}</h2>
-        <div className={styles.fieldRow}>
-          <label className={styles.field}>
-            <span className={styles.label}>{t("settings.taskLimit")}</span>
-            <input
-              className={styles.input}
-              inputMode="decimal"
-              placeholder={t("settings.limitPlaceholder")}
-              value={taskText}
-              onChange={(event) => update("task", event.target.value)}
-            />
-            {!taskValid && <span className={styles.error}>{t("settings.limitInvalid")}</span>}
-          </label>
-          <label className={styles.field}>
-            <span className={styles.label}>{t("settings.monthlyLimit")}</span>
-            <input
-              className={styles.input}
-              inputMode="decimal"
-              placeholder={t("settings.limitPlaceholder")}
-              value={monthText}
-              onChange={(event) => update("month", event.target.value)}
-            />
-            {!monthValid && <span className={styles.error}>{t("settings.limitInvalid")}</span>}
-          </label>
-        </div>
-      </section>
+        </SettingRow>
+      </Section>
+      <Section
+        icon="wallet"
+        tint="warn"
+        title={t("settings.budget")}
+        description={t("settings.budget.desc")}
+      >
+        <SettingRow
+          label={t("settings.taskLimit")}
+          htmlFor="settings-task-limit"
+          description={t("settings.taskLimit.desc")}
+        >
+          <input
+            id="settings-task-limit"
+            className={styles.input}
+            inputMode="decimal"
+            placeholder={t("settings.limitPlaceholder")}
+            value={taskText}
+            onChange={(event) => update("task", event.target.value)}
+          />
+          {!taskValid && <span className={styles.error}>{t("settings.limitInvalid")}</span>}
+        </SettingRow>
+        <SettingRow
+          label={t("settings.monthlyLimit")}
+          htmlFor="settings-monthly-limit"
+          description={t("settings.monthlyLimit.desc")}
+        >
+          <input
+            id="settings-monthly-limit"
+            className={styles.input}
+            inputMode="decimal"
+            placeholder={t("settings.limitPlaceholder")}
+            value={monthText}
+            onChange={(event) => update("month", event.target.value)}
+          />
+          {!monthValid && <span className={styles.error}>{t("settings.limitInvalid")}</span>}
+        </SettingRow>
+      </Section>
     </>
   );
 }

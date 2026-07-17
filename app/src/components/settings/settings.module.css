@@ -1,52 +1,203 @@
-.section {
-  margin-top: 20px;
-  padding: 20px;
-  border-radius: var(--radius-m);
+/* Settings page — grouped cards with an identity-tinted header band.
+   The visual system: app background sits below, each section is a bordered
+   surface with a subtle shadow, and a colored icon chip gives every section
+   its own identity so the page reads as distinct zones rather than a stack
+   of identical blocks. */
+
+.page {
+  max-width: 860px;
+}
+
+.title {
+  margin: 0 0 4px;
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.subtitle {
+  margin: 0 0 24px;
+  color: var(--text-secondary);
+  font-size: 13.5px;
+}
+
+/* Connection status — a compact header card, denser than the settings
+   sections and topped with a live status pill. */
+.statusCard {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 32px;
+  padding: 16px 20px;
+  border-radius: var(--radius-l);
+  border: 1px solid var(--border);
   background: var(--bg-surface);
   box-shadow: var(--shadow-1);
 }
 
-.sectionHeader {
+.statusItem {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.statusKey {
+  color: var(--text-secondary);
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.statusValue {
+  font-size: 13px;
+  word-break: break-all;
+}
+
+.statusMono {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+}
+
+.statusPillRow {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  margin-bottom: 12px;
+  gap: 10px;
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px 3px 8px;
+  border-radius: 999px;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.pill[data-status="ready"] {
+  background: var(--ok-soft);
+  color: var(--ok);
+}
+
+.pill[data-status="connecting"] {
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+
+.pill[data-status="unavailable"] {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.pillDot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.retry {
+  padding: 5px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-s);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font-size: 12.5px;
+  cursor: pointer;
+  transition: background var(--transition), border-color var(--transition);
+}
+
+.retry:hover {
+  background: var(--bg-inset);
+  border-color: var(--text-secondary);
+}
+
+/* Section card anatomy */
+.section {
+  margin-top: 16px;
+  border-radius: var(--radius-l);
+  border: 1px solid var(--border);
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-1);
+  overflow: hidden;
+}
+
+.sectionHead {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 15px 20px;
+  border-bottom: 1px solid var(--border);
+}
+
+.iconChip {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+  border-radius: 10px;
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.iconChip[data-tint="info"] {
+  color: var(--info);
+  background: var(--info-soft);
+}
+
+.iconChip[data-tint="ok"] {
+  color: var(--ok);
+  background: var(--ok-soft);
+}
+
+.iconChip[data-tint="warn"] {
+  color: var(--warn);
+  background: var(--warn-soft);
+}
+
+.iconChip[data-tint="neutral"] {
+  color: var(--text-secondary);
+  background: var(--neutral-soft);
+}
+
+.sectionHeadText {
+  flex: 1;
+  min-width: 0;
 }
 
 .sectionTitle {
-  margin: 0 0 12px;
+  margin: 0;
   font-size: 15px;
-  font-weight: 700;
+  font-weight: 650;
+  letter-spacing: -0.005em;
 }
 
-.sectionHeader .sectionTitle {
-  margin-bottom: 0;
+.sectionDesc {
+  margin: 2px 0 0;
+  color: var(--text-secondary);
+  font-size: 12.5px;
+  line-height: 1.45;
 }
 
-.card {
-  margin-top: 12px;
-  padding: 14px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-s);
-  background: var(--bg-inset);
+.sectionBody {
+  padding: 18px 20px 20px;
 }
 
-.cardHeader {
-  display: flex;
-  align-items: flex-end;
-  gap: 12px;
-  margin-bottom: 8px;
-}
-
-.cardHeader .field {
-  flex: 1;
-}
-
+/* Fields */
 .field {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  margin-top: 10px;
+  gap: 5px;
+}
+
+.field + .field,
+.fieldRow + .field,
+.field + .fieldRow,
+.fieldRow + .fieldRow {
+  margin-top: 14px;
 }
 
 .fieldRow {
@@ -61,15 +212,38 @@
 .label {
   color: var(--text-secondary);
   font-size: 12.5px;
+  font-weight: 500;
 }
 
 .input {
-  padding: 7px 10px;
+  width: 100%;
+  padding: 8px 11px;
   border: 1px solid var(--border);
   border-radius: var(--radius-s);
   background: var(--bg-surface);
   color: var(--text-primary);
   font-size: 13px;
+  font-family: inherit;
+  transition: border-color var(--transition), box-shadow var(--transition);
+}
+
+.input::placeholder {
+  color: var(--text-secondary);
+  opacity: 0.7;
+}
+
+.input:hover {
+  border-color: var(--text-secondary);
+}
+
+.input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+select.input {
+  cursor: pointer;
 }
 
 .inline {
@@ -88,30 +262,67 @@
 }
 
 .empty {
-  margin: 8px 0 0;
+  margin: 0;
   color: var(--text-secondary);
   font-size: 13px;
+  line-height: 1.5;
 }
 
+/* Repeatable item sub-card (providers, channels) */
+.card {
+  margin-top: 14px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-m);
+  background: var(--bg-subtle);
+}
+
+.card:first-of-type {
+  margin-top: 0;
+}
+
+.cardHeader {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+}
+
+.cardHeader .field {
+  flex: 1;
+}
+
+/* Buttons */
 .secondary {
-  padding: 6px 12px;
+  padding: 6px 13px;
   border: 1px solid var(--border);
   border-radius: var(--radius-s);
   background: var(--bg-surface);
   color: var(--text-primary);
   font-size: 12.5px;
+  font-weight: 500;
   cursor: pointer;
-  transition: background var(--transition);
+  white-space: nowrap;
+  transition: background var(--transition), border-color var(--transition);
 }
 
-.secondary:hover {
+.secondary:hover:not(:disabled) {
   background: var(--bg-inset);
+  border-color: var(--text-secondary);
+}
+
+.secondary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.headAction {
+  flex-shrink: 0;
 }
 
 .typeTag {
-  padding: 4px 10px;
+  padding: 5px 11px;
   border-radius: var(--radius-s);
-  background: var(--bg-inset);
+  background: var(--bg-surface);
   border: 1px solid var(--border);
   color: var(--text-secondary);
   font-family: var(--font-mono);
@@ -119,31 +330,58 @@
   white-space: nowrap;
 }
 
-.checkGrid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 6px 14px;
-  margin-top: 8px;
-}
-
+/* Checkboxes */
 .checkItem {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 7px;
   font-size: 12.5px;
+  cursor: pointer;
 }
 
+.checkItem input {
+  accent-color: var(--accent);
+  width: 15px;
+  height: 15px;
+  cursor: pointer;
+}
+
+.toggleField {
+  margin-bottom: 4px;
+}
+
+.checkGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px 14px;
+  margin-top: 12px;
+  padding: 12px 14px;
+  border-radius: var(--radius-s);
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+}
+
+/* Test / status feedback */
 .testResult {
+  margin-top: 10px;
+  padding: 7px 11px;
+  border-radius: var(--radius-s);
+  background: var(--ok-soft);
+  color: var(--ok);
   font-size: 12.5px;
-  color: var(--text-secondary);
 }
 
 .testError {
-  font-size: 12.5px;
+  margin-top: 10px;
+  padding: 7px 11px;
+  border-radius: var(--radius-s);
+  background: var(--danger-soft);
   color: var(--danger);
+  font-size: 12.5px;
   word-break: break-all;
 }
 
+/* Sync conflicts & peers */
 .conflictRow {
   display: flex;
   align-items: center;
@@ -167,4 +405,201 @@
   margin-top: 4px;
   color: var(--text-secondary);
   font-size: 12.5px;
+}
+
+/* Setting row: label/description column, control on the right */
+.settingRow {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 14px 0;
+  border-top: 1px solid var(--border);
+}
+
+.settingRow:first-child {
+  padding-top: 0;
+  border-top: none;
+}
+
+.settingRow:last-child {
+  padding-bottom: 0;
+}
+
+.rowText {
+  flex: 1;
+  min-width: 0;
+}
+
+.rowLabel {
+  display: block;
+  font-size: 13.5px;
+  font-weight: 550;
+}
+
+.rowDesc {
+  margin: 3px 0 0;
+  color: var(--text-secondary);
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+
+.rowControl {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: min(320px, 48%);
+  flex-shrink: 0;
+}
+
+/* Segmented control (theme switcher) — sliding raised thumb on an inset
+   track; the page's one deliberate moment of motion. */
+.segmented {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--bg-inset);
+}
+
+.segIndicator {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  left: 3px;
+  width: calc((100% - 6px) / 3);
+  border-radius: 7px;
+  background: var(--bg-surface-raised);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-1);
+  transition: transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.segItem {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12.5px;
+  font-weight: 550;
+  cursor: pointer;
+  transition: color var(--transition);
+}
+
+.segItem:hover {
+  color: var(--text-primary);
+}
+
+.segItem[aria-checked="true"] {
+  color: var(--text-primary);
+}
+
+.segItem:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .segIndicator {
+    transition: none;
+  }
+}
+
+/* Empty state for repeatable lists */
+.emptyBox {
+  margin: 0;
+  padding: 22px 16px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-m);
+  background: var(--bg-subtle);
+  color: var(--text-secondary);
+  font-size: 12.5px;
+  text-align: center;
+}
+
+/* Save bar */
+.saveBar {
+  position: sticky;
+  bottom: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 20px;
+  padding: 12px 16px;
+  border-radius: var(--radius-m);
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--bg-surface-raised) 88%, transparent);
+  -webkit-backdrop-filter: blur(12px) saturate(1.3);
+  backdrop-filter: blur(12px) saturate(1.3);
+  box-shadow: var(--shadow-2);
+  font-size: 13px;
+  animation: rise-in 200ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .saveBar {
+    animation: none;
+  }
+}
+
+.saveError {
+  color: var(--danger);
+}
+
+.savedNote {
+  color: var(--ok);
+  font-weight: 500;
+}
+
+.primaryButton {
+  padding: 8px 18px;
+  border: none;
+  border-radius: var(--radius-s);
+  background: var(--accent);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background var(--transition);
+}
+
+.primaryButton:hover:not(:disabled) {
+  background: var(--accent-strong);
+}
+
+.primaryButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.secondaryButton {
+  padding: 8px 15px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-s);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font-size: 13px;
+  cursor: pointer;
+  transition: background var(--transition), border-color var(--transition);
+}
+
+.secondaryButton:hover {
+  background: var(--bg-inset);
+  border-color: var(--text-secondary);
 }
