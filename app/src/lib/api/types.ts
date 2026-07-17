@@ -235,3 +235,19 @@ export interface NotifyTestResult {
   ok: boolean;
   error?: string;
 }
+
+export interface AsrStatus {
+  package: boolean;
+  model: string;
+  cached: boolean;
+  state: "idle" | "downloading" | "done" | "error";
+  downloading: boolean;
+  downloaded_mb: number;
+  error: string | null;
+}
+
+export interface AsrTestResult {
+  ok: boolean;
+  load_seconds?: number;
+  error?: string;
+}

@@ -251,6 +251,19 @@
   gap: 10px;
 }
 
+.modelProgress {
+  margin: 0 0 10px;
+  color: var(--text-secondary);
+  font-size: var(--fs-note);
+  font-variant-numeric: tabular-nums;
+}
+
+.modelError {
+  margin: 0 0 10px;
+  color: var(--danger);
+  font-size: var(--fs-note);
+}
+
 .sectionTitle {
   margin: 0 0 14px;
   font-size: var(--fs-section);

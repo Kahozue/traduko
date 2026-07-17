@@ -105,6 +105,40 @@ export function TaskDetailView({
   const [editingName, setEditingName] = useState(false);
   const [draftName, setDraftName] = useState("");
   const [showDetails, setShowDetails] = useState(false);
+  const [modelDownload, setModelDownload] = useState<
+    null | { model: string; mb: number; error?: string }
+  >(null);
+
+  // Preflight failed because the ASR model is missing: download it here,
+  // then run the task, instead of sending the user to hunt for settings.
+  const missingModel = (() => {
+    const check = failedChecks?.find(
+      (item) => item.name === "asr model" && item.message.includes("not downloaded"),
+    );
+    return check ? (/'([^']+)'/.exec(check.message)?.[1] ?? "small") : null;
+  })();
+
+  async function downloadModelAndRun(model: string) {
+    setModelDownload({ model, mb: 0 });
+    try {
+      await api.downloadAsrModel(model);
+      for (;;) {
+        const status = await api.getAsrStatus(model);
+        setModelDownload({ model, mb: status.downloaded_mb });
+        if (status.state === "error") {
+          setModelDownload({ model, mb: status.downloaded_mb, error: status.error ?? "" });
+          return;
+        }
+        if (status.cached) break;
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+      }
+      setModelDownload(null);
+      setFailedChecks(null);
+      run.mutate(false);
+    } catch (error) {
+      setModelDownload({ model, mb: 0, error: String(error) });
+    }
+  }
 
   const rename = useMutation({
     mutationFn: (value: string) => api.renameTask(project, taskId, value),
@@ -298,6 +332,14 @@ export function TaskDetailView({
               </li>
             ))}
           </ul>
+          {modelDownload && !modelDownload.error && (
+            <p className={styles.modelProgress}>
+              {t("preflight.downloadingModel")}（{modelDownload.mb.toFixed(0)} MB）
+            </p>
+          )}
+          {modelDownload?.error && (
+            <p className={styles.modelError}>{modelDownload.error}</p>
+          )}
           <div className={styles.preflightActions}>
             <button
               type="button"
@@ -306,7 +348,21 @@ export function TaskDetailView({
             >
               {t("preflight.dismiss")}
             </button>
-            <button type="button" className={styles.primary} onClick={() => run.mutate(true)}>
+            {missingModel && (
+              <button
+                type="button"
+                className={styles.primary}
+                disabled={!!modelDownload && !modelDownload.error}
+                onClick={() => downloadModelAndRun(missingModel)}
+              >
+                {t("preflight.downloadModel")}
+              </button>
+            )}
+            <button
+              type="button"
+              className={missingModel ? styles.secondary : styles.primary}
+              onClick={() => run.mutate(true)}
+            >
               {t("preflight.skipRun")}
             </button>
           </div>

@@ -104,6 +104,50 @@ test("preflight failure offers skip and re-run", async () => {
   );
 });
 
+test("missing ASR model offers download-and-run", async () => {
+  const detail = {
+    error: "preflight failed",
+    checks: [{ name: "asr model", level: "fail", message: "model 'small' is not downloaded yet" }],
+  };
+  const runTask = vi
+    .fn()
+    .mockRejectedValueOnce(new ApiError(409, detail))
+    .mockResolvedValueOnce({ queued: true });
+  const downloadAsrModel = vi.fn().mockResolvedValue({ downloading: true, model: "small" });
+  const getAsrStatus = vi.fn().mockResolvedValue({
+    package: true,
+    model: "small",
+    cached: true,
+    state: "done",
+    downloading: false,
+    downloaded_mb: 484,
+    error: null,
+  });
+  const api: Partial<ApiClient> = {
+    showTask: vi.fn().mockResolvedValue(task),
+    runTask,
+    downloadAsrModel,
+    getAsrStatus,
+  };
+  renderWithConnection(<TaskDetailView
+      project="default"
+      taskId="t1"
+      onBack={() => {}}
+      onOpenSubtitleEditor={() => {}}
+      onOpenStyleEditor={() => {}}
+    />, {
+    api,
+  });
+  await waitFor(() => expect(screen.getByText("執行")).toBeEnabled());
+  await userEvent.click(screen.getByText("執行"));
+  await waitFor(() => expect(screen.getByText("預檢未通過")).toBeInTheDocument());
+  await userEvent.click(screen.getByText("下載模型並執行"));
+  await waitFor(() => expect(downloadAsrModel).toHaveBeenCalledWith("small"));
+  await waitFor(() =>
+    expect(runTask).toHaveBeenLastCalledWith("default", "t1", { skipPreflight: false }),
+  );
+});
+
 test("cancel button cancels the task", async () => {
   const cancelTask = vi.fn().mockResolvedValue({ canceled: true });
   const api: Partial<ApiClient> = { showTask: vi.fn().mockResolvedValue(task), cancelTask };

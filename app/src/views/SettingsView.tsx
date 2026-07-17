@@ -6,6 +6,7 @@ import type { CoreConfigDoc } from "../lib/api/types";
 import { AboutSection } from "../components/settings/AboutSection";
 import { AppearanceSection } from "../components/settings/AppearanceSection";
 import { BasicsSection } from "../components/settings/BasicsSection";
+import { AsrSection } from "../components/settings/AsrSection";
 import { ProvidersSection } from "../components/settings/ProvidersSection";
 import { ChannelsSection } from "../components/settings/ChannelsSection";
 import { BotSection } from "../components/settings/BotSection";
@@ -190,6 +191,7 @@ export function SettingsView() {
               }
             }}
           />
+          <AsrSection />
           <ChannelsSection
             key={`channels-${resetKey}`}
             channels={draft.notifications.channels}

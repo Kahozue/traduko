@@ -120,26 +120,26 @@ test("dragging a row onto a group header moves it", async () => {
     listTasks: vi.fn().mockResolvedValue(rows),
     moveTask,
   };
-  renderWithConnection(<TasksView onOpenTask={() => {}} />, { api });
+  const onOpenTask = vi.fn();
+  renderWithConnection(<TasksView onOpenTask={onOpenTask} />, { api });
   await screen.findByText("第三集");
-  const dataTransfer = {
-    data: "",
-    setData(_type: string, value: string) {
-      this.data = value;
-    },
-    getData() {
-      return this.data;
-    },
-    effectAllowed: "",
-    dropEffect: "",
-  };
-  fireEvent.dragStart(screen.getByText("第三集"), { dataTransfer });
   const header = screen.getByTestId("group-header-anime");
-  fireEvent.dragOver(header, { dataTransfer });
-  fireEvent.drop(header, { dataTransfer });
-  await waitFor(() =>
-    expect(moveTask).toHaveBeenCalledWith("default", "20260716-0001", "anime"),
-  );
+  const original = document.elementFromPoint;
+  document.elementFromPoint = vi.fn(() => header);
+  try {
+    const row = screen.getByText("第三集").closest("div[class*='row']")!;
+    fireEvent.pointerDown(row, { button: 0, clientX: 10, clientY: 10 });
+    fireEvent.pointerMove(window, { clientX: 60, clientY: 120 });
+    fireEvent.pointerUp(window, {});
+    await waitFor(() =>
+      expect(moveTask).toHaveBeenCalledWith("default", "20260716-0001", "anime"),
+    );
+    // The drag must not also open the task.
+    fireEvent.click(row);
+    expect(onOpenTask).not.toHaveBeenCalled();
+  } finally {
+    document.elementFromPoint = original;
+  }
 });
 
 test("shows first-run guide when there are no tasks", async () => {

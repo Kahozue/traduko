@@ -584,3 +584,57 @@ select.input {
   font-size: var(--fs-note);
   word-break: break-all;
 }
+
+.asrStatusText {
+  color: var(--text-secondary);
+  font-size: var(--fs-body);
+}
+
+.asrSelect {
+  width: 200px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-s);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--fs-body);
+}
+
+.asrActions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.asrButton {
+  padding: 6px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-s);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font-size: var(--fs-note);
+  cursor: pointer;
+  transition: background var(--transition);
+}
+
+.asrButton:hover:not(:disabled) {
+  background: var(--bg-inset);
+}
+
+.asrButton:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.asrError {
+  margin: 6px 0 0;
+  color: var(--danger);
+  font-size: var(--fs-note);
+}
+
+.asrOk {
+  margin: 6px 0 0;
+  color: var(--ok);
+  font-size: var(--fs-note);
+}

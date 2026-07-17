@@ -1,5 +1,7 @@
 import type {
   ArtifactListItem,
+  AsrStatus,
+  AsrTestResult,
   BudgetInfo,
   ChannelConfigDoc,
   CoreConfigDoc,
@@ -143,6 +145,24 @@ export class ApiClient {
 
   deleteTask(project: string, taskId: string): Promise<{ deleted: boolean }> {
     return this.request(`/tasks/${project}/${taskId}`, { method: "DELETE" });
+  }
+
+  getAsrStatus(model: string): Promise<AsrStatus> {
+    return this.request(`/asr/status?model=${encodeURIComponent(model)}`);
+  }
+
+  downloadAsrModel(model: string): Promise<{ downloading: boolean; model: string }> {
+    return this.request("/asr/download", {
+      method: "POST",
+      body: JSON.stringify({ model }),
+    });
+  }
+
+  testAsr(model: string): Promise<AsrTestResult> {
+    return this.request("/asr/test", {
+      method: "POST",
+      body: JSON.stringify({ model }),
+    });
   }
 
   listArtifacts(project: string, taskId: string): Promise<ArtifactListItem[]> {

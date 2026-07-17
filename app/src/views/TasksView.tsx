@@ -99,7 +99,14 @@ export function TasksView({
   const [newCategory, setNewCategory] = useState("");
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [bulkNote, setBulkNote] = useState<string | null>(null);
-  const [dropTarget, setDropTarget] = useState<string | null>(null);
+  // Pointer-based drag: Tauri's file drag-drop interception swallows HTML5
+  // drag events inside the webview, so rows are moved with pointer events.
+  const [drag, setDrag] = useState<
+    null | { keys: string[]; x: number; y: number; over: string | null }
+  >(null);
+  const dragStartRef = useRef<null | { key: string; x: number; y: number }>(null);
+  const dragRef = useRef<typeof drag>(null);
+  const suppressClickRef = useRef(false);
   const moveMenuRef = useRef<HTMLDivElement>(null);
   const { data: rows } = useQuery({
     queryKey: ["tasks", statusFilter],
@@ -178,6 +185,9 @@ export function TasksView({
     },
   });
 
+  const selectedRef = useRef(selected);
+  selectedRef.current = selected;
+
   const bulkMove = useMutation({
     mutationFn: async ({ keys, target }: { keys: string[]; target: string }) => {
       const moves = keys
@@ -197,14 +207,52 @@ export function TasksView({
     },
   });
 
-  function dropOnProject(event: React.DragEvent, project: string) {
-    event.preventDefault();
-    setDropTarget(null);
-    const key = event.dataTransfer.getData("text/plain");
-    if (!key) return;
-    const keys = selected.has(key) ? [...selected] : [key];
-    bulkMove.mutate({ keys, target: project });
+  const bulkMoveRef = useRef(bulkMove.mutate);
+  bulkMoveRef.current = bulkMove.mutate;
+
+  function startRowDrag(event: React.PointerEvent, key: string) {
+    if (event.button !== 0) return;
+    if ((event.target as HTMLElement).closest("input, button, a")) return;
+    dragStartRef.current = { key, x: event.clientX, y: event.clientY };
   }
+
+  useEffect(() => {
+    function onMove(event: PointerEvent) {
+      const start = dragStartRef.current;
+      if (!start) return;
+      if (!dragRef.current) {
+        const distance = Math.hypot(event.clientX - start.x, event.clientY - start.y);
+        if (distance < 6) return;
+        const keys = selectedRef.current.has(start.key)
+          ? [...selectedRef.current]
+          : [start.key];
+        dragRef.current = { keys, x: event.clientX, y: event.clientY, over: null };
+      }
+      const el = document.elementFromPoint?.(event.clientX, event.clientY);
+      const head = (el as HTMLElement | null)?.closest?.("[data-drop-project]");
+      const over = head?.getAttribute("data-drop-project") ?? null;
+      dragRef.current = { ...dragRef.current, x: event.clientX, y: event.clientY, over };
+      setDrag(dragRef.current);
+    }
+    function onUp() {
+      const active = dragRef.current;
+      if (active) {
+        suppressClickRef.current = true;
+        if (active.over) {
+          bulkMoveRef.current({ keys: active.keys, target: active.over });
+        }
+      }
+      dragStartRef.current = null;
+      dragRef.current = null;
+      setDrag(null);
+    }
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    return () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+  }, []);
 
   const projectNames = groups.map(([name]) => name);
   const hasSelection = selected.size > 0;
@@ -310,15 +358,10 @@ export function TasksView({
               <section key={project} className={styles.group}>
                 <div
                   data-testid={`group-header-${project}`}
+                  data-drop-project={project}
                   className={`${styles.groupHead} ${
-                    dropTarget === project ? styles.dropActive : ""
+                    drag?.over === project ? styles.dropActive : ""
                   }`}
-                  onDragOver={(event) => {
-                    event.preventDefault();
-                    setDropTarget(project);
-                  }}
-                  onDragLeave={() => setDropTarget(null)}
-                  onDrop={(event) => dropOnProject(event, project)}
                 >
                   <button
                     type="button"
@@ -342,12 +385,14 @@ export function TasksView({
                       <div
                         key={row.id}
                         className={styles.row}
-                        draggable
-                        onDragStart={(event) => {
-                          event.dataTransfer.setData("text/plain", key);
-                          event.dataTransfer.effectAllowed = "move";
+                        onPointerDown={(event) => startRowDrag(event, key)}
+                        onClick={() => {
+                          if (suppressClickRef.current) {
+                            suppressClickRef.current = false;
+                            return;
+                          }
+                          onOpenTask(row.project, row.id);
                         }}
-                        onClick={() => onOpenTask(row.project, row.id)}
                       >
                         <input
                           type="checkbox"
@@ -370,6 +415,12 @@ export function TasksView({
               </section>
             );
           })}
+        </div>
+      )}
+
+      {drag && (
+        <div className={styles.dragGhost} style={{ left: drag.x + 14, top: drag.y + 14 }}>
+          {t("tasks.moveApply")} {drag.keys.length} {t("tasks.unit")}
         </div>
       )}
 

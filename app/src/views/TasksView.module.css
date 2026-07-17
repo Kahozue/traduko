@@ -388,3 +388,15 @@
   opacity: 0.45;
   cursor: default;
 }
+
+.dragGhost {
+  position: fixed;
+  z-index: 30;
+  padding: 4px 10px;
+  border-radius: var(--radius-s);
+  background: var(--bg-surface-raised);
+  box-shadow: var(--shadow-2);
+  color: var(--text-primary);
+  font-size: var(--fs-note);
+  pointer-events: none;
+}
