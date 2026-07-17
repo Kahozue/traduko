@@ -392,6 +392,18 @@ export interface AssistantMessageDoc {
   // The model that produced this assistant reply; absent on older rows and
   // on user messages.
   model?: string;
+  // Absolute paths of image files attached to a user message.
+  images?: string[];
+}
+
+export interface AssistantSessionRow {
+  id: string;
+  title: string;
+  archived: boolean;
+  created_at: string;
+  updated_at: string;
+  message_count: number;
+  active: boolean;
 }
 
 export interface AssistantReply {

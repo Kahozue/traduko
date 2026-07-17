@@ -4,6 +4,7 @@ import type {
   AsrTestResult,
   AssistantMessageDoc,
   AssistantReply,
+  AssistantSessionRow,
   BudgetInfo,
   ChannelConfigDoc,
   CoreConfigDoc,
@@ -237,10 +238,17 @@ export class ApiClient {
     });
   }
 
-  sendAssistantMessage(text: string): Promise<AssistantReply> {
+  sendAssistantMessage(
+    text: string,
+    opts?: { editIndex?: number; images?: string[] },
+  ): Promise<AssistantReply> {
     return this.request("/assistant/message", {
       method: "POST",
-      body: JSON.stringify({ text }),
+      body: JSON.stringify({
+        text,
+        edit_index: opts?.editIndex,
+        images: opts?.images,
+      }),
     });
   }
 
@@ -250,6 +258,33 @@ export class ApiClient {
 
   clearAssistant(): Promise<{ cleared: boolean }> {
     return this.request("/assistant/clear", { method: "POST" });
+  }
+
+  listAssistantSessions(): Promise<AssistantSessionRow[]> {
+    return this.request("/assistant/sessions");
+  }
+
+  createAssistantSession(): Promise<{ id: string }> {
+    return this.request("/assistant/sessions", { method: "POST" });
+  }
+
+  activateAssistantSession(id: string): Promise<{ active: string }> {
+    return this.request(`/assistant/sessions/${encodeURIComponent(id)}/activate`, {
+      method: "POST",
+    });
+  }
+
+  archiveAssistantSession(id: string, archived: boolean): Promise<{ archived: boolean }> {
+    return this.request(`/assistant/sessions/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      body: JSON.stringify({ archived }),
+    });
+  }
+
+  deleteAssistantSession(id: string): Promise<{ deleted: boolean }> {
+    return this.request(`/assistant/sessions/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    });
   }
 
   listArtifacts(project: string, taskId: string): Promise<ArtifactListItem[]> {

@@ -59,6 +59,10 @@ function setup({
     sendAssistantMessage: vi.fn(),
     clearAssistant: vi.fn().mockResolvedValue({ cleared: true }),
     listProposals: vi.fn().mockResolvedValue([]),
+    listAssistantSessions: vi.fn().mockResolvedValue([]),
+    activateAssistantSession: vi.fn().mockResolvedValue({ active: "s1" }),
+    archiveAssistantSession: vi.fn().mockResolvedValue({ archived: true }),
+    deleteAssistantSession: vi.fn().mockResolvedValue({ deleted: true }),
     ...apiOverrides,
   };
   renderWithConnection(<AssistantPanel onClose={onClose} />, { api, queryClient });
@@ -151,10 +155,10 @@ test("busy state disables input and shows the processing indicator", async () =>
   expect(textarea).toBeEnabled();
 });
 
-test("clear calls the api and empties the message flow", async () => {
+test("new chat calls clear and empties the message flow", async () => {
   const { api } = setup({ history: HISTORY });
   await screen.findByText("任務 abc 進度如何？");
-  await userEvent.click(screen.getByRole("button", { name: "清空" }));
+  await userEvent.click(screen.getByRole("button", { name: "新對話" }));
   await waitFor(() => expect(api.clearAssistant).toHaveBeenCalled());
   expect(await screen.findByText("尚無對話，輸入訊息開始")).toBeInTheDocument();
   expect(screen.queryByText("任務 abc 進度如何？")).not.toBeInTheDocument();
@@ -164,6 +168,68 @@ test("close button calls onClose", async () => {
   const { onClose } = setup();
   await userEvent.click(screen.getByRole("button", { name: "關閉" }));
   expect(onClose).toHaveBeenCalled();
+});
+
+test("an assistant reply is rendered as markdown and shows its model chip", async () => {
+  setup({
+    history: [
+      {
+        role: "assistant",
+        text: "已完成 **翻譯** 階段。",
+        ts: "2026-07-18T01:00:01+00:00",
+        model: "gpt-4o-mini",
+      },
+    ],
+  });
+  expect((await screen.findByText("翻譯")).tagName).toBe("STRONG");
+  expect(screen.getByText("gpt-4o-mini")).toBeInTheDocument();
+});
+
+test("editing a user message prefills the draft and resends with edit_index", async () => {
+  const reply: AssistantReply = {
+    reply: "已重新處理。",
+    proposal_ids: [],
+    converged: true,
+    reason: "",
+    history: [
+      { role: "user", text: "改後的問題", ts: "2026-07-18T02:00:00+00:00" },
+      { role: "assistant", text: "已重新處理。", ts: "2026-07-18T02:00:01+00:00" },
+    ],
+  };
+  const sendAssistantMessage = vi.fn().mockResolvedValue(reply);
+  setup({ history: HISTORY, api: { sendAssistantMessage } });
+  await screen.findByText("任務 abc 進度如何？");
+  await userEvent.click(screen.getByRole("button", { name: "編輯" }));
+  const textarea = screen.getByPlaceholderText("輸入訊息，Enter 送出、Shift+Enter 換行");
+  expect(textarea).toHaveValue("任務 abc 進度如何？");
+  await userEvent.clear(textarea);
+  await userEvent.type(textarea, "改後的問題");
+  await userEvent.click(screen.getByRole("button", { name: "傳送" }));
+  expect(sendAssistantMessage).toHaveBeenCalledWith("改後的問題", {
+    editIndex: 0,
+    images: undefined,
+  });
+});
+
+test("history drawer lists sessions and bulk-deletes the selected ones", async () => {
+  const listAssistantSessions = vi.fn().mockResolvedValue([
+    {
+      id: "s1",
+      title: "第一段對話",
+      archived: false,
+      created_at: "2026-07-18T01:00:00+00:00",
+      updated_at: "2026-07-18T01:00:00+00:00",
+      message_count: 4,
+      active: true,
+    },
+  ]);
+  const deleteAssistantSession = vi.fn().mockResolvedValue({ deleted: true });
+  setup({ api: { listAssistantSessions, deleteAssistantSession } });
+  await userEvent.click(screen.getByRole("button", { name: "歷史紀錄" }));
+  expect(await screen.findByText("第一段對話")).toBeInTheDocument();
+  await userEvent.click(screen.getByRole("checkbox", { name: /第一段對話/ }));
+  await userEvent.click(screen.getByRole("button", { name: "刪除" }));
+  await waitFor(() => expect(deleteAssistantSession).toHaveBeenCalledWith("s1"));
 });
 
 test("409 (no provider) shows the settings guidance text, not the raw error", async () => {

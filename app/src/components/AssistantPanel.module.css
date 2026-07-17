@@ -54,6 +54,395 @@
   cursor: not-allowed;
 }
 
+/* Header icon buttons (history drawer toggle, new chat). */
+.iconButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border: none;
+  border-radius: var(--radius-s);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background var(--transition), color var(--transition);
+}
+
+.iconButton:hover:not(:disabled) {
+  background: var(--bg-inset);
+  color: var(--text-primary);
+}
+
+.iconButton[aria-pressed="true"] {
+  background: var(--bg-inset);
+  color: var(--text-primary);
+}
+
+.iconButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* History drawer — a session list that overlays the message flow. */
+.historyDrawer {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  max-height: 55%;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-subtle);
+}
+
+.historyHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+  padding: 10px 12px 8px 16px;
+}
+
+.historyTitle {
+  font-size: var(--fs-note);
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.historyClose {
+  height: 26px;
+  padding: 0 10px;
+  border: none;
+  border-radius: var(--radius-s);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: var(--fs-meta);
+  cursor: pointer;
+}
+
+.historyClose:hover {
+  background: var(--bg-inset);
+  color: var(--text-primary);
+}
+
+.historyBulk {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 0 16px 8px;
+  font-size: var(--fs-meta);
+  color: var(--text-secondary);
+}
+
+.historyBulkButton,
+.historyBulkDanger {
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-s);
+  background: var(--bg-surface);
+  font-size: var(--fs-meta);
+  cursor: pointer;
+  transition: background var(--transition);
+}
+
+.historyBulkButton:hover {
+  background: var(--bg-inset);
+}
+
+.historyBulkDanger {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.historyBulkDanger:hover {
+  background: var(--danger-soft);
+}
+
+.historyList {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 8px 10px;
+}
+
+.historyRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  border-radius: var(--radius-s);
+}
+
+.historyRow:hover {
+  background: var(--bg-inset);
+}
+
+.historyRowActive {
+  background: var(--accent-soft);
+}
+
+.historyCheck {
+  accent-color: var(--accent);
+  width: 15px;
+  height: 15px;
+  cursor: pointer;
+}
+
+.historyOpen {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 0;
+  border: none;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.historyRowTitle {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-note);
+  color: var(--text-primary);
+}
+
+.historyRowMeta {
+  flex-shrink: 0;
+  font-size: var(--fs-meta);
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Assistant bubble metadata row: model chip / edit action under the bubble. */
+.bubbleMeta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 0;
+}
+
+.bubbleRowUser .bubbleMeta {
+  justify-content: flex-end;
+}
+
+.modelChip {
+  padding: 1px 8px;
+  border-radius: var(--radius-full);
+  background: var(--neutral-soft);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: var(--fs-meta);
+}
+
+.editButton {
+  padding: 1px 8px;
+  border: none;
+  border-radius: var(--radius-s);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: var(--fs-meta);
+  cursor: pointer;
+  transition: background var(--transition), color var(--transition);
+}
+
+.editButton:hover {
+  background: var(--bg-inset);
+  color: var(--text-primary);
+}
+
+/* Markdown block inside an assistant bubble. Spacing is tight so a short
+   reply still reads as one bubble, not a document. */
+.markdown > :first-child {
+  margin-top: 0;
+}
+
+.markdown > :last-child {
+  margin-bottom: 0;
+}
+
+.markdown p {
+  margin: 0 0 8px;
+}
+
+.markdown h3,
+.markdown h4,
+.markdown h5,
+.markdown h6 {
+  margin: 10px 0 6px;
+  font-size: var(--fs-body);
+  font-weight: 700;
+}
+
+.markdown ul,
+.markdown ol {
+  margin: 0 0 8px;
+  padding-left: 20px;
+}
+
+.markdown li {
+  margin: 2px 0;
+}
+
+.markdown code {
+  padding: 1px 5px;
+  border-radius: var(--radius-s);
+  background: var(--bg-inset);
+  font-family: var(--font-mono);
+  font-size: var(--fs-note);
+}
+
+.markdown pre {
+  margin: 0 0 8px;
+  padding: 10px 12px;
+  overflow-x: auto;
+  border-radius: var(--radius-s);
+  background: var(--bg-inset);
+}
+
+.markdown pre code {
+  padding: 0;
+  background: transparent;
+}
+
+.markdown blockquote {
+  margin: 0 0 8px;
+  padding: 2px 0 2px 12px;
+  border-left: 3px solid var(--border);
+  color: var(--text-secondary);
+}
+
+.markdown a {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+/* Attachment chips (compose row and inside a sent bubble). */
+.attachRow {
+  display: flex;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+  gap: 6px;
+  margin: 0 16px 8px;
+}
+
+.attachChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 6px 3px 9px;
+  border-radius: var(--radius-full);
+  background: var(--bg-inset);
+  color: var(--text-primary);
+  font-size: var(--fs-meta);
+}
+
+.attachRemove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border: none;
+  border-radius: var(--radius-full);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: var(--fs-note);
+  line-height: 1;
+  cursor: pointer;
+}
+
+.attachRemove:hover {
+  background: var(--neutral-soft);
+  color: var(--text-primary);
+}
+
+.bubbleAttachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.bubbleAttachment {
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  font-size: var(--fs-meta);
+  font-family: var(--font-mono);
+}
+
+.attachButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-s);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background var(--transition), color var(--transition);
+}
+
+.attachButton:hover:not(:disabled) {
+  background: var(--bg-inset);
+  color: var(--text-primary);
+}
+
+.attachButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Pause button inside the busy row, and the edit banner above the composer. */
+.pauseButton {
+  margin-left: auto;
+  height: 24px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-s);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font-size: var(--fs-meta);
+  cursor: pointer;
+}
+
+.pauseButton:hover {
+  background: var(--bg-inset);
+}
+
+.editBanner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  margin: 0 16px 8px;
+  padding: 6px 11px;
+  border-radius: var(--radius-s);
+  background: var(--accent-soft);
+  color: var(--text-primary);
+  font-size: var(--fs-meta);
+}
+
+.editCancel {
+  margin-left: auto;
+  border: none;
+  background: transparent;
+  color: var(--accent-strong);
+  font-size: var(--fs-meta);
+  cursor: pointer;
+}
+
 .messages {
   display: flex;
   flex: 1;
