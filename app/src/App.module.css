@@ -10,14 +10,14 @@
 
 .gateTitle {
   margin: 0;
-  font-size: 15px;
+  font-size: var(--fs-section);
   color: var(--text-primary);
 }
 
 .gateHint {
   margin: 0;
   font-family: var(--font-mono);
-  font-size: 12.5px;
+  font-size: var(--fs-note);
 }
 
 .gateRetry {
@@ -26,9 +26,9 @@
   border: none;
   border-radius: var(--radius-s);
   background: var(--accent);
-  color: #ffffff;
-  font-size: 13px;
-  font-weight: 600;
+  color: var(--text-on-dark);
+  font-size: var(--fs-note);
+  font-weight: 500;
   cursor: pointer;
   box-shadow: var(--shadow-1);
   transition: background var(--transition);

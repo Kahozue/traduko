@@ -46,12 +46,16 @@
   --info-soft: #e4edf7;
   --neutral-soft: #eceeea;
 
+  /* Editing-venue canvas: strictly neutral (zero chroma) in both themes so
+     the UI never biases color perception of the user's media. */
+  --bg-canvas: #1a1a1a;
+  --bg-canvas-check: #222222;
+  --scrim: rgba(12, 14, 12, 0.45);
+
   --shadow-1: 0 1px 2px rgba(24, 28, 24, 0.06), 0 1px 4px rgba(24, 28, 24, 0.08);
   --shadow-2: 0 4px 12px rgba(24, 28, 24, 0.12), 0 2px 4px rgba(24, 28, 24, 0.08);
   --radius-s: 6px;
   --radius-m: 10px;
-  /* Deprecated alias kept for not-yet-migrated views; equals --radius-m. */
-  --radius-l: 10px;
   /* Functional pills (status badges) only, never decorative. */
   --radius-full: 999px;
   --transition: 150ms ease;
@@ -84,6 +88,8 @@
   --info: #7aa7dc;
   --info-soft: #223349;
   --neutral-soft: #2c302b;
+
+  --scrim: rgba(0, 0, 0, 0.6);
 
   --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4), 0 1px 4px rgba(0, 0, 0, 0.3);
   --shadow-2: 0 4px 14px rgba(0, 0, 0, 0.5), 0 2px 4px rgba(0, 0, 0, 0.35);

@@ -5,7 +5,7 @@
   border-radius: var(--radius-s);
   background: var(--bg-surface);
   color: var(--text-secondary);
-  font-size: 12.5px;
+  font-size: var(--fs-note);
   cursor: pointer;
   transition: background var(--transition);
 }
@@ -23,8 +23,8 @@
 
 .title {
   margin: 0;
-  font-size: 19px;
-  font-weight: 600;
+  font-size: var(--fs-hero);
+  font-weight: 700;
 }
 
 .actions {
@@ -35,7 +35,7 @@
 
 .saved {
   color: var(--ok);
-  font-size: 13px;
+  font-size: var(--fs-note);
 }
 
 .primary {
@@ -43,9 +43,9 @@
   border: none;
   border-radius: var(--radius-s);
   background: var(--accent);
-  color: #ffffff;
-  font-size: 13px;
-  font-weight: 600;
+  color: var(--text-on-dark);
+  font-size: var(--fs-note);
+  font-weight: 500;
   cursor: pointer;
   box-shadow: var(--shadow-1);
   transition: background var(--transition);
@@ -61,7 +61,7 @@
   border-radius: var(--radius-s);
   background: var(--bg-surface);
   color: var(--text-primary);
-  font-size: 13px;
+  font-size: var(--fs-note);
   cursor: pointer;
   transition: background var(--transition);
 }
@@ -95,7 +95,7 @@
   display: flex;
   flex-direction: column;
   gap: 4px;
-  font-size: 13px;
+  font-size: var(--fs-note);
   color: var(--text-secondary);
 }
 
@@ -117,7 +117,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 13px;
+  font-size: var(--fs-note);
   color: var(--text-secondary);
 }
 
@@ -136,8 +136,8 @@
 
 .previewTitle {
   margin: 0 0 10px;
-  font-size: 13px;
-  font-weight: 600;
+  font-size: var(--fs-note);
+  font-weight: 500;
   color: var(--text-secondary);
 }
 
@@ -147,10 +147,10 @@
   min-height: 200px;
   padding: 16px;
   border-radius: var(--radius-s);
-  background: #1a1a1a;
+  background: var(--bg-canvas);
   background-image:
-    linear-gradient(45deg, #222 25%, transparent 25%),
-    linear-gradient(-45deg, #222 25%, transparent 25%);
+    linear-gradient(45deg, var(--bg-canvas-check) 25%, transparent 25%),
+    linear-gradient(-45deg, var(--bg-canvas-check) 25%, transparent 25%);
   background-size: 24px 24px;
 }
 
@@ -169,5 +169,5 @@
 
 .error {
   color: var(--danger);
-  font-size: 13px;
+  font-size: var(--fs-note);
 }

@@ -1,6 +1,6 @@
 .title {
   margin: 0 0 20px;
-  font-size: 22px;
+  font-size: var(--fs-page);
   font-weight: 700;
 }
 
@@ -20,12 +20,12 @@
 
 .statLabel {
   color: var(--text-secondary);
-  font-size: 12.5px;
+  font-size: var(--fs-note);
 }
 
 .statValue {
   margin-top: 8px;
-  font-size: 26px;
+  font-size: var(--fs-page);
   font-weight: 700;
   font-variant-numeric: tabular-nums;
 }

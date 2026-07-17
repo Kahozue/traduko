@@ -3,8 +3,8 @@
   align-items: center;
   gap: 6px;
   padding: 3px 10px;
-  border-radius: 999px;
-  font-size: 12px;
+  border-radius: var(--radius-full);
+  font-size: var(--fs-meta);
   font-weight: 500;
   background: var(--neutral-soft);
   color: var(--text-secondary);
