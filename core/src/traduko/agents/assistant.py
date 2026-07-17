@@ -23,15 +23,17 @@ from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
 
-from pydantic import ValidationError
-
 from .. import mcphub, skillhub
 from ..budget import BudgetMeter
 from ..config import CoreConfig
 from ..fsutil import atomic_write_text
 from ..llm import LLMError, create_llm
 from ..preflight import run_preflight as compute_preflight
-from ..proposals import propose_config
+from ..proposals import (
+    CONFIRMED_VIA_PROPOSAL_ERROR,
+    patch_grants_confirmation,
+    propose_config,
+)
 from ..workspace import Workspace
 from .recorder import AgentRunRecorder
 from .runner import AgentLimits, AgentRunner
@@ -67,7 +69,7 @@ read_config, read_logs, run_preflight) to gather facts before answering \
 instead of guessing about the state of the system. Reply in the same \
 language the operator wrote in."""
 
-_SECRET_MARKERS = ("key", "token", "password")
+_SECRET_MARKERS = ("key", "token", "password", "secret", "webhook")
 
 
 class AssistantUnavailable(Exception):
@@ -82,8 +84,9 @@ def _is_secret_key(name: str) -> bool:
 def _redact(value: object) -> object:
     """Recursively replace secret-looking string values with a placeholder.
 
-    A key counts as secret if its lowercased name contains "key", "token"
-    or "password"; only non-empty string values are replaced, so nested
+    A key counts as secret if its lowercased name contains "key", "token",
+    "password", "secret" or "webhook" (webhook URLs are bearer-capable
+    credentials); only non-empty string values are replaced, so nested
     dicts (llm_providers, mcp_servers, ...) and lists of dicts are covered
     without needing a hardcoded list of sections.
     """
@@ -247,7 +250,7 @@ def build_assistant_tools(ws: Workspace) -> list[AgentTool]:
             name="read_config",
             description=(
                 "Dump the live config with secret-looking values (keys, tokens, "
-                "passwords) redacted."
+                "passwords, secrets, webhook URLs) redacted."
             ),
             parameters={},
             handler=_safe(read_config),
@@ -289,10 +292,17 @@ def _build_propose_tool(ws: Workspace, proposal_ids: list[str]) -> AgentTool:
         patch = args.get("patch")
         if not isinstance(patch, dict):
             raise ToolError("patch must be an object (a partial config tree)")
+        # First layer of the confirmation gate (proposals.propose_config is
+        # the second): `confirmed` on skills/mcp_servers must never travel
+        # through the proposal channel, only the settings panel grants it.
+        if patch_grants_confirmation(patch):
+            raise ToolError(CONFIRMED_VIA_PROPOSAL_ERROR)
         reason = str(args.get("reason", ""))
         try:
             proposal = propose_config(ws.root, patch, reason)
-        except ValidationError as error:
+        except ValueError as error:
+            # Covers pydantic's ValidationError (a ValueError subclass) for
+            # invalid merges and propose_config's own confirmed-gate error.
             raise ToolError(str(error)) from None
         proposal_ids.append(proposal["id"])
         return json.dumps(
@@ -306,7 +316,10 @@ def _build_propose_tool(ws: Workspace, proposal_ids: list[str]) -> AgentTool:
             "File a pending proposal to change the live config. This never "
             "applies the change: a human must approve it in the app's panel "
             "before it takes effect. `patch` uses the same nested shape as "
-            "the config, e.g. {\"budget\": {\"monthly_usd_limit\": 50}}."
+            "the config, e.g. {\"budget\": {\"monthly_usd_limit\": 50}}. "
+            "`confirmed` on skills or mcp_servers entries cannot be set "
+            "through the proposal channel: confirmation is granted only from "
+            "the settings panel, so propose `enabled` only."
         ),
         parameters={
             "patch": {

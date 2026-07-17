@@ -29,6 +29,31 @@ from .fsutil import atomic_write_text
 
 PROPOSALS_DIR = "proposals"
 
+# `confirmed` on skills/mcp_servers entries is the v2-05 safety gate: it is
+# granted only through the settings panel's confirmation card (where the user
+# reviews the SKILL.md full text / MCP tool list), never through the proposal
+# channel. The settings page writes config via PUT /config, not via proposals,
+# so no legitimate flow ever hits this guard.
+CONFIRMATION_GATED_SECTIONS = ("skills", "mcp_servers")
+CONFIRMED_VIA_PROPOSAL_ERROR = (
+    "confirmed cannot be set through the proposal channel: confirmation is "
+    "granted only from the settings panel after the user reviews the skill "
+    "or server; propose enabled only"
+)
+
+
+def patch_grants_confirmation(patch: dict) -> bool:
+    """True if any ``skills``/``mcp_servers`` entry in ``patch`` carries a
+    truthy ``confirmed`` — the one field the proposal channel must never set."""
+    for section in CONFIRMATION_GATED_SECTIONS:
+        entries = patch.get(section)
+        if not isinstance(entries, dict):
+            continue
+        for entry in entries.values():
+            if isinstance(entry, dict) and entry.get("confirmed"):
+                return True
+    return False
+
 
 def _deep_merge(base: dict, patch: dict) -> dict:
     """Recursively merge ``patch`` into ``base`` (dicts merge, leaves replace)."""
@@ -101,8 +126,13 @@ def propose_config(root: Path, patch: dict, reason: str) -> dict:
     """Validate ``patch`` against the current config and store a pending proposal.
 
     Raises ``pydantic.ValidationError`` (and writes nothing) if the merged
-    config is invalid. Returns the stored proposal dict.
+    config is invalid. ``confirmed`` cannot be set through the proposal
+    channel: a patch granting it on any skills/mcp_servers entry raises
+    ``ValueError`` (and writes nothing), because confirmation is only ever
+    granted from the settings panel. Returns the stored proposal dict.
     """
+    if patch_grants_confirmation(patch):
+        raise ValueError(CONFIRMED_VIA_PROPOSAL_ERROR)
     current = load_config(root)
     new_config = _merge_and_validate(current, patch)
     proposal = {

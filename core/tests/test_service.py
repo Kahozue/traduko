@@ -988,7 +988,9 @@ def test_proposal_approve_applies_config_and_syncs_state(tmp_path: Path) -> None
             tmp_path,
             {
                 "default_project": "approved",
-                "skills": {"demo": {"enabled": True, "confirmed": True}},
+                # enabled only: `confirmed` cannot travel through the
+                # proposal channel (settings-panel-only safety gate).
+                "skills": {"demo": {"enabled": True}},
             },
             "enable the demo skill",
         )
