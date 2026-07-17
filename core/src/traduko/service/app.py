@@ -53,6 +53,8 @@ from ..models import InvalidTransition, TaskRecord, TaskStatus, transition
 from ..notify import Notifier, NotifyError, create_channel
 from ..preflight import run_preflight
 from ..profiles import load_profile, stage_records_from
+from .. import proposals, skillhub
+from ..skillhub import SkillsManager, SkillValidationError
 from ..styles import SubtitleStyle
 from ..styles_render import render_style_frame
 from ..sync.engine import (
@@ -147,6 +149,17 @@ def get_config(request: Request) -> dict:
     return ws.config.model_dump()
 
 
+def _adopt_config(app: FastAPI, config: CoreConfig, notifier: Notifier) -> None:
+    """Converge in-memory state on a config already persisted to disk:
+    workspace config, notifier attachment and the active skills manager
+    (disk-read based, so a rebuild costs nothing)."""
+    ws: Workspace = app.state.workspace
+    ws.config = config
+    app.state.detach_notifier()
+    app.state.detach_notifier = notifier.attach(ws.bus)
+    skillhub.set_active(SkillsManager(ws.root, config.skills))
+
+
 @router.put("/config")
 def put_config(request: Request, body: dict) -> dict:
     ws: Workspace = request.app.state.workspace
@@ -163,9 +176,7 @@ def put_config(request: Request, body: dict) -> dict:
     except NotifyError as error:
         raise HTTPException(status_code=422, detail=str(error)) from None
     save_config(ws.root, config)
-    ws.config = config
-    request.app.state.detach_notifier()
-    request.app.state.detach_notifier = notifier.attach(ws.bus)
+    _adopt_config(request.app, config, notifier)
     return config.model_dump()
 
 
@@ -438,6 +449,110 @@ async def mcp_reload(request: Request) -> list[dict]:
     return manager.status()
 
 
+def _skills_manager() -> SkillsManager:
+    manager = skillhub.active_manager()
+    if manager is None:
+        raise HTTPException(status_code=503, detail="skills manager not active")
+    return manager
+
+
+@router.get("/skills")
+def list_skills(request: Request) -> list[dict]:
+    manager = skillhub.active_manager()
+    return manager.list_skills() if manager is not None else []
+
+
+@router.get("/skills/{name}")
+def get_skill(request: Request, name: str) -> dict:
+    try:
+        content = _skills_manager().read(name)
+    except FileNotFoundError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from None
+    return {"name": name, "content": content}
+
+
+class SkillContentRequest(BaseModel):
+    content: str
+
+
+@router.put("/skills/{name}")
+def put_skill(request: Request, name: str, body: SkillContentRequest) -> dict:
+    try:
+        _skills_manager().write(name, body.content)
+    except SkillValidationError as error:
+        raise HTTPException(status_code=422, detail=error.errors) from None
+    return {"saved": True}
+
+
+class SkillCreateRequest(BaseModel):
+    name: str
+
+
+@router.post("/skills", status_code=201)
+def create_skill(request: Request, body: SkillCreateRequest) -> dict:
+    try:
+        _skills_manager().create(body.name)
+    except SkillValidationError as error:
+        raise HTTPException(status_code=422, detail=error.errors) from None
+    except FileExistsError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from None
+    return {"created": body.name}
+
+
+@router.delete("/skills/{name}")
+def delete_skill(request: Request, name: str) -> dict:
+    try:
+        _skills_manager().delete(name)
+    except FileNotFoundError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from None
+    return {"deleted": True}
+
+
+@router.get("/proposals")
+def list_proposals(request: Request, status: str | None = None) -> list[dict]:
+    ws: Workspace = request.app.state.workspace
+    return proposals.list_proposals(ws.root, status=status)
+
+
+@router.post("/proposals/{proposal_id}/approve")
+def approve_proposal(request: Request, proposal_id: str) -> dict:
+    """Apply a pending proposal, then converge the running service on the
+    new config exactly like put_config (skills manager included). MCP
+    servers are NOT reloaded here; the UI drives that through POST
+    /mcp/reload as usual."""
+    ws: Workspace = request.app.state.workspace
+    try:
+        proposals.approve(ws.root, proposal_id)
+    except KeyError:
+        raise HTTPException(
+            status_code=404, detail=f"proposal not found: {proposal_id}"
+        ) from None
+    # ValidationError subclasses ValueError, so it must be caught first to
+    # keep invalid merges (422) apart from non-pending proposals (409).
+    except ValidationError as error:
+        raise HTTPException(
+            status_code=422, detail=error.errors(include_url=False)
+        ) from None
+    except ValueError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from None
+    config = load_config(ws.root)
+    _adopt_config(request.app, config, Notifier.from_config(config))
+    return config.model_dump()
+
+
+@router.post("/proposals/{proposal_id}/reject")
+def reject_proposal(request: Request, proposal_id: str) -> dict:
+    ws: Workspace = request.app.state.workspace
+    try:
+        return proposals.reject(ws.root, proposal_id)
+    except KeyError:
+        raise HTTPException(
+            status_code=404, detail=f"proposal not found: {proposal_id}"
+        ) from None
+    except ValueError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from None
+
+
 @router.get("/profiles")
 def list_profiles(request: Request) -> list[str]:
     ws: Workspace = request.app.state.workspace
@@ -650,6 +765,7 @@ def create_app(data_root: Path | None = None) -> FastAPI:
         await mcp_manager.start()
         mcphub.set_active(mcp_manager)
         app.state.mcp = mcp_manager
+        skillhub.set_active(SkillsManager(workspace.root, workspace.config.skills))
         bot_task: asyncio.Task | None = None
         bot_config = workspace.config.discord_bot
         if bot_config.enabled:
@@ -687,6 +803,7 @@ def create_app(data_root: Path | None = None) -> FastAPI:
             with suppress(asyncio.CancelledError):
                 await bot_task
         mcphub.set_active(None)
+        skillhub.set_active(None)
         await app.state.mcp.stop()
         worker.stop()
 

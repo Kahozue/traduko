@@ -277,3 +277,7 @@ def active_tools() -> list[AgentTool]:
     if _active is None:
         return []
     return _active.agent_tools()
+
+
+def active_manager() -> SkillsManager | None:
+    return _active

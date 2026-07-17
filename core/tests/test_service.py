@@ -10,6 +10,7 @@ import pytest
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
+from traduko import proposals
 from traduko.config import load_config
 from traduko.events import Event
 from traduko.notify import _CHANNELS, DEFAULT_EVENTS, register_channel, resolve_events
@@ -834,3 +835,217 @@ def test_mcp_reload_picks_up_saved_config(tmp_path: Path, monkeypatch) -> None:
             {"name": "echo", "description": "Echo the text back."}
         ]
         assert mcphub.active_tools()[0].name == "demo.echo"
+
+
+VALID_SKILL = """---
+name: honorific-style
+description: Keep honorifics consistent across the translation.
+---
+
+Always keep the source honorifics in the target text.
+"""
+
+
+def test_skills_and_proposals_require_token(tmp_path: Path) -> None:
+    with service(tmp_path) as (client, headers, token):
+        assert client.get("/skills").status_code == 401
+        assert client.get("/proposals").status_code == 401
+
+
+def test_skills_list_empty_without_skills(tmp_path: Path) -> None:
+    with service(tmp_path) as (client, headers, token):
+        response = client.get("/skills", headers=headers)
+        assert response.status_code == 200
+        assert response.json() == []
+
+
+def test_skills_crud_full_flow(tmp_path: Path) -> None:
+    with service(tmp_path) as (client, headers, token):
+        created = client.post(
+            "/skills", json={"name": "honorific-style"}, headers=headers
+        )
+        assert created.status_code == 201, created.text
+
+        rows = client.get("/skills", headers=headers).json()
+        assert [row["name"] for row in rows] == ["honorific-style"]
+        assert rows[0]["enabled"] is False
+        assert rows[0]["confirmed"] is False
+        assert rows[0]["valid"] is True
+
+        shown = client.get("/skills/honorific-style", headers=headers)
+        assert shown.status_code == 200
+        assert shown.json()["name"] == "honorific-style"
+        assert "name: honorific-style" in shown.json()["content"]
+
+        saved = client.put(
+            "/skills/honorific-style", json={"content": VALID_SKILL}, headers=headers
+        )
+        assert saved.status_code == 200
+        assert (
+            client.get("/skills/honorific-style", headers=headers).json()["content"]
+            == VALID_SKILL
+        )
+
+        invalid = client.put(
+            "/skills/honorific-style",
+            json={"content": "---\nname: other\n---\n\nbody\n"},
+            headers=headers,
+        )
+        assert invalid.status_code == 422
+        errors = invalid.json()["detail"]
+        assert isinstance(errors, list)
+        assert any("name does not match" in error for error in errors)
+        # the invalid write must not have clobbered the stored content
+        assert (
+            client.get("/skills/honorific-style", headers=headers).json()["content"]
+            == VALID_SKILL
+        )
+
+        deleted = client.delete("/skills/honorific-style", headers=headers)
+        assert deleted.status_code == 200
+        assert (
+            client.get("/skills/honorific-style", headers=headers).status_code == 404
+        )
+        assert client.get("/skills", headers=headers).json() == []
+
+
+def test_skills_create_conflict_invalid_name_and_missing_delete(tmp_path: Path) -> None:
+    with service(tmp_path) as (client, headers, token):
+        assert (
+            client.post("/skills", json={"name": "demo"}, headers=headers).status_code
+            == 201
+        )
+        assert (
+            client.post("/skills", json={"name": "demo"}, headers=headers).status_code
+            == 409
+        )
+        bad = client.post("/skills", json={"name": "Bad_Name"}, headers=headers)
+        assert bad.status_code == 422
+        assert isinstance(bad.json()["detail"], list)
+        assert client.delete("/skills/nope", headers=headers).status_code == 404
+
+
+def test_put_config_rebuilds_skills_manager(tmp_path: Path) -> None:
+    with service(tmp_path) as (client, headers, token):
+        assert (
+            client.post("/skills", json={"name": "demo"}, headers=headers).status_code
+            == 201
+        )
+        assert client.get("/skills", headers=headers).json()[0]["enabled"] is False
+
+        config = client.get("/config", headers=headers).json()
+        config["skills"] = {"demo": {"enabled": True, "confirmed": True}}
+        assert client.put("/config", headers=headers, json=config).status_code == 200
+
+        rows = client.get("/skills", headers=headers).json()
+        assert rows[0]["enabled"] is True
+        assert rows[0]["confirmed"] is True
+
+
+def test_proposal_approve_applies_config_and_syncs_state(tmp_path: Path) -> None:
+    with service(tmp_path) as (client, headers, token):
+        assert (
+            client.post("/skills", json={"name": "demo"}, headers=headers).status_code
+            == 201
+        )
+        proposal = proposals.propose_config(
+            tmp_path,
+            {
+                "default_project": "approved",
+                "skills": {"demo": {"enabled": True, "confirmed": True}},
+            },
+            "enable the demo skill",
+        )
+
+        rows = client.get("/proposals", headers=headers).json()
+        assert [row["id"] for row in rows] == [proposal["id"]]
+        assert rows[0]["status"] == "pending"
+        assert "default_project" in rows[0]["diff"]
+
+        response = client.post(
+            f"/proposals/{proposal['id']}/approve", headers=headers
+        )
+        assert response.status_code == 200, response.text
+        assert response.json()["default_project"] == "approved"
+
+        # disk, GET /config and the in-memory workspace config all converge
+        assert load_config(tmp_path).default_project == "approved"
+        assert (
+            client.get("/config", headers=headers).json()["default_project"]
+            == "approved"
+        )
+        assert client.app.state.workspace.config.default_project == "approved"
+        # the skills manager was rebuilt from the approved config
+        assert client.get("/skills", headers=headers).json()[0]["enabled"] is True
+
+        assert client.get("/proposals?status=pending", headers=headers).json() == []
+        applied = client.get("/proposals?status=applied", headers=headers).json()
+        assert [row["id"] for row in applied] == [proposal["id"]]
+
+        # approving an already-applied proposal is a conflict
+        again = client.post(f"/proposals/{proposal['id']}/approve", headers=headers)
+        assert again.status_code == 409
+
+
+def test_proposal_reject_and_error_mapping(tmp_path: Path) -> None:
+    with service(tmp_path) as (client, headers, token):
+        proposal = proposals.propose_config(
+            tmp_path, {"default_project": "never"}, "to be rejected"
+        )
+
+        rejected = client.post(
+            f"/proposals/{proposal['id']}/reject", headers=headers
+        )
+        assert rejected.status_code == 200
+        assert rejected.json()["status"] == "rejected"
+        assert (
+            client.get("/config", headers=headers).json()["default_project"]
+            == "default"
+        )
+
+        assert (
+            client.post(
+                f"/proposals/{proposal['id']}/approve", headers=headers
+            ).status_code
+            == 409
+        )
+        assert (
+            client.post(
+                f"/proposals/{proposal['id']}/reject", headers=headers
+            ).status_code
+            == 409
+        )
+        assert client.post("/proposals/nope/approve", headers=headers).status_code == 404
+        assert client.post("/proposals/nope/reject", headers=headers).status_code == 404
+
+
+def test_proposal_approve_invalid_patch_is_422(tmp_path: Path) -> None:
+    # A patch can pass validation at propose time yet fail at approve time
+    # (config drift). Seed a stored pending proposal whose patch no longer
+    # validates and check it maps to 422, not the 409 of the ValueError
+    # branch (pydantic's ValidationError subclasses ValueError).
+    with service(tmp_path) as (client, headers, token):
+        path = tmp_path / "proposals" / "prop-x.json"
+        path.write_text(
+            json.dumps(
+                {
+                    "id": "prop-x",
+                    "kind": "config",
+                    "reason": "drifted",
+                    "patch": {"budget": {"task_usd_limit": "lots"}},
+                    "diff": "",
+                    "status": "pending",
+                    "created_at": "t",
+                }
+            ),
+            encoding="utf-8",
+        )
+        response = client.post("/proposals/prop-x/approve", headers=headers)
+        assert response.status_code == 422
+        assert isinstance(response.json()["detail"], list)
+        # nothing was applied and the proposal stays pending
+        assert load_config(tmp_path).budget.task_usd_limit is None
+        assert (
+            client.get("/proposals?status=pending", headers=headers).json()[0]["id"]
+            == "prop-x"
+        )
