@@ -10,17 +10,34 @@ function setup(providers: Record<string, ProviderConfigDoc> = {}) {
   return { onChange };
 }
 
-test("adding a provider with name and base_url propagates a record", async () => {
+test("adding a provider prefills the openai preset and stays editable", async () => {
   const { onChange } = setup();
   await userEvent.click(screen.getByRole("button", { name: "新增供應商" }));
+  // New rows start on the OpenAI preset: base_url and model are pre-filled
+  // but the row still needs a name, so it is not yet a valid record.
   expect(onChange).toHaveBeenLastCalledWith(null);
-  await userEvent.type(screen.getByLabelText("名稱"), "deepseek");
-  await userEvent.type(
-    screen.getByLabelText("API 位址（base_url）"),
-    "https://api.deepseek.com/v1",
-  );
+  await userEvent.type(screen.getByLabelText("名稱"), "openai");
   expect(onChange).toHaveBeenLastCalledWith({
-    deepseek: { type: "openai_compat", base_url: "https://api.deepseek.com/v1" },
+    openai: {
+      type: "openai_compat",
+      base_url: "https://api.openai.com/v1",
+      model: "gpt-4o-mini",
+    },
+  });
+});
+
+test("choosing a preset prefills base_url without clobbering a typed value", async () => {
+  const { onChange } = setup();
+  await userEvent.click(screen.getByRole("button", { name: "新增供應商" }));
+  await userEvent.clear(screen.getByLabelText("API 位址（base_url）"));
+  await userEvent.selectOptions(screen.getByLabelText("供應商"), "deepseek");
+  await userEvent.type(screen.getByLabelText("名稱"), "ds");
+  expect(onChange).toHaveBeenLastCalledWith({
+    ds: {
+      type: "openai_compat",
+      base_url: "https://api.deepseek.com/v1",
+      model: "gpt-4o-mini",
+    },
   });
 });
 
@@ -76,4 +93,19 @@ test("non-openai types do not require base_url", async () => {
   const { onChange } = setup({ dry: { type: "fake" } });
   await userEvent.type(screen.getByLabelText("名稱"), "2");
   expect(onChange).toHaveBeenLastCalledWith({ dry2: { type: "fake" } });
+});
+
+test("test button reports the probe outcome", async () => {
+  const onChange = vi.fn();
+  const onTest = vi.fn().mockResolvedValue({ ok: false, error: "http 401" });
+  render(
+    <ProvidersSection
+      providers={{ a: { type: "openai_compat", base_url: "https://x/v1" } }}
+      onChange={onChange}
+      onTest={onTest}
+    />,
+  );
+  await userEvent.click(screen.getByRole("button", { name: "測試連線" }));
+  expect(onTest).toHaveBeenCalledWith({ type: "openai_compat", base_url: "https://x/v1" });
+  expect(await screen.findByText(/連線失敗.*http 401/)).toBeInTheDocument();
 });

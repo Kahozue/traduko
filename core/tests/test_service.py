@@ -1209,3 +1209,40 @@ def test_assistant_clear_empties_history_but_keeps_run_records(
 
         assert client.get("/assistant/history", headers=headers).json() == []
         assert sorted((tmp_path / "assistant" / "runs").glob("*.jsonl")) == run_files
+
+
+def test_provider_test_endpoint_reports_missing_model(tmp_path: Path) -> None:
+    with service(tmp_path) as (client, headers, token):
+        response = client.post(
+            "/config/providers/test",
+            headers=headers,
+            json={"config": {"type": "fake"}},
+        )
+        assert response.status_code == 200
+        body = response.json()
+        assert body["ok"] is False
+        assert "model" in body["error"]
+
+
+def test_provider_test_endpoint_ok_for_reachable_fake(tmp_path: Path) -> None:
+    with service(tmp_path) as (client, headers, token):
+        response = client.post(
+            "/config/providers/test",
+            headers=headers,
+            json={"config": {"type": "fake", "model": "fake-model"}},
+        )
+        assert response.status_code == 200
+        assert response.json() == {"ok": True}
+
+
+def test_provider_test_endpoint_classifies_unknown_type(tmp_path: Path) -> None:
+    with service(tmp_path) as (client, headers, token):
+        response = client.post(
+            "/config/providers/test",
+            headers=headers,
+            json={"config": {"type": "nope", "model": "m"}},
+        )
+        assert response.status_code == 200
+        body = response.json()
+        assert body["ok"] is False
+        assert "nope" in body["error"]

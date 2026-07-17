@@ -12,6 +12,8 @@ import type {
   PersistedEvent,
   PreflightReport,
   ProposalDoc,
+  ProviderConfigDoc,
+  ProviderTestResult,
   SkillInfo,
   SubtitleStylePreset,
   SyncReport,
@@ -81,6 +83,13 @@ export class ApiClient {
     return this.request("/config/notifications/test", {
       method: "POST",
       body: JSON.stringify({ channel }),
+    });
+  }
+
+  testProvider(config: ProviderConfigDoc, model?: string): Promise<ProviderTestResult> {
+    return this.request("/config/providers/test", {
+      method: "POST",
+      body: JSON.stringify({ config, model }),
     });
   }
 

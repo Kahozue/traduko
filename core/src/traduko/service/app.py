@@ -191,6 +191,45 @@ class NotifyTestRequest(BaseModel):
     channel: dict
 
 
+class ProviderTestRequest(BaseModel):
+    config: dict
+    model: str | None = None
+
+
+@router.post("/config/providers/test")
+def test_provider(request: Request, body: ProviderTestRequest) -> dict:
+    """Probe one llm_providers entry with a minimal chat call.
+
+    The config is the same nested shape a provider takes under
+    llm_providers (type, base_url, api_key/api_key_env, model). Delivery
+    outcome is data, not a server error: unreachable endpoints, bad keys and
+    unknown models all come back as {ok: false, error} so the settings panel
+    classifies them into readable wording instead of hitting a 500."""
+    from ..llm import ChatMessage, ChatRequest, LLMError, create_llm
+
+    entry = dict(body.config)
+    model = body.model or entry.pop("model", None) or ""
+    entry.pop("model", None)
+    if not model.strip():
+        return {"ok": False, "error": "no model set: fill in a model to test"}
+    try:
+        provider = create_llm(entry)
+    except LLMError as error:
+        return {"ok": False, "error": str(error)}
+    probe = ChatRequest(
+        model=model,
+        messages=[ChatMessage(role="user", content="ping")],
+        max_tokens=1,
+    )
+    try:
+        provider.chat(probe)
+    except LLMError as error:
+        return {"ok": False, "error": str(error)}
+    except Exception as error:  # noqa: BLE001 - outcome is data, never a 500
+        return {"ok": False, "error": str(error)}
+    return {"ok": True}
+
+
 @router.post("/config/notifications/test")
 def send_test_notification(request: Request, body: NotifyTestRequest) -> dict:
     try:

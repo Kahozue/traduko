@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { t } from "../../i18n";
-import type { ProviderConfigDoc } from "../../lib/api/types";
+import type { ProviderConfigDoc, ProviderTestResult } from "../../lib/api/types";
 import { Section } from "./Section";
 import styles from "./settings.module.css";
 
@@ -11,6 +11,59 @@ interface Row {
 }
 
 const OPTIONAL_FIELDS = ["api_key", "api_key_env", "model"] as const;
+
+// Named presets: every one still speaks the OpenAI-compatible protocol
+// (the only backend provider type), so a preset only pre-fills base_url and
+// a starting model. Both stay editable — selecting a preset is a shortcut,
+// not a lock. "custom" fills nothing.
+interface Preset {
+  id: string;
+  label: string;
+  baseUrl: string;
+  model: string;
+}
+
+const PRESETS: Preset[] = [
+  { id: "openai", label: "OpenAI", baseUrl: "https://api.openai.com/v1", model: "gpt-4o-mini" },
+  {
+    id: "claude",
+    label: "Claude",
+    baseUrl: "https://api.anthropic.com/v1",
+    model: "claude-sonnet-4-5",
+  },
+  {
+    id: "gemini",
+    label: "Gemini",
+    baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai",
+    model: "gemini-2.5-flash",
+  },
+  { id: "deepseek", label: "DeepSeek", baseUrl: "https://api.deepseek.com/v1", model: "deepseek-chat" },
+  { id: "glm", label: "GLM", baseUrl: "https://open.bigmodel.cn/api/paas/v4", model: "glm-4.5" },
+  { id: "kimi", label: "Kimi", baseUrl: "https://api.moonshot.cn/v1", model: "kimi-k2-0905-preview" },
+  { id: "custom", label: t("settings.provider.custom"), baseUrl: "", model: "" },
+];
+
+// Model suggestions per preset, offered through a datalist so the field
+// stays free-text (any model the endpoint supports) while giving one-click
+// common choices.
+const MODEL_SUGGESTIONS: Record<string, string[]> = {
+  openai: ["gpt-4o", "gpt-4o-mini", "gpt-4.1", "gpt-4.1-mini", "o4-mini"],
+  claude: ["claude-opus-4-1", "claude-sonnet-4-5", "claude-3-5-haiku-latest"],
+  gemini: ["gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.0-flash"],
+  deepseek: ["deepseek-chat", "deepseek-reasoner"],
+  glm: ["glm-4.5", "glm-4.5-air", "glm-4-plus"],
+  kimi: ["kimi-k2-0905-preview", "moonshot-v1-32k", "moonshot-v1-128k"],
+};
+
+// Which preset a stored row matches, so an edited config re-opens on the
+// right preset instead of always "custom".
+function presetForConfig(config: ProviderConfigDoc): string {
+  const baseUrl = String(config.base_url ?? "").replace(/\/$/, "");
+  const match = PRESETS.find(
+    (preset) => preset.baseUrl !== "" && preset.baseUrl.replace(/\/$/, "") === baseUrl,
+  );
+  return match?.id ?? "custom";
+}
 
 function needsBaseUrl(config: ProviderConfigDoc): boolean {
   return String(config.type ?? "openai_compat") === "openai_compat";
@@ -32,9 +85,13 @@ function normalize(rows: Row[]): Record<string, ProviderConfigDoc> | null {
 export function ProvidersSection({
   providers,
   onChange,
+  onTest,
 }: {
   providers: Record<string, ProviderConfigDoc>;
   onChange: (providers: Record<string, ProviderConfigDoc> | null) => void;
+  // Injected by SettingsView (api.testProvider); optional so the section can
+  // render without a live connection, and the test row hides when absent.
+  onTest?: (config: ProviderConfigDoc) => Promise<ProviderTestResult>;
 }) {
   const [rows, setRows] = useState<Row[]>(() =>
     Object.entries(providers).map(([name, config], index) => ({
@@ -45,6 +102,13 @@ export function ProvidersSection({
   );
   const nextUid = useRef(rows.length);
   const [revealed, setRevealed] = useState<Set<number>>(new Set());
+  // The chosen preset per row is view state, not saved config: it only
+  // decides which suggestions and base_url pre-fill runs.
+  const [presetByUid, setPresetByUid] = useState<Record<number, string>>(() => {
+    const initial: Record<number, string> = {};
+    for (const row of rows) initial[row.uid] = presetForConfig(row.config);
+    return initial;
+  });
 
   function apply(next: Row[]) {
     setRows(next);
@@ -65,10 +129,33 @@ export function ProvidersSection({
     setRow(uid, { config });
   }
 
+  function choosePreset(uid: number, presetId: string) {
+    setPresetByUid((prev) => ({ ...prev, [uid]: presetId }));
+    const preset = PRESETS.find((item) => item.id === presetId);
+    if (!preset || preset.id === "custom") return;
+    const row = rows.find((item) => item.uid === uid);
+    if (!row) return;
+    // Pre-fill only empty fields so choosing a preset never clobbers values
+    // the user already typed; type stays openai_compat.
+    const config: ProviderConfigDoc = { ...row.config, type: "openai_compat" };
+    if (String(config.base_url ?? "").trim() === "") config.base_url = preset.baseUrl;
+    if (String(config.model ?? "").trim() === "" && preset.model) config.model = preset.model;
+    setRow(uid, { config });
+  }
+
   function add() {
     const uid = nextUid.current;
     nextUid.current += 1;
-    apply([...rows, { uid, name: "", config: { type: "openai_compat", base_url: "" } }]);
+    setPresetByUid((prev) => ({ ...prev, [uid]: "openai" }));
+    const preset = PRESETS[0];
+    apply([
+      ...rows,
+      {
+        uid,
+        name: "",
+        config: { type: "openai_compat", base_url: preset.baseUrl, model: preset.model },
+      },
+    ]);
   }
 
   function toggleReveal(uid: number) {
@@ -102,6 +189,8 @@ export function ProvidersSection({
           !name || trimmedNames.filter((candidate) => candidate === name).length > 1;
         const baseUrl = String(row.config.base_url ?? "");
         const showBaseUrl = needsBaseUrl(row.config);
+        const presetId = presetByUid[row.uid] ?? presetForConfig(row.config);
+        const suggestions = MODEL_SUGGESTIONS[presetId] ?? [];
         return (
           <div key={row.uid} className={styles.card}>
             <div className={styles.cardHeader}>
@@ -117,9 +206,21 @@ export function ProvidersSection({
                   <span className={styles.error}>{t("settings.providerNameInvalid")}</span>
                 )}
               </label>
-              <span className={styles.typeTag}>
-                {String(row.config.type ?? "openai_compat")}
-              </span>
+              <label className={styles.field}>
+                <span className={styles.label}>{t("settings.providerPreset")}</span>
+                <select
+                  className={styles.input}
+                  aria-label={t("settings.providerPreset")}
+                  value={presetId}
+                  onChange={(event) => choosePreset(row.uid, event.target.value)}
+                >
+                  {PRESETS.map((preset) => (
+                    <option key={preset.id} value={preset.id}>
+                      {preset.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
               <button
                 type="button"
                 className={styles.secondary}
@@ -176,15 +277,71 @@ export function ProvidersSection({
                   <span className={styles.label}>{t("settings.defaultModel")}</span>
                   <input
                     className={styles.input}
+                    list={`models-${row.uid}`}
                     value={String(row.config.model ?? "")}
                     onChange={(event) => setField(row.uid, "model", event.target.value)}
                   />
+                  {suggestions.length > 0 && (
+                    <datalist id={`models-${row.uid}`}>
+                      {suggestions.map((model) => (
+                        <option key={model} value={model} />
+                      ))}
+                    </datalist>
+                  )}
                 </label>
               </div>
             )}
+            <ProviderTestRow config={row.config} onTest={onTest} />
           </div>
         );
       })}
     </Section>
+  );
+}
+
+// Per-provider connectivity probe: a minimal chat call through the core, so
+// the panel reports the real failure (bad key, unknown model, unreachable)
+// before a task ever runs. Failures are data, never thrown.
+function ProviderTestRow({
+  config,
+  onTest,
+}: {
+  config: ProviderConfigDoc;
+  onTest?: (config: ProviderConfigDoc) => Promise<ProviderTestResult>;
+}) {
+  const [state, setState] = useState<
+    { kind: "idle" | "testing" } | { kind: "done"; result: ProviderTestResult }
+  >({ kind: "idle" });
+  if (!onTest) return null;
+
+  async function run() {
+    setState({ kind: "testing" });
+    try {
+      const result = await onTest!(config);
+      setState({ kind: "done", result });
+    } catch (error) {
+      setState({ kind: "done", result: { ok: false, error: String(error) } });
+    }
+  }
+
+  const result = state.kind === "done" ? state.result : null;
+  return (
+    <div className={styles.providerTest}>
+      <button
+        type="button"
+        className={styles.secondary}
+        disabled={state.kind === "testing"}
+        onClick={run}
+      >
+        {state.kind === "testing" ? t("settings.provider.testing") : t("settings.provider.test")}
+      </button>
+      {result?.ok && <span className={styles.testResult}>{t("settings.provider.testOk")}</span>}
+      {result && !result.ok && (
+        <span className={styles.testError}>
+          {t("settings.provider.testFailed")}
+          {result.error ? `：${result.error}` : ""}
+        </span>
+      )}
+    </div>
   );
 }

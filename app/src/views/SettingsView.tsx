@@ -275,6 +275,7 @@ export function SettingsView({
                   setDraft((prev) => (prev ? { ...prev, llm_providers: value } : prev));
                 }
               }}
+              onTest={(config) => api.testProvider(config, String(config.model ?? "") || undefined)}
             />
           </>
         )}

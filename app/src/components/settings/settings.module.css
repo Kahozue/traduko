@@ -430,6 +430,22 @@ select.input {
   word-break: break-all;
 }
 
+/* Provider connectivity probe: button + inline result on one row. */
+.providerTest {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 14px;
+}
+
+.providerTest .testResult,
+.providerTest .testError {
+  margin-top: 0;
+  flex: 1;
+  min-width: 0;
+}
+
 /* Sync conflicts & peers */
 .conflictRow {
   display: flex;

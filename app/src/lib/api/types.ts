@@ -360,6 +360,11 @@ export interface NotifyTestResult {
   error?: string;
 }
 
+export interface ProviderTestResult {
+  ok: boolean;
+  error?: string;
+}
+
 export interface AsrStatus {
   package: boolean;
   model: string;
