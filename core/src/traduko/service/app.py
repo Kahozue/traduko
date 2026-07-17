@@ -561,6 +561,24 @@ def create_skill(request: Request, body: SkillCreateRequest) -> dict:
     return {"created": body.name}
 
 
+class SkillImportRequest(BaseModel):
+    content: str
+
+
+@router.post("/skills/import", status_code=201)
+def import_skill(request: Request, body: SkillImportRequest) -> dict:
+    """Create a skill from a full SKILL.md document, naming it from the
+    frontmatter. The imported skill lands unconfirmed like any other: the
+    settings panel's confirmation card still gates it into the agent."""
+    try:
+        name = _skills_manager().import_content(body.content)
+    except SkillValidationError as error:
+        raise HTTPException(status_code=422, detail=error.errors) from None
+    except FileExistsError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from None
+    return {"created": name}
+
+
 @router.delete("/skills/{name}")
 def delete_skill(request: Request, name: str) -> dict:
     try:

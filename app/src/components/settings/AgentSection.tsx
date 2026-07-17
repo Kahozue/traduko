@@ -84,6 +84,7 @@ export function AgentSection({
   const nextUid = useRef(rows.length);
   const [pending, setPending] = useState<PendingConfirm | null>(null);
   const [newSkillName, setNewSkillName] = useState("");
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const statusByName = new Map(status.map((row) => [row.name, row]));
 
   const skillList = useQuery({
@@ -97,6 +98,11 @@ export function AgentSection({
       setNewSkillName("");
       void queryClient.invalidateQueries({ queryKey: ["skills"] });
     },
+  });
+
+  const importSkill = useMutation({
+    mutationFn: (content: string) => api.importSkill(content),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["skills"] }),
   });
 
   const deleteSkill = useMutation({
@@ -200,6 +206,15 @@ export function AgentSection({
     const name = newSkillName.trim();
     if (!skillNameValid(name) || createSkill.isPending) return;
     createSkill.mutate(name);
+  }
+
+  async function onImportFile(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    // Reset the input so picking the same file twice still fires change.
+    event.target.value = "";
+    if (!file) return;
+    const content = await file.text();
+    importSkill.mutate(content);
   }
 
   const trimmedNames = rows.map((row) => row.name.trim());
@@ -350,7 +365,31 @@ export function AgentSection({
         })}
       </Section>
 
-      <Section title={t("settings.skills")} hint={t("settings.skills.hint")}>
+      <Section title={t("settings.skills")} hint={t("settings.skills.hint")}
+        action={
+          <>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".md,.markdown,text/markdown"
+              hidden
+              aria-hidden="true"
+              onChange={onImportFile}
+            />
+            <button
+              type="button"
+              className={`${styles.secondary} ${styles.headAction}`}
+              disabled={importSkill.isPending}
+              onClick={() => fileInputRef.current?.click()}
+            >
+              {t("settings.skills.import")}
+            </button>
+          </>
+        }
+      >
+        {importSkill.isError && (
+          <p className={styles.skillFormError}>{describeImportError(importSkill.error)}</p>
+        )}
         {skillList.data && visibleSkills.length === 0 && (
           <p className={styles.emptyBox}>{t("settings.skills.empty")}</p>
         )}
@@ -478,6 +517,16 @@ function describeCreateError(error: unknown): string {
     }
   }
   return t("settings.skills.createFailed");
+}
+
+function describeImportError(error: unknown): string {
+  if (error instanceof ApiError) {
+    if (error.status === 409) return t("settings.skills.exists");
+    if (error.status === 422 && Array.isArray(error.detail)) {
+      return `${t("settings.skills.importInvalid")}${error.detail.join("; ")}`;
+    }
+  }
+  return t("settings.skills.importFailed");
 }
 
 function ConfirmCard({

@@ -413,3 +413,30 @@ def test_active_forwards_to_manager(tmp_path: Path) -> None:
         assert [tool.name for tool in active_tools()] == ["use_skill"]
     finally:
         set_active(None)
+
+
+# --- import_content -------------------------------------------------------
+
+
+def test_import_content_creates_skill_from_frontmatter_name(tmp_path: Path) -> None:
+    manager = SkillsManager(tmp_path, {})
+    content = "---\nname: imported-skill\ndescription: An imported skill.\n---\nDo the thing.\n"
+    name = manager.import_content(content)
+    assert name == "imported-skill"
+    assert (tmp_path / "skills" / "imported-skill" / "SKILL.md").read_text(
+        encoding="utf-8"
+    ) == content
+
+
+def test_import_content_rejects_invalid_document(tmp_path: Path) -> None:
+    manager = SkillsManager(tmp_path, {})
+    with pytest.raises(SkillValidationError):
+        manager.import_content("no frontmatter here")
+
+
+def test_import_content_rejects_duplicate(tmp_path: Path) -> None:
+    manager = SkillsManager(tmp_path, {})
+    content = "---\nname: dup\ndescription: d.\n---\nbody.\n"
+    manager.import_content(content)
+    with pytest.raises(FileExistsError):
+        manager.import_content(content)

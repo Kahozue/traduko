@@ -1246,3 +1246,30 @@ def test_provider_test_endpoint_classifies_unknown_type(tmp_path: Path) -> None:
         body = response.json()
         assert body["ok"] is False
         assert "nope" in body["error"]
+
+
+def test_skills_import_creates_from_frontmatter(tmp_path: Path) -> None:
+    with service(tmp_path) as (client, headers, token):
+        response = client.post(
+            "/skills/import", json={"content": VALID_SKILL}, headers=headers
+        )
+        assert response.status_code == 201, response.text
+        assert response.json() == {"created": "honorific-style"}
+        rows = client.get("/skills", headers=headers).json()
+        assert [row["name"] for row in rows] == ["honorific-style"]
+        # Imported skills land unconfirmed: the confirmation gate still applies.
+        assert rows[0]["confirmed"] is False
+
+
+def test_skills_import_rejects_invalid_and_duplicate(tmp_path: Path) -> None:
+    with service(tmp_path) as (client, headers, token):
+        bad = client.post(
+            "/skills/import", json={"content": "not a skill"}, headers=headers
+        )
+        assert bad.status_code == 422
+        assert isinstance(bad.json()["detail"], list)
+        client.post("/skills/import", json={"content": VALID_SKILL}, headers=headers)
+        dup = client.post(
+            "/skills/import", json={"content": VALID_SKILL}, headers=headers
+        )
+        assert dup.status_code == 409

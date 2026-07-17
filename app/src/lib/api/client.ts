@@ -209,6 +209,13 @@ export class ApiClient {
     return this.request("/skills", { method: "POST", body: JSON.stringify({ name }) });
   }
 
+  importSkill(content: string): Promise<{ created: string }> {
+    return this.request("/skills/import", {
+      method: "POST",
+      body: JSON.stringify({ content }),
+    });
+  }
+
   deleteSkill(name: string): Promise<{ deleted: boolean }> {
     return this.request(`/skills/${encodeURIComponent(name)}`, { method: "DELETE" });
   }

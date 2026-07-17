@@ -260,6 +260,27 @@ class SkillsManager:
             SCAFFOLD_TEMPLATE.format(name=name), encoding="utf-8"
         )
 
+    def import_content(self, content: str) -> str:
+        """Create a skill from a full SKILL.md, deriving the name from its
+        frontmatter. Rejects a broken/invalid document (SkillValidationError)
+        or a name that already exists on disk (FileExistsError). Returns the
+        created skill name."""
+        meta, _, fence_error = _split_frontmatter(content)
+        if fence_error:
+            raise SkillValidationError([fence_error])
+        name = meta.get("name")
+        if not isinstance(name, str) or not name:
+            raise SkillValidationError(["frontmatter is missing name"])
+        errors = validate_skill(name, content)[2]
+        if errors:
+            raise SkillValidationError(errors)
+        directory = self._skills_dir / name
+        if directory.exists():
+            raise FileExistsError(f"skill already exists: {name}")
+        directory.mkdir(parents=True)
+        (directory / SKILL_FILE).write_text(content, encoding="utf-8")
+        return name
+
     def delete(self, name: str) -> None:
         directory = self._skills_dir / name
         if _name_errors(name) or not directory.is_dir():
