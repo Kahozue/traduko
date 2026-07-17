@@ -353,3 +353,54 @@ def test_service_api_full_pipeline_with_ws_events(tmp_path: Path) -> None:
 
     artifacts = tmp_path / "projects" / "default" / "tasks" / task_id / "artifacts"
     assert (artifacts / "04-subtitles.srt").exists()
+
+
+MD_NOVEL = "# Chapter\n\nHello paragraph.\n\nSecond paragraph.\n"
+
+
+def test_novel_pipeline_end_to_end_without_translation(tmp_path: Path) -> None:
+    env = {"TRADUKO_DATA_ROOT": str(tmp_path)}
+    src = tmp_path / "novel.md"
+    src.write_text(MD_NOVEL, encoding="utf-8")
+
+    created = runner.invoke(
+        app, ["task", "create", str(src), "--profile", "novel-translate"], env=env
+    )
+    assert created.exit_code == 0, created.output
+    task_id = created.output.strip().splitlines()[-1]
+
+    ran = runner.invoke(app, ["task", "run", task_id], env=env)
+    assert ran.exit_code == 0, ran.output
+    assert "completed" in ran.output
+
+    artifacts = tmp_path / "projects" / "default" / "tasks" / task_id / "artifacts"
+    document = json.loads((artifacts / "01-document.json").read_text(encoding="utf-8"))
+    assert document["schema_version"] == 1
+    chunks = json.loads((artifacts / "02-chunks.json").read_text(encoding="utf-8"))
+    assert len(chunks["chunks"]) >= 1
+    out = (artifacts / "03-translated.md").read_text(encoding="utf-8")
+    assert out == MD_NOVEL
+
+
+def test_novel_pipeline_epub_end_to_end(tmp_path: Path) -> None:
+    from test_documents_epub import make_epub
+    from traduko.documents.epubdoc import parse_epub
+
+    env = {"TRADUKO_DATA_ROOT": str(tmp_path)}
+    src = tmp_path / "novel.epub"
+    make_epub(src)
+
+    created = runner.invoke(
+        app, ["task", "create", str(src), "--profile", "novel-translate"], env=env
+    )
+    assert created.exit_code == 0, created.output
+    task_id = created.output.strip().splitlines()[-1]
+
+    ran = runner.invoke(app, ["task", "run", task_id], env=env)
+    assert ran.exit_code == 0, ran.output
+    assert "completed" in ran.output
+
+    artifacts = tmp_path / "projects" / "default" / "tasks" / task_id / "artifacts"
+    out_doc = parse_epub(artifacts / "03-translated.epub")
+    texts = [b.text for ch in out_doc.chapters for b in ch.blocks]
+    assert "First paragraph." in texts and "Another paragraph." in texts

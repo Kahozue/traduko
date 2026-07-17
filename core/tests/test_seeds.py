@@ -7,6 +7,7 @@ from traduko.workspace import Workspace
 SEED_FILES = [
     "profiles/av-default.yaml",
     "profiles/subtitle-translate.yaml",
+    "profiles/novel-translate.yaml",
     "prompts/translate.txt",
     "prompts/proofread.txt",
     "config/pricing.yaml",
@@ -32,6 +33,11 @@ def test_seeded_profiles_are_loadable(tmp_path: Path) -> None:
         "ingest_subtitle", "translate", "proofread", "export_subtitles",
     ]
     assert sub.stages[1].params["provider"] == "fake"
+    novel = load_profile(tmp_path, "novel-translate")
+    assert [s.type for s in novel.stages] == [
+        "ingest_document", "chunk", "export_document",
+    ]
+    assert novel.stages[1].params["base_chars"] == 2600
 
 
 def test_ensure_defaults_never_overwrites(tmp_path: Path) -> None:

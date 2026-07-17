@@ -15,7 +15,15 @@ hiddenimports = (
 
 binaries = []
 datas = []
-for package in ("faster_whisper", "ctranslate2", "onnxruntime", "av", "tokenizers"):
+for package in (
+    "faster_whisper",
+    "ctranslate2",
+    "onnxruntime",
+    "av",
+    "tokenizers",
+    "ebooklib",
+    "lxml",
+):
     pkg_datas, pkg_binaries, pkg_hidden = collect_all(package)
     datas += pkg_datas
     binaries += pkg_binaries

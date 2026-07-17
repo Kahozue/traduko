@@ -55,6 +55,23 @@ stages:
       formats: [srt]
 """
 
+_PROFILE_NOVEL_TRANSLATE = """\
+# Novel/document pipeline: markdown, txt, epub, or html in, same format
+# out. v2-01 ships the parse/repack shell; the translate_chunks stage
+# (v2-02) will slot in between chunk and export_document.
+schema_version: 1
+name: novel-translate
+stages:
+  - type: ingest_document
+  - type: chunk
+    params:
+      base_blocks: 4
+      base_chars: 2600
+      max_blocks: 80
+      max_chars: 5200
+  - type: export_document
+"""
+
 _STYLES_DEFAULT = """\
 # Named subtitle style presets (ASS-based), referenced by style_preset.
 default:
@@ -83,6 +100,7 @@ def ensure_defaults(root: Path) -> None:
     seeds = {
         "profiles/av-default.yaml": _PROFILE_AV_DEFAULT,
         "profiles/subtitle-translate.yaml": _PROFILE_SUBTITLE_TRANSLATE,
+        "profiles/novel-translate.yaml": _PROFILE_NOVEL_TRANSLATE,
         "prompts/translate.txt": DEFAULT_TRANSLATE_TEMPLATE,
         "prompts/proofread.txt": DEFAULT_PROOFREAD_TEMPLATE,
         "config/pricing.yaml": _pricing_yaml(),

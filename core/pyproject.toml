@@ -13,6 +13,8 @@ dependencies = [
     "uvicorn>=0.30",
     "websockets>=12",
     "discord-py>=2.4",
+    "ebooklib>=0.18",
+    "lxml>=5.0",
 ]
 
 [project.optional-dependencies]

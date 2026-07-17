@@ -1,0 +1,51 @@
+{
+  "$defs": {
+    "Chunk": {
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "chapter_id": {
+          "title": "Chapter Id",
+          "type": "string"
+        },
+        "block_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Block Ids",
+          "type": "array"
+        },
+        "char_count": {
+          "default": 0,
+          "title": "Char Count",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "chapter_id"
+      ],
+      "title": "Chunk",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "schema_version": {
+      "default": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "chunks": {
+      "items": {
+        "$ref": "#/$defs/Chunk"
+      },
+      "title": "Chunks",
+      "type": "array"
+    }
+  },
+  "title": "ChunksDoc",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}
