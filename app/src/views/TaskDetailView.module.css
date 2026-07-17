@@ -307,3 +307,71 @@
     opacity: 0.35;
   }
 }
+
+/* Paused / failed notices: semantic color always paired with wording. */
+.noticePaused,
+.noticeFailed {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+  padding: 16px 20px;
+  border-radius: var(--radius-m);
+}
+
+.noticePaused {
+  background: var(--warn-soft);
+  border-left: 3px solid var(--warn);
+}
+
+.noticeFailed {
+  display: block;
+  background: var(--danger-soft);
+  border-left: 3px solid var(--danger);
+}
+
+.noticeHint {
+  margin: 4px 0 0;
+  color: var(--text-secondary);
+  font-size: var(--fs-note);
+  line-height: 1.6;
+}
+
+.stageErrorSummary {
+  margin: 0;
+  color: var(--danger);
+  font-size: var(--fs-body);
+  font-weight: 500;
+}
+
+.stageErrorHint {
+  margin: 2px 0 0;
+  color: var(--text-secondary);
+  font-size: var(--fs-note);
+  line-height: 1.6;
+}
+
+.rawError {
+  margin-top: 6px;
+  font-size: var(--fs-note);
+  color: var(--text-secondary);
+}
+
+.rawError summary {
+  cursor: pointer;
+}
+
+.rawError pre {
+  margin: 6px 0 0;
+  padding: 10px 12px;
+  border-radius: var(--radius-s);
+  background: var(--bg-inset);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: var(--fs-meta);
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 200px;
+  overflow-y: auto;
+}

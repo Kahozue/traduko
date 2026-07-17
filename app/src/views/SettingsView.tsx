@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { t } from "../i18n";
 import { useApi, useConnection } from "../lib/connection";
 import type { CoreConfigDoc } from "../lib/api/types";
+import { AboutSection } from "../components/settings/AboutSection";
 import { AppearanceSection } from "../components/settings/AppearanceSection";
 import { BasicsSection } from "../components/settings/BasicsSection";
 import { ProvidersSection } from "../components/settings/ProvidersSection";
@@ -260,6 +261,8 @@ export function SettingsView() {
           )}
         </>
       )}
+
+      <AboutSection />
     </div>
   );
 }

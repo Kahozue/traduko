@@ -9,6 +9,7 @@ the whole app lifetime; handlers reach it through request.app.state.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import secrets
 import tempfile
@@ -107,10 +108,31 @@ async def ws_events(websocket: WebSocket) -> None:
 def get_budget(request: Request) -> dict:
     ws: Workspace = request.app.state.workspace
     meter = BudgetMeter(ws.root, ws.bus, ws.config)
+    # Lifetime per-task spend across all ledgers, with names joined from the
+    # index; tasks whose records are gone still show up under their raw id.
+    spent: dict[str, dict] = {}
+    for path in sorted((ws.root / "budget").glob("ledger-*.jsonl")):
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            row = json.loads(line)
+            task_id = row.get("task_id", "")
+            entry = spent.setdefault(
+                task_id,
+                {"task_id": task_id, "project": row.get("project", ""), "usd": 0.0},
+            )
+            entry["usd"] += float(row.get("cost_usd", 0.0))
+    names = {row["id"]: row.get("name") for row in ws.index.list()}
+    tasks = [
+        {**entry, "name": names.get(entry["task_id"]), "usd": round(entry["usd"], 6)}
+        for entry in spent.values()
+    ]
+    tasks.sort(key=lambda entry: entry["usd"], reverse=True)
     return {
         "month_usd": meter.month_usage_usd(),
         "task_usd_limit": ws.config.budget.task_usd_limit,
         "monthly_usd_limit": ws.config.budget.monthly_usd_limit,
+        "tasks": tasks[:50],
     }
 
 
@@ -215,6 +237,23 @@ def create_task(request: Request, body: TaskCreateRequest) -> dict:
 def show_task(request: Request, project: str, task_id: str) -> dict:
     ws: Workspace = request.app.state.workspace
     return _load_task(ws, project, task_id).model_dump()
+
+
+@router.get("/tasks/{project}/{task_id}/events")
+def task_events(
+    request: Request, project: str, task_id: str, limit: int = 100
+) -> list[dict]:
+    """Tail of the task's persisted event log (logs/events.jsonl)."""
+    ws: Workspace = request.app.state.workspace
+    _load_task(ws, project, task_id)
+    log_path = (
+        ws.root / "projects" / project / "tasks" / task_id / "logs" / "events.jsonl"
+    )
+    if not log_path.exists():
+        return []
+    lines = log_path.read_text(encoding="utf-8").splitlines()
+    entries = [json.loads(line) for line in lines if line.strip()]
+    return entries[-max(limit, 0) :]
 
 
 class TaskRenameRequest(BaseModel):

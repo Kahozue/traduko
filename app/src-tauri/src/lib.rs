@@ -25,6 +25,7 @@ pub fn run() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_window_state::Builder::default().build())
         .manage(core_process::CoreProcess(std::sync::Mutex::new(None)))
         .invoke_handler(tauri::generate_handler![
             connection_info,

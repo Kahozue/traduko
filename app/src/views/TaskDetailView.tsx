@@ -6,8 +6,9 @@ import { t } from "../i18n";
 import { ApiError } from "../lib/api/client";
 import type { PreflightCheck } from "../lib/api/types";
 import { useApi } from "../lib/connection";
+import { humanizeError } from "../lib/errors";
 import { useTaskLive } from "../lib/events/store";
-import { stageStatusLabel, stageTypeLabel } from "../lib/labels";
+import { eventTypeLabel, stageStatusLabel, stageTypeLabel } from "../lib/labels";
 import styles from "./TaskDetailView.module.css";
 
 const RUNNABLE = new Set(["pending", "paused", "waiting_review", "failed"]);
@@ -18,16 +19,46 @@ function formatTime(iso: string): string {
   return new Date(iso).toLocaleString();
 }
 
+// One-line human summary for an event's payload; the raw JSON stays in the
+// row's tooltip instead of being dumped into the timeline.
+function summarizeEventData(data: Record<string, unknown>): string {
+  const parts: string[] = [];
+  if (typeof data.stage === "string") parts.push(stageTypeLabel(data.stage));
+  if (typeof data.current === "number" && typeof data.total === "number") {
+    parts.push(`${data.current}/${data.total}`);
+  }
+  if (typeof data.round === "number") parts.push(String(data.round));
+  if (typeof data.usd === "number") parts.push(`$${data.usd.toFixed(2)}`);
+  if (typeof data.error === "string") parts.push(data.error.slice(0, 80));
+  return parts.join(" · ");
+}
+
+function StageError({ raw }: { raw: string }) {
+  const human = humanizeError(raw);
+  return (
+    <div className={styles.stageError}>
+      <p className={styles.stageErrorSummary}>{human.summary}</p>
+      {human.hint && <p className={styles.stageErrorHint}>{human.hint}</p>}
+      <details className={styles.rawError}>
+        <summary>{t("error.raw")}</summary>
+        <pre>{raw}</pre>
+      </details>
+    </div>
+  );
+}
+
 export function TaskDetailView({
   project,
   taskId,
   onBack,
+  onOpenSettings,
   onOpenSubtitleEditor,
   onOpenStyleEditor,
 }: {
   project: string;
   taskId: string;
   onBack: () => void;
+  onOpenSettings?: () => void;
   onOpenSubtitleEditor: () => void;
   onOpenStyleEditor: () => void;
 }) {
@@ -38,6 +69,10 @@ export function TaskDetailView({
   const { data: task } = useQuery({
     queryKey: ["task", project, taskId],
     queryFn: () => api.showTask(project, taskId),
+  });
+  const { data: pastEvents } = useQuery({
+    queryKey: ["task-events", project, taskId],
+    queryFn: () => api.taskEvents(project, taskId),
   });
 
   const run = useMutation({
@@ -82,7 +117,18 @@ export function TaskDetailView({
 
   const completed = task.stages.filter((stage) => stage.status === "completed").length;
   const runningIndex = task.stages.findIndex((stage) => stage.status === "running");
-  const events = live?.events ?? [];
+
+  // Persisted log first, then live WS events; dedupe the overlap window
+  // between the initial fetch and the socket subscription.
+  const seen = new Set<string>();
+  const events = [...(pastEvents ?? []), ...(live?.events ?? [])].filter((event) => {
+    const key = `${event.ts}|${event.type}|${JSON.stringify(event.data)}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+
+  const lastStageError = [...task.stages].reverse().find((stage) => stage.error)?.error;
 
   return (
     <div>
@@ -162,6 +208,27 @@ export function TaskDetailView({
         </div>
       </header>
 
+      {task.status === "paused" && (
+        <section className={styles.noticePaused}>
+          <div>
+            <h2 className={styles.sectionTitle}>{t("task.paused.title")}</h2>
+            <p className={styles.noticeHint}>{t("task.paused.hint")}</p>
+          </div>
+          {onOpenSettings && (
+            <button type="button" className={styles.secondary} onClick={onOpenSettings}>
+              {t("task.gotoSettings")}
+            </button>
+          )}
+        </section>
+      )}
+
+      {task.status === "failed" && lastStageError && (
+        <section className={styles.noticeFailed}>
+          <h2 className={styles.sectionTitle}>{t("task.failed.title")}</h2>
+          <StageError raw={lastStageError} />
+        </section>
+      )}
+
       {task.status === "waiting_review" && (
         <section className={styles.checkpoint}>
           <div>
@@ -239,7 +306,7 @@ export function TaskDetailView({
                 {index === runningIndex && live?.stageProgress && (
                   <ProgressBar value={live.stageProgress.current} max={live.stageProgress.total} />
                 )}
-                {stage.error && <p className={styles.stageError}>{stage.error}</p>}
+                {stage.error && <StageError raw={stage.error} />}
               </div>
             </li>
           ))}
@@ -256,10 +323,14 @@ export function TaskDetailView({
               .slice(-50)
               .reverse()
               .map((event, index) => (
-                <li key={`${event.ts}-${index}`} className={styles.event}>
-                  <span className={styles.eventTs}>{event.ts}</span>
-                  <span className={styles.eventType}>{event.type}</span>
-                  <span className={styles.eventData}>{JSON.stringify(event.data)}</span>
+                <li
+                  key={`${event.ts}-${index}`}
+                  className={styles.event}
+                  title={JSON.stringify(event.data)}
+                >
+                  <span className={styles.eventTs}>{formatTime(event.ts)}</span>
+                  <span className={styles.eventType}>{eventTypeLabel(event.type)}</span>
+                  <span className={styles.eventData}>{summarizeEventData(event.data)}</span>
                 </li>
               ))}
           </ul>

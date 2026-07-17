@@ -4,6 +4,7 @@ import type {
   ChannelConfigDoc,
   CoreConfigDoc,
   NotifyTestResult,
+  PersistedEvent,
   PreflightReport,
   SubtitleStylePreset,
   SyncReport,
@@ -94,6 +95,10 @@ export class ApiClient {
 
   showTask(project: string, taskId: string): Promise<TaskRecord> {
     return this.request(`/tasks/${project}/${taskId}`);
+  }
+
+  taskEvents(project: string, taskId: string, limit = 100): Promise<PersistedEvent[]> {
+    return this.request(`/tasks/${project}/${taskId}/events?limit=${limit}`);
   }
 
   preflight(project: string, taskId: string): Promise<PreflightReport> {

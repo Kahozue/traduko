@@ -557,3 +557,30 @@ select.input {
   background: var(--bg-inset);
   border-color: var(--text-secondary);
 }
+
+/* About */
+.aboutBrand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 4px;
+  color: var(--accent);
+}
+
+.aboutName {
+  color: var(--text-primary);
+  font-size: var(--fs-body);
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.aboutValue {
+  font-size: var(--fs-body);
+}
+
+.aboutMono {
+  font-family: var(--font-mono);
+  font-size: var(--fs-note);
+  word-break: break-all;
+}

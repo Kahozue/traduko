@@ -16,6 +16,8 @@ export function BudgetView() {
 
   const nearLimit =
     budget.monthly_usd_limit !== null && budget.month_usd >= budget.monthly_usd_limit * 0.8;
+  // An older core may not send the per-task breakdown yet.
+  const spend = budget.tasks ?? [];
 
   return (
     <div>
@@ -56,6 +58,37 @@ export function BudgetView() {
           />
         </div>
       )}
+
+      <section className={styles.spendSection}>
+        <h2 className={styles.spendTitle}>{t("budget.taskSpend")}</h2>
+        {spend.length === 0 ? (
+          <p className={styles.spendEmpty}>{t("budget.taskSpendEmpty")}</p>
+        ) : (
+          <div className={styles.spendCard}>
+            <table className={styles.spendTable}>
+              <thead>
+                <tr>
+                  <th>{t("budget.col.task")}</th>
+                  <th>{t("budget.col.project")}</th>
+                  <th className={styles.spendUsd}>{t("budget.col.usd")}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {spend.map((row) => (
+                  <tr key={row.task_id}>
+                    <td>
+                      <div>{row.name || row.task_id}</div>
+                      {row.name && <div className={styles.spendId}>{row.task_id}</div>}
+                    </td>
+                    <td>{row.project}</td>
+                    <td className={styles.spendUsd}>{usd(row.usd)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
     </div>
   );
 }

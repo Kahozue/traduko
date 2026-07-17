@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AppShell, type NavKey } from "./components/AppShell";
@@ -29,7 +29,8 @@ function ConnectionGate() {
     return (
       <div className={styles.gate}>
         <span className={styles.gatePulse} />
-        <p className={styles.gateTitle}>{t("conn.connecting")}</p>
+        <p className={styles.gateTitle}>{t("conn.starting")}</p>
+        <p className={styles.gateHint}>{t("conn.startingHint")}</p>
       </div>
     );
   }
@@ -47,6 +48,52 @@ function ConnectionGate() {
 function Main() {
   const conn = useConnection();
   const [view, setView] = useState<View>({ name: "tasks" });
+  // Bumped by Cmd+N or a file drop; TasksView reacts by opening the create
+  // dialog (with droppedPath prefilled when set).
+  const [createSignal, setCreateSignal] = useState(0);
+  const [droppedPath, setDroppedPath] = useState<string | null>(null);
+
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if (!(event.metaKey || event.ctrlKey)) return;
+      if (event.key === ",") {
+        event.preventDefault();
+        setView({ name: "settings" });
+      } else if (event.key.toLowerCase() === "n") {
+        event.preventDefault();
+        setView({ name: "tasks" });
+        setDroppedPath(null);
+        setCreateSignal((n) => n + 1);
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+
+  useEffect(() => {
+    // Native drag-and-drop only exists inside the Tauri webview; skip in
+    // jsdom and plain-browser dev where the API module has no backend.
+    if (!("__TAURI_INTERNALS__" in window)) return;
+    let unlisten: (() => void) | null = null;
+    let disposed = false;
+    void import("@tauri-apps/api/webview").then(async ({ getCurrentWebview }) => {
+      const stop = await getCurrentWebview().onDragDropEvent((event) => {
+        if (event.payload.type !== "drop") return;
+        const path = event.payload.paths[0];
+        if (!path) return;
+        setView({ name: "tasks" });
+        setDroppedPath(path);
+        setCreateSignal((n) => n + 1);
+      });
+      if (disposed) stop();
+      else unlisten = stop;
+    });
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, []);
+
   const active: NavKey =
     view.name === "task" || view.name === "subtitle-editor" || view.name === "style-editor"
       ? "tasks"
@@ -56,23 +103,30 @@ function Main() {
       {conn.status !== "ready" ? (
         <ConnectionGate />
       ) : (
-        <ErrorBoundary key={view.name}>{renderView(conn, view, setView)}</ErrorBoundary>
+        <ErrorBoundary key={view.name}>
+          {renderView(view, setView, createSignal, droppedPath, () => setDroppedPath(null))}
+        </ErrorBoundary>
       )}
     </AppShell>
   );
 }
 
 function renderView(
-  conn: Extract<ReturnType<typeof useConnection>, { status: "ready" }>,
   view: View,
   setView: (view: View) => void,
+  createSignal: number,
+  droppedPath: string | null,
+  consumeDrop: () => void,
 ): ReactNode {
-  void conn;
   switch (view.name) {
     case "tasks":
       return (
         <TasksView
           onOpenTask={(project, taskId) => setView({ name: "task", project, taskId })}
+          onOpenSettings={() => setView({ name: "settings" })}
+          createSignal={createSignal}
+          droppedPath={droppedPath}
+          onConsumeDrop={consumeDrop}
         />
       );
     case "task":
@@ -81,6 +135,7 @@ function renderView(
           project={view.project}
           taskId={view.taskId}
           onBack={() => setView({ name: "tasks" })}
+          onOpenSettings={() => setView({ name: "settings" })}
           onOpenSubtitleEditor={() =>
             setView({ name: "subtitle-editor", project: view.project, taskId: view.taskId })
           }

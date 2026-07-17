@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { t } from "../i18n";
@@ -9,13 +10,16 @@ import styles from "./CreateTaskDialog.module.css";
 export function CreateTaskDialog({
   onClose,
   onCreated,
+  initialPath,
 }: {
   onClose: () => void;
   onCreated: (project: string, taskId: string) => void;
+  initialPath?: string;
 }) {
   const api = useApi();
   const queryClient = useQueryClient();
-  const [inputPath, setInputPath] = useState("");
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const [inputPath, setInputPath] = useState(initialPath ?? "");
   const [name, setName] = useState("");
   const [profile, setProfile] = useState("");
   const [project, setProject] = useState("default");
@@ -24,6 +28,34 @@ export function CreateTaskDialog({
   useEffect(() => {
     if (profiles && profiles.length > 0 && profile === "") setProfile(profiles[0]);
   }, [profiles, profile]);
+
+  useEffect(() => {
+    // Move focus into the dialog so Esc and Tab land here immediately.
+    dialogRef.current?.focus();
+  }, []);
+
+  function onDialogKeyDown(event: ReactKeyboardEvent) {
+    if (event.key === "Escape") {
+      event.stopPropagation();
+      onClose();
+      return;
+    }
+    if (event.key !== "Tab") return;
+    // Minimal focus trap: wrap Tab / Shift+Tab at the dialog's edges.
+    const nodes = dialogRef.current?.querySelectorAll<HTMLElement>(
+      'button, input, select, [tabindex]:not([tabindex="-1"])',
+    );
+    if (!nodes || nodes.length === 0) return;
+    const first = nodes[0];
+    const last = nodes[nodes.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  }
 
   const create = useMutation({
     mutationFn: () =>
@@ -82,8 +114,18 @@ export function CreateTaskDialog({
 
   return (
     <div className={styles.overlay}>
-      <div className={styles.dialog}>
-        <h2 className={styles.title}>{t("create.title")}</h2>
+      <div
+        ref={dialogRef}
+        className={styles.dialog}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="create-task-title"
+        tabIndex={-1}
+        onKeyDown={onDialogKeyDown}
+      >
+        <h2 id="create-task-title" className={styles.title}>
+          {t("create.title")}
+        </h2>
         <label className={styles.label}>
           {t("create.input")}
           <div className={styles.pickRow}>

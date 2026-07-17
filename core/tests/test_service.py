@@ -70,6 +70,7 @@ def test_budget_endpoint_reports_usage_and_limits(tmp_path: Path) -> None:
             "month_usd": 0.0,
             "task_usd_limit": None,
             "monthly_usd_limit": None,
+            "tasks": [],
         }
 
 
@@ -605,3 +606,68 @@ def test_sync_scheduler_fires_and_stops() -> None:
     count = len(calls)
     time.sleep(0.05)
     assert len(calls) == count
+
+
+def test_task_events_endpoint_reads_persisted_log(tmp_path: Path) -> None:
+    with service(tmp_path) as (client, headers, token):
+        task_id = create_task(client, headers, tmp_path)
+
+        empty = client.get(f"/tasks/default/{task_id}/events", headers=headers)
+        assert empty.status_code == 200
+        assert empty.json() == []
+
+        log_dir = tmp_path / "projects" / "default" / "tasks" / task_id / "logs"
+        log_dir.mkdir(parents=True, exist_ok=True)
+        entries = [
+            {"ts": f"2026-07-17T00:00:0{i}+00:00", "type": "stage_started", "data": {"n": i}}
+            for i in range(3)
+        ]
+        with (log_dir / "events.jsonl").open("w", encoding="utf-8") as f:
+            for entry in entries:
+                f.write(json.dumps(entry) + "\n")
+
+        full = client.get(f"/tasks/default/{task_id}/events", headers=headers)
+        assert full.status_code == 200
+        assert full.json() == entries
+
+        tail = client.get(f"/tasks/default/{task_id}/events?limit=2", headers=headers)
+        assert tail.json() == entries[1:]
+
+        missing = client.get("/tasks/default/nope/events", headers=headers)
+        assert missing.status_code == 404
+
+
+def test_budget_endpoint_breaks_down_per_task_spend(tmp_path: Path) -> None:
+    with service(tmp_path) as (client, headers, token):
+        response = client.post(
+            "/tasks",
+            json={
+                "input_path": str(make_input(tmp_path)),
+                "profile": "subtitle-translate",
+                "name": "第七話",
+            },
+            headers=headers,
+        )
+        assert response.status_code == 201
+        task_id = response.json()["id"]
+
+        from datetime import datetime, timezone
+
+        month = datetime.now(timezone.utc).strftime("%Y-%m")
+        ledger = tmp_path / "budget" / f"ledger-{month}.jsonl"
+        ledger.parent.mkdir(exist_ok=True)
+        rows = [
+            {"ts": "t", "project": "default", "task_id": task_id, "cost_usd": 0.5},
+            {"ts": "t", "project": "default", "task_id": task_id, "cost_usd": 0.25},
+            {"ts": "t", "project": "old", "task_id": "gone", "cost_usd": 2.0},
+        ]
+        with ledger.open("w", encoding="utf-8") as f:
+            for row in rows:
+                f.write(json.dumps(row) + "\n")
+
+        data = client.get("/budget", headers=headers).json()
+        assert data["month_usd"] == pytest.approx(2.75)
+        assert data["tasks"] == [
+            {"task_id": "gone", "project": "old", "name": None, "usd": 2.0},
+            {"task_id": task_id, "project": "default", "name": "第七話", "usd": 0.75},
+        ]

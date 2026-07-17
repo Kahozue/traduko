@@ -52,10 +52,24 @@ export interface PreflightReport {
   checks: PreflightCheck[];
 }
 
+export interface BudgetTaskSpend {
+  task_id: string;
+  project: string;
+  name: string | null;
+  usd: number;
+}
+
 export interface BudgetInfo {
   month_usd: number;
   task_usd_limit: number | null;
   monthly_usd_limit: number | null;
+  tasks: BudgetTaskSpend[];
+}
+
+export interface PersistedEvent {
+  ts: string;
+  type: string;
+  data: Record<string, unknown>;
 }
 
 export type EventType =

@@ -36,3 +36,66 @@
   background: var(--bg-surface);
   box-shadow: var(--shadow-1);
 }
+
+/* Per-task lifetime spend */
+.spendSection {
+  margin-top: 28px;
+}
+
+.spendTitle {
+  margin: 0 0 12px;
+  font-size: var(--fs-section);
+  font-weight: 700;
+}
+
+.spendEmpty {
+  margin: 0;
+  padding: 24px 16px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-m);
+  background: var(--bg-subtle);
+  color: var(--text-secondary);
+  font-size: var(--fs-note);
+  text-align: center;
+}
+
+.spendCard {
+  border-radius: var(--radius-m);
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-1);
+  overflow: hidden;
+}
+
+.spendTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-note);
+}
+
+.spendTable th {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-weight: 500;
+  text-align: left;
+}
+
+.spendTable td {
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.spendTable tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.spendId {
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: var(--fs-meta);
+}
+
+.spendUsd {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
