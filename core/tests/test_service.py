@@ -1019,6 +1019,31 @@ def test_proposal_reject_and_error_mapping(tmp_path: Path) -> None:
         assert client.post("/proposals/nope/reject", headers=headers).status_code == 404
 
 
+def test_proposal_approve_bad_notify_channel_is_422(tmp_path: Path) -> None:
+    # A channel like {"type": "carrier_pigeon"} passes CoreConfig validation
+    # (channels are plain dicts) and only fails at notifier construction.
+    # Approve must pre-flight it like put_config does instead of persisting
+    # a config the service cannot boot from.
+    with service(tmp_path) as (client, headers, token):
+        proposal = proposals.propose_config(
+            tmp_path,
+            {"notifications": {"channels": [{"type": "carrier_pigeon"}]}},
+            "bad channel",
+        )
+        response = client.post(
+            f"/proposals/{proposal['id']}/approve", headers=headers
+        )
+        assert response.status_code == 422
+        assert "carrier_pigeon" in response.json()["detail"]
+        # nothing applied: disk, in-memory config and proposal all untouched
+        assert load_config(tmp_path).notifications.channels == []
+        assert client.app.state.workspace.config.notifications.channels == []
+        assert (
+            client.get("/proposals?status=pending", headers=headers).json()[0]["id"]
+            == proposal["id"]
+        )
+
+
 def test_proposal_approve_invalid_patch_is_422(tmp_path: Path) -> None:
     # A patch can pass validation at propose time yet fail at approve time
     # (config drift). Seed a stored pending proposal whose patch no longer

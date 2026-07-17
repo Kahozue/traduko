@@ -517,12 +517,14 @@ def list_proposals(request: Request, status: str | None = None) -> list[dict]:
 @router.post("/proposals/{proposal_id}/approve")
 def approve_proposal(request: Request, proposal_id: str) -> dict:
     """Apply a pending proposal, then converge the running service on the
-    new config exactly like put_config (skills manager included). MCP
-    servers are NOT reloaded here; the UI drives that through POST
-    /mcp/reload as usual."""
+    new config exactly like put_config (skills manager included). The
+    candidate config is pre-flighted through notifier construction BEFORE
+    anything is applied, so approve cannot persist a config the service
+    would fail to boot from. MCP servers are NOT reloaded here; the UI
+    drives that through POST /mcp/reload as usual."""
     ws: Workspace = request.app.state.workspace
     try:
-        proposals.approve(ws.root, proposal_id)
+        candidate = proposals.candidate_config(ws.root, proposal_id)
     except KeyError:
         raise HTTPException(
             status_code=404, detail=f"proposal not found: {proposal_id}"
@@ -535,8 +537,13 @@ def approve_proposal(request: Request, proposal_id: str) -> dict:
         ) from None
     except ValueError as error:
         raise HTTPException(status_code=409, detail=str(error)) from None
+    try:
+        notifier = Notifier.from_config(candidate)
+    except NotifyError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from None
+    proposals.approve(ws.root, proposal_id)
     config = load_config(ws.root)
-    _adopt_config(request.app, config, Notifier.from_config(config))
+    _adopt_config(request.app, config, notifier)
     return config.model_dump()
 
 
@@ -663,9 +670,8 @@ def _sync_once(app: FastAPI) -> SyncReport | None:
     finally:
         lock.release()
     if "config/core.yaml" in report.pulled + report.merged:
-        ws.config = load_config(ws.root)
-        app.state.detach_notifier()
-        app.state.detach_notifier = Notifier.from_config(ws.config).attach(ws.bus)
+        config = load_config(ws.root)
+        _adopt_config(app, config, Notifier.from_config(config))
     return report
 
 

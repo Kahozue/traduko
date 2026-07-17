@@ -6,7 +6,13 @@ import pytest
 from pydantic import ValidationError
 
 from traduko.config import load_config, save_config
-from traduko.proposals import approve, list_proposals, propose_config, reject
+from traduko.proposals import (
+    approve,
+    candidate_config,
+    list_proposals,
+    propose_config,
+    reject,
+)
 
 
 def test_propose_writes_pending_file_with_diff(tmp_path: Path) -> None:
@@ -127,6 +133,24 @@ def test_non_pending_proposal_cannot_be_resolved_again(tmp_path: Path) -> None:
         approve(tmp_path, rejected["id"])
     with pytest.raises(ValueError):
         reject(tmp_path, rejected["id"])
+
+
+def test_candidate_config_previews_without_applying(tmp_path: Path) -> None:
+    proposal = propose_config(tmp_path, {"budget": {"task_usd_limit": 9.0}}, "raise cap")
+
+    candidate = candidate_config(tmp_path, proposal["id"])
+
+    assert candidate.budget.task_usd_limit == 9.0
+    # Preview only: disk config and proposal status are untouched.
+    assert load_config(tmp_path).budget.task_usd_limit is None
+    assert list_proposals(tmp_path, status="pending")[0]["id"] == proposal["id"]
+
+    with pytest.raises(KeyError):
+        candidate_config(tmp_path, "prop-19700101000000-dead")
+
+    approve(tmp_path, proposal["id"])
+    with pytest.raises(ValueError):
+        candidate_config(tmp_path, proposal["id"])
 
 
 def test_list_proposals_sorted_and_filtered(tmp_path: Path) -> None:

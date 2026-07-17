@@ -118,6 +118,18 @@ def propose_config(root: Path, patch: dict, reason: str) -> dict:
     return proposal
 
 
+def candidate_config(root: Path, proposal_id: str) -> CoreConfig:
+    """The config a pending proposal would produce, without applying it.
+
+    Callers pre-flight side effects (notifier construction in the service)
+    against the returned config before committing via ``approve``. Same
+    taxonomy as ``approve``: ``KeyError`` unknown id, ``ValueError``
+    non-pending, ``pydantic.ValidationError`` invalid merge. Writes nothing.
+    """
+    proposal = _load_pending(root, proposal_id)
+    return _merge_and_validate(load_config(root), proposal["patch"])
+
+
 def approve(root: Path, proposal_id: str) -> dict:
     """Apply a pending proposal against the CURRENT config and mark it applied.
 
