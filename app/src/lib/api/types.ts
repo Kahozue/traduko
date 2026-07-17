@@ -41,6 +41,13 @@ export interface TaskIndexRow {
   updated_at: string;
 }
 
+export type TaskKind = "video" | "document" | "comic";
+
+export interface ProfileInfo {
+  name: string;
+  kind: TaskKind;
+}
+
 export interface PreflightCheck {
   name: string;
   level: string;

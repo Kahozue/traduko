@@ -12,6 +12,7 @@ import { SkillEditorView } from "./views/SkillEditorView";
 import { SubtitleEditorView } from "./views/SubtitleEditorView";
 import { TaskDetailView } from "./views/TaskDetailView";
 import { TasksView } from "./views/TasksView";
+import type { TaskKind } from "./lib/api/types";
 import styles from "./App.module.css";
 
 export type View =
@@ -50,6 +51,8 @@ function ConnectionGate() {
 function Main() {
   const conn = useConnection();
   const [view, setView] = useState<View>({ name: "tasks" });
+  // Task-kind filter for the sidebar's unified views; null means "all".
+  const [taskKind, setTaskKind] = useState<TaskKind | null>(null);
   // Bumped by Cmd+N or a file drop; TasksView reacts by opening the create
   // dialog (with droppedPath prefilled when set).
   const [createSignal, setCreateSignal] = useState(0);
@@ -105,12 +108,17 @@ function Main() {
         ? "settings"
         : view.name;
   return (
-    <AppShell active={active} onNavigate={(key) => setView({ name: key } as View)}>
+    <AppShell
+      active={active}
+      onNavigate={(key) => setView({ name: key } as View)}
+      taskKind={taskKind}
+      onSelectKind={setTaskKind}
+    >
       {conn.status !== "ready" ? (
         <ConnectionGate />
       ) : (
         <ErrorBoundary key={view.name}>
-          {renderView(view, setView, createSignal, droppedPath, () => setDroppedPath(null))}
+          {renderView(view, setView, createSignal, droppedPath, () => setDroppedPath(null), taskKind)}
         </ErrorBoundary>
       )}
     </AppShell>
@@ -123,6 +131,7 @@ function renderView(
   createSignal: number,
   droppedPath: string | null,
   consumeDrop: () => void,
+  taskKind: TaskKind | null,
 ): ReactNode {
   switch (view.name) {
     case "tasks":
@@ -133,6 +142,7 @@ function renderView(
           createSignal={createSignal}
           droppedPath={droppedPath}
           onConsumeDrop={consumeDrop}
+          taskKind={taskKind}
         />
       );
     case "task":

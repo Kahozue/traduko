@@ -69,6 +69,49 @@
   opacity: 1;
 }
 
+/* Task-domain sub-nav: indented, quieter than the top-level items. */
+.subNav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 2px 0 2px 14px;
+  padding-left: 8px;
+  border-left: 1px solid var(--border-on-dark);
+}
+
+.subItem,
+.subItemActive {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 30px;
+  padding: 0 10px;
+  border: none;
+  border-radius: var(--radius-s);
+  background: transparent;
+  color: var(--text-on-dark-dim);
+  font-size: var(--fs-note);
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--transition), color var(--transition);
+}
+
+.subItem:hover {
+  background: var(--hover-on-dark);
+  color: var(--text-on-dark);
+}
+
+.subItemActive {
+  background: var(--hover-on-dark);
+  color: var(--text-on-dark);
+}
+
+.subItemActive .navIcon {
+  opacity: 1;
+  color: var(--accent);
+}
+
 /* Assistant button + connection badge both live at the sidebar's bottom
    edge; the wrapper (not the badge itself) carries the auto margin so the
    button sits directly above the badge instead of splitting the gap. */
@@ -107,28 +150,56 @@
   color: var(--text-on-dark);
 }
 
-.connBadge {
+/* Footer strip: settings gear + a connection color dot (text on hover). */
+.footerRow {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 12px 12px 2px;
+  margin-top: 6px;
+  padding-top: 10px;
   border-top: 1px solid var(--border-on-dark);
+}
+
+.gearButton,
+.gearButtonActive {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: var(--radius-s);
+  background: transparent;
   color: var(--text-on-dark-dim);
-  font-size: var(--fs-meta);
+  cursor: pointer;
+  transition: background var(--transition), color var(--transition);
+}
+
+.gearButton:hover {
+  background: var(--hover-on-dark);
+  color: var(--text-on-dark);
+}
+
+.gearButtonActive {
+  background: var(--accent);
+  color: var(--text-on-dark);
 }
 
 .connDot {
-  width: 7px;
-  height: 7px;
+  width: 9px;
+  height: 9px;
+  margin-left: auto;
+  margin-right: 6px;
   border-radius: var(--radius-full);
   background: var(--warn);
+  cursor: default;
 }
 
-.connBadge[data-status="ready"] .connDot {
+.connDot[data-status="ready"] {
   background: var(--ok);
 }
 
-.connBadge[data-status="unavailable"] .connDot {
+.connDot[data-status="unavailable"] {
   background: var(--danger);
 }
 

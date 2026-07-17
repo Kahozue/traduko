@@ -12,6 +12,7 @@ import type {
   NotifyTestResult,
   PersistedEvent,
   PreflightReport,
+  ProfileInfo,
   ProposalDoc,
   ProviderConfigDoc,
   ProviderTestResult,
@@ -96,6 +97,10 @@ export class ApiClient {
 
   profiles(): Promise<string[]> {
     return this.request("/profiles");
+  }
+
+  profilesDetailed(): Promise<ProfileInfo[]> {
+    return this.request("/profiles/detailed");
   }
 
   listTasks(filters?: { project?: string; status?: string }): Promise<TaskIndexRow[]> {

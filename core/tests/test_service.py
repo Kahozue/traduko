@@ -1360,3 +1360,12 @@ def test_assistant_session_unknown_id_is_404(tmp_path: Path) -> None:
             ).status_code
             == 404
         )
+
+
+def test_profiles_detailed_classifies_kinds(tmp_path: Path) -> None:
+    with service(tmp_path) as (client, headers, token):
+        rows = client.get("/profiles/detailed", headers=headers).json()
+        by_name = {row["name"]: row["kind"] for row in rows}
+        assert by_name["subtitle-translate"] == "video"
+        assert by_name["av-default"] == "video"
+        assert by_name["novel-translate"] == "document"

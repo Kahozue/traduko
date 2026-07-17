@@ -5,7 +5,7 @@ import { Icon } from "../components/icons";
 import { StatusBadge } from "../components/StatusBadge";
 import { t } from "../i18n";
 import { useApi } from "../lib/connection";
-import type { TaskIndexRow, TaskStatus } from "../lib/api/types";
+import type { TaskIndexRow, TaskKind, TaskStatus } from "../lib/api/types";
 import styles from "./TasksView.module.css";
 
 const STATUS_OPTIONS: TaskStatus[] = [
@@ -29,6 +29,12 @@ const STATUS_LABEL: Record<TaskStatus, string> = {
 };
 
 const COLLAPSE_KEY = "traduko.tasks.collapsed";
+
+const KIND_LABEL: Record<TaskKind, string> = {
+  video: t("create.kind.video"),
+  document: t("create.kind.document"),
+  comic: t("create.kind.comic"),
+};
 
 function formatTime(iso: string): string {
   return new Date(iso).toLocaleString();
@@ -82,12 +88,14 @@ export function TasksView({
   createSignal = 0,
   droppedPath = null,
   onConsumeDrop,
+  taskKind = null,
 }: {
   onOpenTask: (project: string, taskId: string) => void;
   onOpenSettings?: () => void;
   createSignal?: number;
   droppedPath?: string | null;
   onConsumeDrop?: () => void;
+  taskKind?: TaskKind | null;
 }) {
   const api = useApi();
   const queryClient = useQueryClient();
@@ -108,10 +116,25 @@ export function TasksView({
   const dragRef = useRef<typeof drag>(null);
   const suppressClickRef = useRef(false);
   const moveMenuRef = useRef<HTMLDivElement>(null);
-  const { data: rows } = useQuery({
+  const { data: allRows } = useQuery({
     queryKey: ["tasks", statusFilter],
     queryFn: () => api.listTasks(statusFilter ? { status: statusFilter } : undefined),
   });
+  // Profile -> kind, so the sidebar's unified task-domain views can filter the
+  // list by kind without the task index carrying a kind of its own.
+  const { data: profileInfo } = useQuery({
+    queryKey: ["profiles-detailed"],
+    queryFn: () => api.profilesDetailed(),
+  });
+  const kindByProfile = useMemo(() => {
+    const map = new Map<string, TaskKind>();
+    for (const info of profileInfo ?? []) map.set(info.name, info.kind);
+    return map;
+  }, [profileInfo]);
+  const rows = useMemo(() => {
+    if (!taskKind) return allRows;
+    return (allRows ?? []).filter((row) => kindByProfile.get(row.profile) === taskKind);
+  }, [allRows, taskKind, kindByProfile]);
 
   useEffect(() => {
     if (createSignal > 0) setCreating(true);
@@ -260,7 +283,7 @@ export function TasksView({
   return (
     <div>
       <header className={styles.header}>
-        <h1 className={styles.title}>{t("tasks.title")}</h1>
+        <h1 className={styles.title}>{taskKind ? KIND_LABEL[taskKind] : t("tasks.title")}</h1>
         <div className={styles.actions}>
           <select
             className={styles.select}

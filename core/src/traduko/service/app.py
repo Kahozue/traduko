@@ -646,6 +646,16 @@ def list_profiles(request: Request) -> list[str]:
     return sorted(path.stem for path in (ws.root / "profiles").glob("*.yaml"))
 
 
+@router.get("/profiles/detailed")
+def list_profiles_detailed(request: Request) -> list[dict]:
+    """Profiles with their inferred task kind (video/document/comic), for the
+    new-task type picker."""
+    ws: Workspace = request.app.state.workspace
+    from ..profiles import list_profiles_detailed as _detailed
+
+    return _detailed(ws.root)
+
+
 def _artifact_store(ws: Workspace, project: str, task_id: str) -> ArtifactStore:
     return ArtifactStore(ws.store.task_dir(project, task_id))
 

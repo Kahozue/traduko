@@ -1,11 +1,29 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { t } from "../i18n";
+import { t, type MessageKey } from "../i18n";
 import { ApiError } from "../lib/api/client";
+import type { ProfileInfo, TaskKind } from "../lib/api/types";
 import { useApi } from "../lib/connection";
+import { Icon, type IconName } from "./icons";
 import styles from "./CreateTaskDialog.module.css";
+
+// Task types the new-task picker offers as buttons, in display order. Each
+// maps to the profiles the core classified under that kind; picking a type
+// filters the profile list. A type with no profiles yet still shows, disabled.
+const TASK_TYPES: { kind: TaskKind; label: MessageKey; icon: IconName }[] = [
+  { kind: "video", label: "create.kind.video", icon: "list" },
+  { kind: "document", label: "create.kind.document", icon: "pencil" },
+  { kind: "comic", label: "create.kind.comic", icon: "monitor" },
+];
+
+const FILE_EXTENSIONS = [
+  "srt", "vtt", "ass", "txt", "md", "epub", "html",
+  "mp4", "mkv", "mov", "webm", "avi", "flv", "m4v",
+  "mp3", "wav", "m4a", "aac", "flac", "ogg",
+  "png", "jpg", "jpeg", "webp", "cbz", "zip", "pdf",
+];
 
 export function CreateTaskDialog({
   onClose,
@@ -21,16 +39,46 @@ export function CreateTaskDialog({
   const dialogRef = useRef<HTMLDivElement>(null);
   const [inputPath, setInputPath] = useState(initialPath ?? "");
   const [name, setName] = useState("");
-  const [profile, setProfile] = useState("");
   const [project, setProject] = useState("default");
-  const { data: profiles } = useQuery({ queryKey: ["profiles"], queryFn: () => api.profiles() });
+  const [kind, setKind] = useState<TaskKind | null>(null);
+  const [profile, setProfile] = useState("");
+  const { data: profiles } = useQuery({
+    queryKey: ["profiles-detailed"],
+    queryFn: () => api.profilesDetailed(),
+  });
+
+  // Which kinds actually have profiles, and the profiles under the chosen one.
+  const byKind = useMemo(() => {
+    const map = new Map<TaskKind, ProfileInfo[]>();
+    for (const info of profiles ?? []) {
+      const bucket = map.get(info.kind);
+      if (bucket) bucket.push(info);
+      else map.set(info.kind, [info]);
+    }
+    return map;
+  }, [profiles]);
+
+  // Land on the first kind that has profiles once they load.
+  useEffect(() => {
+    if (kind !== null || !profiles || profiles.length === 0) return;
+    const firstType = TASK_TYPES.find((type) => byKind.has(type.kind));
+    if (firstType) setKind(firstType.kind);
+  }, [profiles, byKind, kind]);
+
+  const kindProfiles = kind ? (byKind.get(kind) ?? []) : [];
+
+  // Keep the selected profile valid for the chosen kind.
+  useEffect(() => {
+    if (kindProfiles.length === 0) {
+      if (profile !== "") setProfile("");
+      return;
+    }
+    if (!kindProfiles.some((info) => info.name === profile)) {
+      setProfile(kindProfiles[0].name);
+    }
+  }, [kindProfiles, profile]);
 
   useEffect(() => {
-    if (profiles && profiles.length > 0 && profile === "") setProfile(profiles[0]);
-  }, [profiles, profile]);
-
-  useEffect(() => {
-    // Move focus into the dialog so Esc and Tab land here immediately.
     dialogRef.current?.focus();
   }, []);
 
@@ -41,7 +89,6 @@ export function CreateTaskDialog({
       return;
     }
     if (event.key !== "Tab") return;
-    // Minimal focus trap: wrap Tab / Shift+Tab at the dialog's edges.
     const nodes = dialogRef.current?.querySelectorAll<HTMLElement>(
       'button, input, select, [tabindex]:not([tabindex="-1"])',
     );
@@ -74,33 +121,7 @@ export function CreateTaskDialog({
   async function pickFile(): Promise<void> {
     const chosen = await open({
       multiple: false,
-      filters: [
-        {
-          name: t("create.fileFilter"),
-          // Subtitle inputs plus the common video/audio containers the AV
-          // pipeline can extract audio from. Keeps users from picking a .png
-          // and hitting an opaque ingest failure downstream.
-          extensions: [
-            "srt",
-            "vtt",
-            "ass",
-            "txt",
-            "mp4",
-            "mkv",
-            "mov",
-            "webm",
-            "avi",
-            "flv",
-            "m4v",
-            "mp3",
-            "wav",
-            "m4a",
-            "aac",
-            "flac",
-            "ogg",
-          ],
-        },
-      ],
+      filters: [{ name: t("create.fileFilter"), extensions: FILE_EXTENSIONS }],
     });
     if (typeof chosen === "string") setInputPath(chosen);
   }
@@ -126,6 +147,27 @@ export function CreateTaskDialog({
         <h2 id="create-task-title" className={styles.title}>
           {t("create.title")}
         </h2>
+
+        <span className={styles.label}>{t("create.kind")}</span>
+        <div className={styles.kindRow} role="group" aria-label={t("create.kind")}>
+          {TASK_TYPES.map((type) => {
+            const available = byKind.has(type.kind);
+            return (
+              <button
+                key={type.kind}
+                type="button"
+                className={type.kind === kind ? styles.kindButtonActive : styles.kindButton}
+                aria-pressed={type.kind === kind}
+                disabled={!available}
+                onClick={() => setKind(type.kind)}
+              >
+                <Icon name={type.icon} size={20} />
+                <span>{t(type.label)}</span>
+              </button>
+            );
+          })}
+        </div>
+
         <label className={styles.label}>
           {t("create.input")}
           <div className={styles.pickRow}>
@@ -135,6 +177,24 @@ export function CreateTaskDialog({
             </button>
           </div>
         </label>
+
+        {kindProfiles.length > 1 && (
+          <label className={styles.label}>
+            {t("create.profile")}
+            <select
+              className={styles.input}
+              value={profile}
+              onChange={(event) => setProfile(event.target.value)}
+            >
+              {kindProfiles.map((info) => (
+                <option key={info.name} value={info.name}>
+                  {info.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+
         <label className={styles.label}>
           {t("create.name")}
           <input
@@ -143,20 +203,6 @@ export function CreateTaskDialog({
             placeholder={t("create.namePlaceholder")}
             onChange={(event) => setName(event.target.value)}
           />
-        </label>
-        <label className={styles.label}>
-          {t("create.profile")}
-          <select
-            className={styles.input}
-            value={profile}
-            onChange={(event) => setProfile(event.target.value)}
-          >
-            {(profiles ?? []).map((name) => (
-              <option key={name} value={name}>
-                {name}
-              </option>
-            ))}
-          </select>
         </label>
         <label className={styles.label}>
           {t("create.project")}

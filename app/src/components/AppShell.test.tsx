@@ -18,6 +18,32 @@ test("renders nav and reports navigation", async () => {
   expect(onNavigate).toHaveBeenCalledWith("budget");
 });
 
+test("task-kind sub-items select a kind and navigate to tasks", async () => {
+  const onNavigate = vi.fn();
+  const onSelectKind = vi.fn();
+  renderWithConnection(
+    <AppShell active="budget" onNavigate={onNavigate} onSelectKind={onSelectKind}>
+      <p>content</p>
+    </AppShell>,
+    { api: {} },
+  );
+  await userEvent.click(screen.getByRole("button", { name: /文檔/ }));
+  expect(onSelectKind).toHaveBeenCalledWith("document");
+  expect(onNavigate).toHaveBeenCalledWith("tasks");
+});
+
+test("the settings gear navigates to settings", async () => {
+  const onNavigate = vi.fn();
+  renderWithConnection(
+    <AppShell active="tasks" onNavigate={onNavigate}>
+      <p>content</p>
+    </AppShell>,
+    { api: {} },
+  );
+  await userEvent.click(screen.getByRole("button", { name: "設定" }));
+  expect(onNavigate).toHaveBeenCalledWith("settings");
+});
+
 test("assistant button toggles a docked panel that never joins the nav's active state", async () => {
   renderWithConnection(
     <AppShell active="tasks" onNavigate={vi.fn()}>
