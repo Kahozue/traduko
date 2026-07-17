@@ -1,0 +1,180 @@
+.back {
+  margin-bottom: 14px;
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-s);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  font-size: var(--fs-note);
+  cursor: pointer;
+  transition: background var(--transition);
+}
+
+.back:hover {
+  background: var(--bg-inset);
+}
+
+.header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.title {
+  margin: 0;
+  font-size: var(--fs-hero);
+  font-weight: 700;
+}
+
+.name {
+  margin: 2px 0 0;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: var(--fs-note);
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.dirty {
+  color: var(--warn);
+  font-size: var(--fs-note);
+}
+
+.saved {
+  color: var(--ok);
+  font-size: var(--fs-note);
+}
+
+.primary {
+  padding: 8px 16px;
+  border: none;
+  border-radius: var(--radius-s);
+  background: var(--accent);
+  color: var(--text-on-dark);
+  font-size: var(--fs-note);
+  font-weight: 500;
+  cursor: pointer;
+  box-shadow: var(--shadow-1);
+  transition: background var(--transition);
+}
+
+.primary:hover:not(:disabled) {
+  background: var(--accent-strong);
+}
+
+.primary:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.errorBox {
+  margin-bottom: 12px;
+  padding: 10px 14px;
+  border-radius: var(--radius-s);
+  background: var(--danger-soft);
+  color: var(--danger);
+  font-size: var(--fs-note);
+}
+
+.errorTitle {
+  margin: 0;
+  font-weight: 500;
+}
+
+.errorList {
+  margin: 6px 0 0;
+  padding-left: 20px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-meta);
+  line-height: 1.7;
+}
+
+.editor {
+  width: 100%;
+  min-height: 60vh;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-m);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: var(--fs-note);
+  line-height: 1.7;
+  resize: vertical;
+  box-shadow: var(--shadow-1);
+}
+
+.editor:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.state {
+  color: var(--text-secondary);
+  padding: 24px 0;
+}
+
+.scrim {
+  position: fixed;
+  inset: 0;
+  background: var(--scrim);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 20;
+}
+
+.confirm {
+  background: var(--bg-surface-raised);
+  border-radius: var(--radius-m);
+  box-shadow: var(--shadow-2);
+  padding: 20px;
+  width: 340px;
+}
+
+.confirmMessage {
+  margin: 0 0 16px;
+  font-size: var(--fs-body);
+  color: var(--text-primary);
+}
+
+.confirmActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.toolButton {
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-s);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font-size: var(--fs-note);
+  cursor: pointer;
+  transition: background var(--transition);
+}
+
+.toolButton:hover {
+  background: var(--bg-inset);
+}
+
+.discard {
+  padding: 6px 12px;
+  border: 1px solid var(--danger);
+  border-radius: var(--radius-s);
+  background: var(--bg-surface);
+  color: var(--danger);
+  font-size: var(--fs-note);
+  cursor: pointer;
+  transition: background var(--transition);
+}
+
+.discard:hover {
+  background: var(--danger-soft);
+}

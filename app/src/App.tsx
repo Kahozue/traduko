@@ -7,7 +7,8 @@ import { t } from "./i18n";
 import { ConnectionProvider, useConnection } from "./lib/connection";
 import { BudgetView } from "./views/BudgetView";
 import { DocumentEditorView } from "./views/DocumentEditorView";
-import { SettingsView } from "./views/SettingsView";
+import { SettingsView, type SettingsTab } from "./views/SettingsView";
+import { SkillEditorView } from "./views/SkillEditorView";
 import { SubtitleEditorView } from "./views/SubtitleEditorView";
 import { TaskDetailView } from "./views/TaskDetailView";
 import { TasksView } from "./views/TasksView";
@@ -18,8 +19,9 @@ export type View =
   | { name: "task"; project: string; taskId: string }
   | { name: "subtitle-editor"; project: string; taskId: string }
   | { name: "document-editor"; project: string; taskId: string }
+  | { name: "skill-editor"; skill: string }
   | { name: "budget" }
-  | { name: "settings" };
+  | { name: "settings"; tab?: SettingsTab };
 
 const queryClient = new QueryClient();
 
@@ -99,7 +101,9 @@ function Main() {
     view.name === "subtitle-editor" ||
     view.name === "document-editor"
       ? "tasks"
-      : view.name;
+      : view.name === "skill-editor"
+        ? "settings"
+        : view.name;
   return (
     <AppShell active={active} onNavigate={(key) => setView({ name: key } as View)}>
       {conn.status !== "ready" ? (
@@ -163,10 +167,22 @@ function renderView(
           onBack={() => setView({ name: "task", project: view.project, taskId: view.taskId })}
         />
       );
+    case "skill-editor":
+      return (
+        <SkillEditorView
+          skill={view.skill}
+          onBack={() => setView({ name: "settings", tab: "agent" })}
+        />
+      );
     case "budget":
       return <BudgetView />;
     case "settings":
-      return <SettingsView />;
+      return (
+        <SettingsView
+          initialTab={view.tab}
+          onEditSkill={(name) => setView({ name: "skill-editor", skill: name })}
+        />
+      );
   }
 }
 

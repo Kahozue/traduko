@@ -1,5 +1,6 @@
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import type { ComponentProps } from "react";
 import { expect, test, vi } from "vitest";
 import type { ApiClient } from "../lib/api/client";
 import type { CoreConfigDoc } from "../lib/api/types";
@@ -31,9 +32,13 @@ const DEFAULT_CONFIG: CoreConfigDoc = {
     auto_interval_minutes: 0,
   },
   mcp_servers: {},
+  skills: {},
 };
 
-function setup(overrides: Partial<ApiClient> = {}) {
+function setup(
+  overrides: Partial<ApiClient> = {},
+  props: ComponentProps<typeof SettingsView> = {},
+) {
   const saveConfig = vi.fn().mockImplementation((body) => Promise.resolve(body));
   const reloadMcp = vi.fn().mockResolvedValue([]);
   const api: Partial<ApiClient> = {
@@ -48,11 +53,13 @@ function setup(overrides: Partial<ApiClient> = {}) {
       peers: [],
     }),
     getMcpStatus: vi.fn().mockResolvedValue([]),
+    listSkills: vi.fn().mockResolvedValue([]),
+    getSkill: vi.fn().mockResolvedValue({ name: "x", content: "content" }),
     reloadMcp,
     saveConfig,
     ...overrides,
   };
-  renderWithConnection(<SettingsView />, { api });
+  renderWithConnection(<SettingsView {...props} />, { api });
   return { saveConfig, reloadMcp };
 }
 
@@ -133,14 +140,15 @@ test("agent tab lists mcp servers with status", async () => {
       mcp_servers: {
         files: {
           transport: "stdio", command: "uvx", args: [], env: {},
-          url: "", auth_token: "", enabled: true,
+          url: "", auth_token: "", enabled: true, confirmed: true,
         },
       },
     }),
     getMcpStatus: vi.fn().mockResolvedValue([
       {
-        name: "files", transport: "stdio", enabled: true,
-        state: "connected", error: "", tools: ["read"],
+        name: "files", transport: "stdio", enabled: true, confirmed: true,
+        state: "connected", error: "",
+        tools: [{ name: "read", description: "Read a file" }],
       },
     ]),
   });
@@ -220,4 +228,74 @@ test("theme choice applies instantly and never dirties the config draft", async 
   expect(document.documentElement.dataset.theme).toBe("dark");
   expect(screen.queryByText("有未儲存的變更")).not.toBeInTheDocument();
   themeStore.setMode("system");
+});
+
+test("v2-04 config without confirmed fields or skills does not read as dirty", async () => {
+  const legacy = {
+    ...DEFAULT_CONFIG,
+    mcp_servers: {
+      files: {
+        transport: "stdio", command: "uvx", args: [], env: {},
+        url: "", auth_token: "", enabled: true,
+      },
+    },
+  } as Record<string, unknown>;
+  delete legacy.skills;
+  setup({ getConfig: vi.fn().mockResolvedValue(legacy) });
+  await screen.findByLabelText("預設專案");
+  expect(await screen.findByDisplayValue("uvx")).toBeInTheDocument();
+  expect(screen.queryByText("有未儲存的變更")).not.toBeInTheDocument();
+});
+
+test("initialTab opens the settings on the requested tab", async () => {
+  setup({}, { initialTab: "agent" });
+  await screen.findByLabelText("預設專案");
+  expect(screen.getByRole("tab", { name: "Agent" })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+});
+
+test("skill edit button routes through onEditSkill", async () => {
+  const onEditSkill = vi.fn();
+  setup(
+    {
+      listSkills: vi.fn().mockResolvedValue([
+        {
+          name: "honorific-style", description: "敬語",
+          enabled: false, confirmed: false, valid: true, errors: [],
+        },
+      ]),
+    },
+    { initialTab: "agent", onEditSkill },
+  );
+  await userEvent.click(await screen.findByRole("button", { name: "編輯" }));
+  expect(onEditSkill).toHaveBeenCalledWith("honorific-style");
+});
+
+test("confirming a skill dirties the draft and saves both flags", async () => {
+  const { saveConfig } = setup(
+    {
+      listSkills: vi.fn().mockResolvedValue([
+        {
+          name: "honorific-style", description: "敬語",
+          enabled: false, confirmed: false, valid: true, errors: [],
+        },
+      ]),
+      getSkill: vi.fn().mockResolvedValue({
+        name: "honorific-style",
+        content: "---\nname: honorific-style\n---\n\n以敬語翻譯。",
+      }),
+    },
+    { initialTab: "agent" },
+  );
+  await userEvent.click(await screen.findByLabelText("啟用 honorific-style"));
+  expect(await screen.findByText(/以敬語翻譯。/)).toBeInTheDocument();
+  await userEvent.click(screen.getByRole("button", { name: "確認啟用" }));
+  expect(screen.getByText("有未儲存的變更")).toBeInTheDocument();
+  await userEvent.click(screen.getByRole("button", { name: "儲存" }));
+  await waitFor(() => expect(saveConfig).toHaveBeenCalledTimes(1));
+  expect(saveConfig.mock.calls[0][0].skills).toEqual({
+    "honorific-style": { enabled: true, confirmed: true },
+  });
 });

@@ -710,3 +710,168 @@ select.input {
   color: var(--danger);
   font-size: var(--fs-note);
 }
+
+/* Skills list — plain rows (name, description, controls), per the design
+   language the agent tab holds lists and toggles only. */
+.skillRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 12px 0;
+}
+
+.skillRow + .skillRow {
+  border-top: 1px solid var(--border);
+}
+
+.skillText {
+  flex: 1;
+  min-width: 0;
+}
+
+.skillName {
+  font-family: var(--font-mono);
+  font-size: var(--fs-note);
+  font-weight: 500;
+}
+
+.skillDesc {
+  margin: 3px 0 0;
+  color: var(--text-secondary);
+  font-size: var(--fs-note);
+  line-height: 1.6;
+}
+
+.skillErrors {
+  margin: 5px 0 0;
+  color: var(--danger);
+  font-size: var(--fs-note);
+  line-height: 1.6;
+  word-break: break-word;
+}
+
+.errorPill {
+  display: inline-block;
+  margin-right: 6px;
+  padding: 1px 8px;
+  border-radius: var(--radius-full);
+  background: var(--danger-soft);
+  color: var(--danger);
+  font-size: var(--fs-meta);
+  font-weight: 500;
+}
+
+.skillActions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.skillAdd {
+  display: flex;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.skillAdd .input {
+  max-width: 280px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-note);
+}
+
+.skillFormError {
+  margin: 6px 0 0;
+  color: var(--danger);
+  font-size: var(--fs-note);
+}
+
+/* Enable-confirmation card (MCP server tools / skill full text). */
+.scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--scrim);
+}
+
+.confirmCard {
+  display: flex;
+  flex-direction: column;
+  width: 480px;
+  max-width: calc(100vw - 48px);
+  max-height: calc(100vh - 96px);
+  padding: 20px;
+  border-radius: var(--radius-m);
+  background: var(--bg-surface-raised);
+  box-shadow: var(--shadow-2);
+}
+
+.confirmTitle {
+  margin: 0;
+  font-size: var(--fs-section);
+  font-weight: 700;
+}
+
+.confirmName {
+  margin: 4px 0 0;
+  font-family: var(--font-mono);
+  font-size: var(--fs-note);
+  color: var(--text-secondary);
+}
+
+.confirmIntro {
+  margin: 12px 0 0;
+  font-size: var(--fs-note);
+  line-height: 1.6;
+}
+
+.confirmTools {
+  margin: 10px 0 0;
+  padding: 10px 12px;
+  list-style: none;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-s);
+  background: var(--bg-subtle);
+}
+
+.confirmTool {
+  padding: 5px 0;
+}
+
+.confirmTool + .confirmTool {
+  border-top: 1px solid var(--border);
+}
+
+.confirmToolDesc {
+  display: block;
+  margin-top: 1px;
+  color: var(--text-secondary);
+  font-size: var(--fs-meta);
+  line-height: 1.5;
+}
+
+.confirmContent {
+  margin: 10px 0 0;
+  padding: 10px 12px;
+  overflow: auto;
+  min-height: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-s);
+  background: var(--bg-subtle);
+  font-family: var(--font-mono);
+  font-size: var(--fs-meta);
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.confirmActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}

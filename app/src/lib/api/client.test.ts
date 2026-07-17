@@ -128,6 +128,7 @@ test("config endpoints round trip", async () => {
       auto_interval_minutes: 0,
     },
     mcp_servers: {},
+    skills: {},
   } as CoreConfigDoc;
   const fetchFn = vi.fn().mockResolvedValue(jsonResponse(200, doc));
   const client = new ApiClient("http://127.0.0.1:8686", "tok", fetchFn);
@@ -206,4 +207,56 @@ test("resolveSyncConflict posts file, source and choice", async () => {
     source: "term",
     choice: "remote",
   });
+});
+
+test("skills endpoints hit list, read, write, create and delete", async () => {
+  const fetchFn = vi.fn().mockResolvedValue(jsonResponse(200, {}));
+  const client = new ApiClient("http://127.0.0.1:8686", "tok", fetchFn);
+  await client.listSkills();
+  expect(fetchFn.mock.calls[0][0]).toBe("http://127.0.0.1:8686/skills");
+  await client.getSkill("honorific-style");
+  expect(fetchFn.mock.calls[1][0]).toBe("http://127.0.0.1:8686/skills/honorific-style");
+  await client.putSkill("honorific-style", "---\nname: honorific-style\n---\nbody");
+  const [putUrl, putInit] = fetchFn.mock.calls[2];
+  expect(putUrl).toBe("http://127.0.0.1:8686/skills/honorific-style");
+  expect(putInit.method).toBe("PUT");
+  expect(JSON.parse(putInit.body)).toEqual({
+    content: "---\nname: honorific-style\n---\nbody",
+  });
+  await client.createSkill("new-skill");
+  const [postUrl, postInit] = fetchFn.mock.calls[3];
+  expect(postUrl).toBe("http://127.0.0.1:8686/skills");
+  expect(postInit.method).toBe("POST");
+  expect(JSON.parse(postInit.body)).toEqual({ name: "new-skill" });
+  await client.deleteSkill("new-skill");
+  const [delUrl, delInit] = fetchFn.mock.calls[4];
+  expect(delUrl).toBe("http://127.0.0.1:8686/skills/new-skill");
+  expect(delInit.method).toBe("DELETE");
+});
+
+test("putSkill validation failure carries the errors list", async () => {
+  const errors = ["frontmatter is missing a description", "body is empty"];
+  const fetchFn = vi.fn().mockResolvedValue(jsonResponse(422, { detail: errors }));
+  const client = new ApiClient("http://127.0.0.1:8686", "tok", fetchFn);
+  const error = await client.putSkill("x", "bad").catch((e) => e);
+  expect(error).toBeInstanceOf(ApiError);
+  expect(error.status).toBe(422);
+  expect(error.detail).toEqual(errors);
+});
+
+test("proposal endpoints build urls and filter by status", async () => {
+  const fetchFn = vi.fn().mockResolvedValue(jsonResponse(200, []));
+  const client = new ApiClient("http://127.0.0.1:8686", "tok", fetchFn);
+  await client.listProposals();
+  expect(fetchFn.mock.calls[0][0]).toBe("http://127.0.0.1:8686/proposals");
+  await client.listProposals("pending");
+  expect(fetchFn.mock.calls[1][0]).toBe("http://127.0.0.1:8686/proposals?status=pending");
+  await client.approveProposal("prop-1");
+  const [approveUrl, approveInit] = fetchFn.mock.calls[2];
+  expect(approveUrl).toBe("http://127.0.0.1:8686/proposals/prop-1/approve");
+  expect(approveInit.method).toBe("POST");
+  await client.rejectProposal("prop-1");
+  const [rejectUrl, rejectInit] = fetchFn.mock.calls[3];
+  expect(rejectUrl).toBe("http://127.0.0.1:8686/proposals/prop-1/reject");
+  expect(rejectInit.method).toBe("POST");
 });

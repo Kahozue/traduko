@@ -245,18 +245,53 @@ export interface McpServerConfigDoc {
   url: string;
   auth_token: string;
   enabled: boolean;
+  // Safety gate: an enabled server only enters the agent once the user has
+  // confirmed its tool list. Optional because a v2-04 core omits it.
+  confirmed?: boolean;
   [key: string]: unknown;
 }
 
+export interface SkillConfigDoc {
+  enabled: boolean;
+  confirmed: boolean;
+  [key: string]: unknown;
+}
+
+// Row of GET /skills: on-disk SKILL.md folders merged with config flags.
+export interface SkillInfo {
+  name: string;
+  description: string;
+  enabled: boolean;
+  confirmed: boolean;
+  valid: boolean;
+  errors: string[];
+}
+
 export type McpServerState = "connected" | "connecting" | "error" | "disabled";
+
+export interface McpToolInfo {
+  name: string;
+  description: string;
+}
 
 export interface McpServerStatus {
   name: string;
   transport: "stdio" | "http";
   enabled: boolean;
+  confirmed: boolean;
   state: McpServerState;
   error: string;
-  tools: string[];
+  tools: McpToolInfo[];
+}
+
+export interface ProposalDoc {
+  id: string;
+  kind: "config";
+  reason: string;
+  patch: Record<string, unknown>;
+  diff: string;
+  status: "pending" | "applied" | "rejected";
+  created_at: string;
 }
 
 export interface CoreConfigDoc {
@@ -268,6 +303,7 @@ export interface CoreConfigDoc {
   discord_bot: DiscordBotConfigDoc;
   sync: SyncConfigDoc;
   mcp_servers: Record<string, McpServerConfigDoc>;
+  skills: Record<string, SkillConfigDoc>;
   [key: string]: unknown;
 }
 

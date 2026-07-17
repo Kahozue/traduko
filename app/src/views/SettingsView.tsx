@@ -18,7 +18,8 @@ import styles from "../components/settings/settings.module.css";
 // one pipeline domain per tab, future domains (documents, comics, agent)
 // slot in after "video"; integrations and about stay last.
 const TABS = ["general", "video", "agent", "integrations", "about"] as const;
-type TabId = (typeof TABS)[number];
+export type SettingsTab = (typeof TABS)[number];
+type TabId = SettingsTab;
 
 const TAB_LABELS: Record<TabId, MessageKey> = {
   general: "settings.tab.general",
@@ -65,10 +66,26 @@ function normalize(config: CoreConfigDoc): CoreConfigDoc {
     };
   }
   if (!next.mcp_servers) next.mcp_servers = {};
+  // Mirror the core's confirmed-field migration (a v2-04 core sends servers
+  // without it): already-enabled servers count as confirmed so the upgrade
+  // does not unmount them, everything else starts unconfirmed. Applying the
+  // same rule to both sides keeps dirty-comparison honest.
+  for (const server of Object.values(next.mcp_servers)) {
+    if (server.confirmed === undefined) server.confirmed = server.enabled;
+  }
+  if (!next.skills) next.skills = {};
   return next;
 }
 
-export function SettingsView() {
+export function SettingsView({
+  initialTab,
+  onEditSkill,
+}: {
+  // Where to land when the view opens; the skill editor's back path uses
+  // this to return to the agent tab.
+  initialTab?: SettingsTab;
+  onEditSkill?: (name: string) => void;
+} = {}) {
   const api = useApi();
   const conn = useConnection();
   const queryClient = useQueryClient();
@@ -112,7 +129,7 @@ export function SettingsView() {
 
   const [draft, setDraft] = useState<CoreConfigDoc | null>(null);
   const [resetKey, setResetKey] = useState(0);
-  const [tab, setTab] = useState<TabId>("general");
+  const [tab, setTab] = useState<TabId>(initialTab ?? "general");
   const [numbersValid, setNumbersValid] = useState(true);
   const [providersValid, setProvidersValid] = useState(true);
   const [channelsValid, setChannelsValid] = useState(true);
@@ -166,6 +183,9 @@ export function SettingsView() {
       setDraft(normalize(saved));
       setResetKey((key) => key + 1);
       queryClient.invalidateQueries({ queryKey: ["budget"] });
+      // The core rebuilds its skills manager from the saved config, so the
+      // list's enabled/confirmed flags change server side.
+      queryClient.invalidateQueries({ queryKey: ["skills"] });
       // Saved mcp_servers only take effect once the core rebuilds its
       // connections; harmless when nothing is configured.
       void api
@@ -278,12 +298,17 @@ export function SettingsView() {
             key={`agent-${resetKey}`}
             servers={draft.mcp_servers}
             status={mcpStatus ?? []}
+            skills={draft.skills}
             onChange={(value) => {
               setAgentValid(value !== null);
               if (value !== null) {
                 setDraft((prev) => (prev ? { ...prev, mcp_servers: value } : prev));
               }
             }}
+            onSkillsChange={(value) =>
+              setDraft((prev) => (prev ? { ...prev, skills: value } : prev))
+            }
+            onEditSkill={onEditSkill}
           />
         )}
       </div>

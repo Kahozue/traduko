@@ -9,6 +9,8 @@ import type {
   NotifyTestResult,
   PersistedEvent,
   PreflightReport,
+  ProposalDoc,
+  SkillInfo,
   SubtitleStylePreset,
   SyncReport,
   SyncStatus,
@@ -172,6 +174,46 @@ export class ApiClient {
 
   reloadMcp(): Promise<McpServerStatus[]> {
     return this.request("/mcp/reload", { method: "POST" });
+  }
+
+  listSkills(): Promise<SkillInfo[]> {
+    return this.request("/skills");
+  }
+
+  getSkill(name: string): Promise<{ name: string; content: string }> {
+    return this.request(`/skills/${encodeURIComponent(name)}`);
+  }
+
+  putSkill(name: string, content: string): Promise<{ saved: boolean }> {
+    return this.request(`/skills/${encodeURIComponent(name)}`, {
+      method: "PUT",
+      body: JSON.stringify({ content }),
+    });
+  }
+
+  createSkill(name: string): Promise<{ created: string }> {
+    return this.request("/skills", { method: "POST", body: JSON.stringify({ name }) });
+  }
+
+  deleteSkill(name: string): Promise<{ deleted: boolean }> {
+    return this.request(`/skills/${encodeURIComponent(name)}`, { method: "DELETE" });
+  }
+
+  listProposals(status?: string): Promise<ProposalDoc[]> {
+    const query = status ? `?status=${encodeURIComponent(status)}` : "";
+    return this.request(`/proposals${query}`);
+  }
+
+  approveProposal(id: string): Promise<CoreConfigDoc> {
+    return this.request(`/proposals/${encodeURIComponent(id)}/approve`, {
+      method: "POST",
+    });
+  }
+
+  rejectProposal(id: string): Promise<ProposalDoc> {
+    return this.request(`/proposals/${encodeURIComponent(id)}/reject`, {
+      method: "POST",
+    });
   }
 
   listArtifacts(project: string, taskId: string): Promise<ArtifactListItem[]> {

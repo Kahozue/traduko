@@ -1,6 +1,14 @@
 import { useRef, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { t } from "../../i18n";
-import type { McpServerConfigDoc, McpServerStatus } from "../../lib/api/types";
+import { ApiError } from "../../lib/api/client";
+import type {
+  McpServerConfigDoc,
+  McpServerStatus,
+  McpToolInfo,
+  SkillConfigDoc,
+} from "../../lib/api/types";
+import { useApi } from "../../lib/connection";
 import { Section } from "./Section";
 import styles from "./settings.module.css";
 
@@ -11,12 +19,27 @@ interface Row {
   argsText: string;
 }
 
+// The confirmation card is the tool-poisoning gate: flipping an unconfirmed
+// item on first shows the user exactly what would enter the agent (an MCP
+// server's tool list, a skill's full SKILL.md). Confirming writes
+// enabled+confirmed into the DRAFT; the save bar stays the commit point.
+type PendingConfirm =
+  | { kind: "mcp"; uid: number; name: string }
+  | { kind: "skill"; name: string };
+
 const STATE_LABELS = {
   connected: "settings.mcp.state.connected",
   connecting: "settings.mcp.state.connecting",
   error: "settings.mcp.state.error",
   disabled: "settings.mcp.state.disabled",
 } as const;
+
+// Mirrors the core's skill name rule (skillhub._name_errors).
+const SKILL_NAME_RE = /^[a-z0-9]+(-[a-z0-9]+)*$/;
+
+function skillNameValid(name: string): boolean {
+  return name.length > 0 && name.length <= 64 && SKILL_NAME_RE.test(name);
+}
 
 function normalize(rows: Row[]): Record<string, McpServerConfigDoc> | null {
   const out: Record<string, McpServerConfigDoc> = {};
@@ -36,12 +59,20 @@ function normalize(rows: Row[]): Record<string, McpServerConfigDoc> | null {
 export function AgentSection({
   servers,
   status,
+  skills,
   onChange,
+  onSkillsChange,
+  onEditSkill,
 }: {
   servers: Record<string, McpServerConfigDoc>;
   status: McpServerStatus[];
+  skills: Record<string, SkillConfigDoc>;
   onChange: (servers: Record<string, McpServerConfigDoc> | null) => void;
+  onSkillsChange: (skills: Record<string, SkillConfigDoc>) => void;
+  onEditSkill?: (name: string) => void;
 }) {
+  const api = useApi();
+  const queryClient = useQueryClient();
   const [rows, setRows] = useState<Row[]>(() =>
     Object.entries(servers).map(([name, config], index) => ({
       uid: index,
@@ -51,7 +82,42 @@ export function AgentSection({
     })),
   );
   const nextUid = useRef(rows.length);
+  const [pending, setPending] = useState<PendingConfirm | null>(null);
+  const [newSkillName, setNewSkillName] = useState("");
   const statusByName = new Map(status.map((row) => [row.name, row]));
+
+  const skillList = useQuery({
+    queryKey: ["skills"],
+    queryFn: () => api.listSkills(),
+  });
+
+  const createSkill = useMutation({
+    mutationFn: (name: string) => api.createSkill(name),
+    onSuccess: () => {
+      setNewSkillName("");
+      void queryClient.invalidateQueries({ queryKey: ["skills"] });
+    },
+  });
+
+  const deleteSkill = useMutation({
+    // A config-only row ("missing" on disk) has nothing to delete server
+    // side; swallowing the 404 lets the same button clear both cases.
+    mutationFn: async (name: string) => {
+      try {
+        await api.deleteSkill(name);
+      } catch (error) {
+        if (!(error instanceof ApiError && error.status === 404)) throw error;
+      }
+    },
+    onSuccess: (_data, name) => {
+      void queryClient.invalidateQueries({ queryKey: ["skills"] });
+      if (name in skills) {
+        const next = { ...skills };
+        delete next[name];
+        onSkillsChange(next);
+      }
+    },
+  });
 
   function apply(next: Row[]) {
     setRows(next);
@@ -83,152 +149,402 @@ export function AgentSection({
           env: {},
           url: "",
           auth_token: "",
-          enabled: true,
+          // New servers start disabled and unconfirmed: flipping the
+          // toggle routes through the confirmation card. Sending confirmed
+          // explicitly also keeps the core's legacy migration (enabled
+          // without confirmed => confirmed) from waving the gate through.
+          enabled: false,
+          confirmed: false,
         },
         argsText: "",
       },
     ]);
   }
 
+  function toggleServer(row: Row, on: boolean) {
+    if (on && !row.config.confirmed) {
+      setPending({ kind: "mcp", uid: row.uid, name: row.name.trim() });
+      return;
+    }
+    setField(row.uid, { enabled: on });
+  }
+
+  function toggleSkill(name: string, on: boolean) {
+    const existing = skills[name];
+    if (on && !existing?.confirmed) {
+      setPending({ kind: "skill", name });
+      return;
+    }
+    onSkillsChange({
+      ...skills,
+      [name]: { ...existing, enabled: on, confirmed: existing?.confirmed ?? false },
+    });
+  }
+
+  function confirmPending() {
+    if (!pending) return;
+    if (pending.kind === "mcp") {
+      setField(pending.uid, { enabled: true, confirmed: true });
+    } else {
+      const existing = skills[pending.name];
+      onSkillsChange({
+        ...skills,
+        [pending.name]: { ...existing, enabled: true, confirmed: true },
+      });
+    }
+    setPending(null);
+  }
+
+  function submitNewSkill(event: React.FormEvent) {
+    event.preventDefault();
+    const name = newSkillName.trim();
+    if (!skillNameValid(name) || createSkill.isPending) return;
+    createSkill.mutate(name);
+  }
+
   const trimmedNames = rows.map((row) => row.name.trim());
+  const newNameInvalid = newSkillName.trim() !== "" && !skillNameValid(newSkillName.trim());
+  // Rows the server reports as config-only ("missing" on disk) disappear
+  // from the list once the user has removed them from the draft.
+  const visibleSkills = (skillList.data ?? []).filter(
+    (skill) => !(skill.errors.includes("missing") && !(skill.name in skills)),
+  );
 
   return (
-    <Section
-      title={t("settings.mcp")}
-      hint={t("settings.mcp.hint")}
-      action={
-        <button
-          type="button"
-          className={`${styles.secondary} ${styles.headAction}`}
-          onClick={add}
-        >
-          {t("settings.mcp.add")}
-        </button>
-      }
-    >
-      {rows.length === 0 && <p className={styles.emptyBox}>{t("settings.mcp.empty")}</p>}
-      {rows.map((row) => {
-        const name = row.name.trim();
-        const nameInvalid =
-          !name || trimmedNames.filter((candidate) => candidate === name).length > 1;
-        const isStdio = row.config.transport === "stdio";
-        const commandMissing = isStdio && row.config.command.trim() === "";
-        const urlMissing = !isStdio && row.config.url.trim() === "";
-        const serverStatus = statusByName.get(name);
-        return (
-          <div key={row.uid} className={styles.card}>
-            <div className={styles.cardHeader}>
-              <label className={styles.field}>
-                <span className={styles.label}>{t("settings.mcp.name")}</span>
-                <input
-                  className={styles.input}
-                  aria-label={t("settings.mcp.name")}
-                  value={row.name}
-                  onChange={(event) => setRow(row.uid, { name: event.target.value })}
-                />
-                {nameInvalid && (
-                  <span className={styles.error}>{t("settings.mcp.nameInvalid")}</span>
+    <>
+      <Section
+        title={t("settings.mcp")}
+        hint={t("settings.mcp.hint")}
+        action={
+          <button
+            type="button"
+            className={`${styles.secondary} ${styles.headAction}`}
+            onClick={add}
+          >
+            {t("settings.mcp.add")}
+          </button>
+        }
+      >
+        {rows.length === 0 && <p className={styles.emptyBox}>{t("settings.mcp.empty")}</p>}
+        {rows.map((row) => {
+          const name = row.name.trim();
+          const nameInvalid =
+            !name || trimmedNames.filter((candidate) => candidate === name).length > 1;
+          const isStdio = row.config.transport === "stdio";
+          const commandMissing = isStdio && row.config.command.trim() === "";
+          const urlMissing = !isStdio && row.config.url.trim() === "";
+          const serverStatus = statusByName.get(name);
+          return (
+            <div key={row.uid} className={styles.card}>
+              <div className={styles.cardHeader}>
+                <label className={styles.field}>
+                  <span className={styles.label}>{t("settings.mcp.name")}</span>
+                  <input
+                    className={styles.input}
+                    aria-label={t("settings.mcp.name")}
+                    value={row.name}
+                    onChange={(event) => setRow(row.uid, { name: event.target.value })}
+                  />
+                  {nameInvalid && (
+                    <span className={styles.error}>{t("settings.mcp.nameInvalid")}</span>
+                  )}
+                </label>
+                {serverStatus && (
+                  <span className={styles.mcpState} data-state={serverStatus.state}>
+                    {t(STATE_LABELS[serverStatus.state])}
+                    {serverStatus.state === "connected" &&
+                      ` · ${serverStatus.tools.length} ${t("settings.mcp.tools.unit")}`}
+                  </span>
                 )}
-              </label>
-              {serverStatus && (
-                <span className={styles.mcpState} data-state={serverStatus.state}>
-                  {t(STATE_LABELS[serverStatus.state])}
-                  {serverStatus.state === "connected" &&
-                    ` · ${serverStatus.tools.length} ${t("settings.mcp.tools.unit")}`}
-                </span>
-              )}
-              <button
-                type="button"
-                className={styles.secondary}
-                onClick={() => apply(rows.filter((item) => item.uid !== row.uid))}
-              >
-                {t("settings.remove")}
-              </button>
-            </div>
-            {serverStatus?.state === "error" && (
-              <p className={styles.mcpError}>{serverStatus.error}</p>
-            )}
-            <div className={styles.fieldRow}>
-              <label className={styles.field}>
-                <span className={styles.label}>{t("settings.mcp.transport")}</span>
-                <select
-                  className={styles.input}
-                  aria-label={t("settings.mcp.transport")}
-                  value={row.config.transport}
-                  onChange={(event) =>
-                    setField(row.uid, {
-                      transport: event.target.value as McpServerConfigDoc["transport"],
-                    })
-                  }
+                <button
+                  type="button"
+                  className={styles.secondary}
+                  onClick={() => apply(rows.filter((item) => item.uid !== row.uid))}
                 >
-                  <option value="stdio">stdio</option>
-                  <option value="http">http</option>
-                </select>
-              </label>
-              <label className={`${styles.checkItem} ${styles.toggleField}`}>
-                <input
-                  type="checkbox"
-                  checked={row.config.enabled}
-                  onChange={(event) => setField(row.uid, { enabled: event.target.checked })}
-                />
-                {t("settings.mcp.enabled")}
-              </label>
-            </div>
-            {isStdio ? (
-              <div className={styles.fieldRow}>
-                <label className={styles.field}>
-                  <span className={styles.label}>{t("settings.mcp.command")}</span>
-                  <input
-                    className={styles.input}
-                    aria-label={t("settings.mcp.command")}
-                    value={row.config.command}
-                    onChange={(event) => setField(row.uid, { command: event.target.value })}
-                  />
-                  {commandMissing && (
-                    <span className={styles.error}>{t("settings.mcp.commandRequired")}</span>
-                  )}
-                </label>
-                <label className={styles.field}>
-                  <span className={styles.label}>{t("settings.mcp.args")}</span>
-                  <input
-                    className={styles.input}
-                    aria-label={t("settings.mcp.args")}
-                    value={row.argsText}
-                    onChange={(event) => setRow(row.uid, { argsText: event.target.value })}
-                  />
-                </label>
+                  {t("settings.remove")}
+                </button>
               </div>
-            ) : (
+              {serverStatus?.state === "error" && (
+                <p className={styles.mcpError}>{serverStatus.error}</p>
+              )}
               <div className={styles.fieldRow}>
                 <label className={styles.field}>
-                  <span className={styles.label}>{t("settings.mcp.url")}</span>
-                  <input
+                  <span className={styles.label}>{t("settings.mcp.transport")}</span>
+                  <select
                     className={styles.input}
-                    aria-label={t("settings.mcp.url")}
-                    value={row.config.url}
-                    onChange={(event) => setField(row.uid, { url: event.target.value })}
-                  />
-                  {urlMissing && (
-                    <span className={styles.error}>{t("settings.mcp.urlRequired")}</span>
-                  )}
-                </label>
-                <label className={styles.field}>
-                  <span className={styles.label}>{t("settings.mcp.token")}</span>
-                  <input
-                    className={styles.input}
-                    type="password"
-                    aria-label={t("settings.mcp.token")}
-                    value={row.config.auth_token}
+                    aria-label={t("settings.mcp.transport")}
+                    value={row.config.transport}
                     onChange={(event) =>
-                      setField(row.uid, { auth_token: event.target.value })
+                      setField(row.uid, {
+                        transport: event.target.value as McpServerConfigDoc["transport"],
+                      })
                     }
+                  >
+                    <option value="stdio">stdio</option>
+                    <option value="http">http</option>
+                  </select>
+                </label>
+                <label className={`${styles.checkItem} ${styles.toggleField}`}>
+                  <input
+                    type="checkbox"
+                    checked={row.config.enabled}
+                    onChange={(event) => toggleServer(row, event.target.checked)}
                   />
+                  {t("settings.mcp.enabled")}
                 </label>
               </div>
+              {isStdio ? (
+                <div className={styles.fieldRow}>
+                  <label className={styles.field}>
+                    <span className={styles.label}>{t("settings.mcp.command")}</span>
+                    <input
+                      className={styles.input}
+                      aria-label={t("settings.mcp.command")}
+                      value={row.config.command}
+                      onChange={(event) => setField(row.uid, { command: event.target.value })}
+                    />
+                    {commandMissing && (
+                      <span className={styles.error}>{t("settings.mcp.commandRequired")}</span>
+                    )}
+                  </label>
+                  <label className={styles.field}>
+                    <span className={styles.label}>{t("settings.mcp.args")}</span>
+                    <input
+                      className={styles.input}
+                      aria-label={t("settings.mcp.args")}
+                      value={row.argsText}
+                      onChange={(event) => setRow(row.uid, { argsText: event.target.value })}
+                    />
+                  </label>
+                </div>
+              ) : (
+                <div className={styles.fieldRow}>
+                  <label className={styles.field}>
+                    <span className={styles.label}>{t("settings.mcp.url")}</span>
+                    <input
+                      className={styles.input}
+                      aria-label={t("settings.mcp.url")}
+                      value={row.config.url}
+                      onChange={(event) => setField(row.uid, { url: event.target.value })}
+                    />
+                    {urlMissing && (
+                      <span className={styles.error}>{t("settings.mcp.urlRequired")}</span>
+                    )}
+                  </label>
+                  <label className={styles.field}>
+                    <span className={styles.label}>{t("settings.mcp.token")}</span>
+                    <input
+                      className={styles.input}
+                      type="password"
+                      aria-label={t("settings.mcp.token")}
+                      value={row.config.auth_token}
+                      onChange={(event) =>
+                        setField(row.uid, { auth_token: event.target.value })
+                      }
+                    />
+                  </label>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </Section>
+
+      <Section title={t("settings.skills")} hint={t("settings.skills.hint")}>
+        {skillList.data && visibleSkills.length === 0 && (
+          <p className={styles.emptyBox}>{t("settings.skills.empty")}</p>
+        )}
+        {visibleSkills.map((skill) => {
+          const enabled = skills[skill.name]?.enabled ?? false;
+          return (
+            <div key={skill.name} className={styles.skillRow}>
+              <div className={styles.skillText}>
+                <span className={styles.skillName}>{skill.name}</span>
+                {skill.description && (
+                  <p className={styles.skillDesc}>{skill.description}</p>
+                )}
+                {!skill.valid && (
+                  <p className={styles.skillErrors}>
+                    <span className={styles.errorPill}>
+                      {t("settings.skills.invalid")}
+                    </span>
+                    {skill.errors.join("; ")}
+                  </p>
+                )}
+              </div>
+              <div className={styles.skillActions}>
+                <label className={styles.checkItem}>
+                  <input
+                    type="checkbox"
+                    aria-label={`${t("settings.skills.enable")} ${skill.name}`}
+                    checked={enabled}
+                    disabled={!skill.valid && !enabled}
+                    onChange={(event) => toggleSkill(skill.name, event.target.checked)}
+                  />
+                  {t("settings.skills.enable")}
+                </label>
+                {!skill.errors.includes("missing") && (
+                  <button
+                    type="button"
+                    className={styles.secondary}
+                    onClick={() => onEditSkill?.(skill.name)}
+                  >
+                    {t("settings.skills.edit")}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className={styles.secondary}
+                  disabled={deleteSkill.isPending}
+                  onClick={() => deleteSkill.mutate(skill.name)}
+                >
+                  {t("settings.remove")}
+                </button>
+              </div>
+            </div>
+          );
+        })}
+        <form className={styles.skillAdd} onSubmit={submitNewSkill}>
+          <input
+            className={styles.input}
+            aria-label={t("settings.skills.name")}
+            placeholder="style-guide"
+            value={newSkillName}
+            onChange={(event) => {
+              setNewSkillName(event.target.value);
+              createSkill.reset();
+            }}
+          />
+          <button
+            type="submit"
+            className={styles.secondary}
+            disabled={!skillNameValid(newSkillName.trim()) || createSkill.isPending}
+          >
+            {t("settings.skills.add")}
+          </button>
+        </form>
+        {newNameInvalid && (
+          <p className={styles.skillFormError}>{t("settings.skills.nameInvalid")}</p>
+        )}
+        {createSkill.isError && (
+          <p className={styles.skillFormError}>{describeCreateError(createSkill.error)}</p>
+        )}
+      </Section>
+
+      {pending && (
+        <ConfirmCard
+          pending={pending}
+          tools={
+            pending.kind === "mcp"
+              ? (statusByName.get(pending.name)?.tools ?? [])
+              : []
+          }
+          onConfirm={confirmPending}
+          onCancel={() => setPending(null)}
+        />
+      )}
+    </>
+  );
+}
+
+function describeCreateError(error: unknown): string {
+  if (error instanceof ApiError) {
+    if (error.status === 409) return t("settings.skills.exists");
+    if (error.status === 422 && Array.isArray(error.detail)) {
+      return error.detail.join("; ");
+    }
+  }
+  return t("settings.skills.createFailed");
+}
+
+function ConfirmCard({
+  pending,
+  tools,
+  onConfirm,
+  onCancel,
+}: {
+  pending: PendingConfirm;
+  tools: McpToolInfo[];
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  const title =
+    pending.kind === "mcp"
+      ? t("settings.confirm.mcpTitle")
+      : t("settings.confirm.skillTitle");
+  return (
+    <div className={styles.scrim}>
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+        className={styles.confirmCard}
+        onKeyDown={(event) => {
+          if (event.key === "Escape") onCancel();
+        }}
+      >
+        <h3 className={styles.confirmTitle}>{title}</h3>
+        <p className={styles.confirmName}>{pending.name}</p>
+        {pending.kind === "mcp" ? (
+          <McpConfirmBody tools={tools} />
+        ) : (
+          <SkillConfirmBody name={pending.name} />
+        )}
+        <div className={styles.confirmActions}>
+          <button
+            type="button"
+            autoFocus
+            className={styles.secondaryButton}
+            onClick={onCancel}
+          >
+            {t("settings.confirm.cancel")}
+          </button>
+          <button type="button" className={styles.primaryButton} onClick={onConfirm}>
+            {t("settings.confirm.accept")}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function McpConfirmBody({ tools }: { tools: McpToolInfo[] }) {
+  if (tools.length === 0) {
+    return <p className={styles.confirmIntro}>{t("settings.confirm.mcpNoTools")}</p>;
+  }
+  return (
+    <>
+      <p className={styles.confirmIntro}>{t("settings.confirm.mcpIntro")}</p>
+      <ul className={styles.confirmTools}>
+        {tools.map((tool) => (
+          <li key={tool.name} className={styles.confirmTool}>
+            <span className={styles.skillName}>{tool.name}</span>
+            {tool.description && (
+              <span className={styles.confirmToolDesc}>{tool.description}</span>
             )}
-          </div>
-        );
-      })}
-    </Section>
+          </li>
+        ))}
+      </ul>
+    </>
+  );
+}
+
+function SkillConfirmBody({ name }: { name: string }) {
+  const api = useApi();
+  const { data, isError } = useQuery({
+    queryKey: ["skill", name],
+    queryFn: () => api.getSkill(name),
+  });
+  return (
+    <>
+      <p className={styles.confirmIntro}>{t("settings.confirm.skillIntro")}</p>
+      {isError ? (
+        <p className={styles.skillFormError}>{t("settings.confirm.loadFailed")}</p>
+      ) : data ? (
+        <pre className={styles.confirmContent}>{data.content}</pre>
+      ) : (
+        <p className={styles.confirmIntro}>{t("editor.loading")}</p>
+      )}
+    </>
   );
 }
