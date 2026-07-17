@@ -11,6 +11,11 @@ supervisor retries with a delay.
 The service registers its manager through set_active(); stage code asks
 active_tools() and gets an empty list under the CLI where no manager
 runs.
+
+Confirmation gate: an enabled but unconfirmed server still connects and
+lists its tools — status() carries the names and descriptions the UI
+confirmation card shows — but agent_tools() skips it until the user
+confirms, so unvetted tool descriptions never reach an agent prompt.
 """
 from __future__ import annotations
 
@@ -195,9 +200,13 @@ class MCPManager:
                     "name": name,
                     "transport": server.config.transport,
                     "enabled": server.config.enabled,
+                    "confirmed": server.config.confirmed,
                     "state": server.state,
                     "error": server.error,
-                    "tools": [tool.name for tool in server.tools],
+                    "tools": [
+                        {"name": tool.name, "description": tool.description}
+                        for tool in server.tools
+                    ],
                 }
                 for name, server in self._servers.items()
             ]
@@ -240,7 +249,7 @@ class MCPManager:
             snapshot = [
                 (name, list(server.tools))
                 for name, server in self._servers.items()
-                if server.state == "connected"
+                if server.state == "connected" and server.config.confirmed
             ]
         for server_name, infos in snapshot:
             for info in infos:

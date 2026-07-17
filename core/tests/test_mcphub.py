@@ -107,7 +107,11 @@ def test_manager_connects_and_snapshots_tools() -> None:
         wait_for(lambda: manager.status()[0]["state"] == "connected")
         status = manager.status()[0]
         assert status["name"] == "demo"
-        assert status["tools"] == ["echo"]
+        # enabled=True without an explicit confirmed migrates to confirmed.
+        assert status["confirmed"] is True
+        assert status["tools"] == [
+            {"name": "echo", "description": "Echo the text back."}
+        ]
         assert status["error"] == ""
     finally:
         shutdown()
@@ -191,10 +195,33 @@ def test_disabled_server_gets_no_supervisor() -> None:
                 "name": "off",
                 "transport": "stdio",
                 "enabled": False,
+                "confirmed": False,
                 "state": "disabled",
                 "error": "",
                 "tools": [],
             }
+        ]
+        assert manager.agent_tools() == []
+    finally:
+        shutdown()
+
+
+def test_unconfirmed_server_lists_tools_but_exposes_none_to_agents() -> None:
+    """The tool poisoning gate: an unconfirmed enabled server still connects
+    and lists its tools (status feeds the UI confirmation card) but nothing
+    reaches agents until the user confirms."""
+    session = FakeSession([ECHO_TOOL], {"echo": text_result("echo:hi")})
+    manager = MCPManager(
+        {"demo": McpServerConfig(command="demo-cmd", enabled=True, confirmed=False)},
+        connector=make_connector({"demo-cmd": session}),
+    )
+    shutdown = run_manager(manager)
+    try:
+        wait_for(lambda: manager.status()[0]["state"] == "connected")
+        status = manager.status()[0]
+        assert status["confirmed"] is False
+        assert status["tools"] == [
+            {"name": "echo", "description": "Echo the text back."}
         ]
         assert manager.agent_tools() == []
     finally:

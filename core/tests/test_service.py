@@ -830,5 +830,7 @@ def test_mcp_reload_picks_up_saved_config(tmp_path: Path, monkeypatch) -> None:
             assert time.monotonic() < deadline
             time.sleep(0.05)
         assert rows[0]["name"] == "demo"
-        assert rows[0]["tools"] == ["echo"]
+        assert rows[0]["tools"] == [
+            {"name": "echo", "description": "Echo the text back."}
+        ]
         assert mcphub.active_tools()[0].name == "demo.echo"
