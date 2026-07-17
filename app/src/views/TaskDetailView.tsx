@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Icon } from "../components/icons";
 import { ProgressBar } from "../components/ProgressBar";
 import { StatusBadge } from "../components/StatusBadge";
 import { t } from "../i18n";
@@ -140,9 +141,17 @@ export function TaskDetailView({
           {editingName ? (
             <>
               <input
+                autoFocus
                 className={styles.nameInput}
                 value={draftName}
                 onChange={(e) => setDraftName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && draftName.trim() !== "" && !rename.isPending) {
+                    rename.mutate(draftName.trim());
+                  } else if (e.key === "Escape") {
+                    setEditingName(false);
+                  }
+                }}
               />
               <button
                 type="button"
@@ -167,12 +176,14 @@ export function TaskDetailView({
               <button
                 type="button"
                 className={styles.renameBtn}
+                aria-label={t("task.rename")}
+                title={t("task.rename")}
                 onClick={() => {
                   setDraftName(task.name ?? task.id);
                   setEditingName(true);
                 }}
               >
-                {t("task.rename")}
+                <Icon name="pencil" size={15} />
               </button>
             </>
           )}
@@ -207,6 +218,23 @@ export function TaskDetailView({
           </button>
         </div>
       </header>
+
+      <p className={styles.metaLine}>
+        <span>{task.profile}</span>
+        <span className={styles.metaSep}>·</span>
+        <span>
+          {t("task.meta.created")} {formatTime(task.created_at)}
+        </span>
+        <span className={styles.metaSep}>·</span>
+        <span>
+          {t("task.meta.updated")} {formatTime(task.updated_at)}
+        </span>
+      </p>
+      <p className={styles.metaMono}>
+        <span>{task.input_path}</span>
+        <span className={styles.metaSep}>·</span>
+        <span>{task.id}</span>
+      </p>
 
       {task.status === "paused" && (
         <section className={styles.noticePaused}>
@@ -266,34 +294,14 @@ export function TaskDetailView({
         </section>
       )}
 
-      <section className={styles.card}>
-        <dl className={styles.meta}>
-          <div>
-            <dt>ID</dt>
-            <dd className={styles.mono}>{task.id}</dd>
-          </div>
-          <div>
-            <dt>{t("task.input")}</dt>
-            <dd className={styles.mono}>{task.input_path}</dd>
-          </div>
-          <div>
-            <dt>{t("task.profile")}</dt>
-            <dd>{task.profile}</dd>
-          </div>
-          <div>
-            <dt>{t("task.created")}</dt>
-            <dd>{formatTime(task.created_at)}</dd>
-          </div>
-          <div>
-            <dt>{t("task.updated")}</dt>
-            <dd>{formatTime(task.updated_at)}</dd>
-          </div>
-        </dl>
-        <ProgressBar value={completed} max={task.stages.length} label={t("task.progress")} />
-      </section>
-
-      <section className={styles.card}>
-        <h2 className={styles.sectionTitle}>{t("task.stages")}</h2>
+      <section className={styles.section}>
+        <div className={styles.sectionHead}>
+          <h2 className={styles.sectionTitle}>{t("task.stages")}</h2>
+          <span className={styles.stageCount}>
+            {completed} / {task.stages.length}
+          </span>
+        </div>
+        <ProgressBar value={completed} max={task.stages.length} />
         <ol className={styles.stages}>
           {task.stages.map((stage, index) => (
             <li key={`${stage.type}-${index}`} className={styles.stage} data-status={stage.status}>
@@ -313,7 +321,7 @@ export function TaskDetailView({
         </ol>
       </section>
 
-      <section className={styles.card}>
+      <section className={styles.section}>
         <h2 className={styles.sectionTitle}>{t("task.events")}</h2>
         {events.length === 0 ? (
           <p className={styles.eventsEmpty}>{t("task.eventsEmpty")}</p>

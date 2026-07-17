@@ -191,7 +191,7 @@ test("rename flow calls renameTask", async () => {
     { api },
   );
   await screen.findByText("第三集");
-  await userEvent.click(screen.getByText("重新命名"));
+  await userEvent.click(screen.getByRole("button", { name: "重新命名" }));
   const field = screen.getByDisplayValue("第三集");
   await userEvent.type(field, "X");
   await userEvent.click(screen.getByText("儲存"));
