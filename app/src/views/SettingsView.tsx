@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { t } from "../i18n";
+import { t, type MessageKey } from "../i18n";
 import { useApi, useConnection } from "../lib/connection";
 import type { CoreConfigDoc } from "../lib/api/types";
 import { AboutSection } from "../components/settings/AboutSection";
@@ -12,6 +12,19 @@ import { ChannelsSection } from "../components/settings/ChannelsSection";
 import { BotSection } from "../components/settings/BotSection";
 import { SyncSection } from "../components/settings/SyncSection";
 import styles from "../components/settings/settings.module.css";
+
+// Tabs follow the information architecture in internal/design-language.md:
+// one pipeline domain per tab, future domains (documents, comics, agent)
+// slot in after "video"; integrations and about stay last.
+const TABS = ["general", "video", "integrations", "about"] as const;
+type TabId = (typeof TABS)[number];
+
+const TAB_LABELS: Record<TabId, MessageKey> = {
+  general: "settings.tab.general",
+  video: "settings.tab.video",
+  integrations: "settings.tab.integrations",
+  about: "settings.tab.about",
+};
 
 function clone(config: CoreConfigDoc): CoreConfigDoc {
   // Config documents come from the JSON API, so a JSON round trip is a
@@ -91,6 +104,7 @@ export function SettingsView() {
 
   const [draft, setDraft] = useState<CoreConfigDoc | null>(null);
   const [resetKey, setResetKey] = useState(0);
+  const [tab, setTab] = useState<TabId>("general");
   const [numbersValid, setNumbersValid] = useState(true);
   const [providersValid, setProvidersValid] = useState(true);
   const [channelsValid, setChannelsValid] = useState(true);
@@ -109,6 +123,21 @@ export function SettingsView() {
   const projectValid = draft !== null && draft.default_project.trim() !== "";
   const valid =
     numbersValid && providersValid && channelsValid && botValid && syncValid && projectValid;
+
+  // The save bar is visible from every tab, so point at the tab that holds
+  // the failing fields instead of assuming the user can see them.
+  const invalidTabs: TabId[] = [];
+  if (!projectValid || !numbersValid || !providersValid) invalidTabs.push("general");
+  if (!channelsValid || !botValid || !syncValid) invalidTabs.push("integrations");
+
+  function onTabKeyDown(event: React.KeyboardEvent) {
+    if (event.key !== "ArrowRight" && event.key !== "ArrowLeft") return;
+    event.preventDefault();
+    const delta = event.key === "ArrowRight" ? 1 : -1;
+    const next = TABS[(TABS.indexOf(tab) + delta + TABS.length) % TABS.length];
+    setTab(next);
+    document.getElementById(`settings-tab-${next}`)?.focus();
+  }
 
   const save = useMutation({
     mutationFn: () => api.saveConfig(draft as CoreConfigDoc),
@@ -141,130 +170,196 @@ export function SettingsView() {
     <div className={styles.page}>
       <h1 className={styles.title}>{t("settings.title")}</h1>
 
-      <div className={styles.statusCard}>
-        <div className={styles.statusPillRow}>
-          <span className={styles.pill} data-status={conn.status}>
-            <span className={styles.pillDot} aria-hidden="true" />
-            {statusText}
-          </span>
-          <button type="button" className={styles.retry} onClick={conn.retry}>
-            {t("conn.retry")}
+      <div
+        role="tablist"
+        aria-label={t("settings.title")}
+        className={styles.tabs}
+        onKeyDown={onTabKeyDown}
+      >
+        {TABS.map((id) => (
+          <button
+            key={id}
+            type="button"
+            role="tab"
+            id={`settings-tab-${id}`}
+            aria-selected={tab === id}
+            aria-controls={`settings-panel-${id}`}
+            tabIndex={tab === id ? 0 : -1}
+            className={styles.tab}
+            onClick={() => setTab(id)}
+          >
+            {t(TAB_LABELS[id])}
           </button>
-        </div>
-        <div className={styles.statusItem}>
-          <span className={styles.statusKey}>{t("settings.dataRoot")}</span>
-          <span className={`${styles.statusValue} ${styles.statusMono}`}>
-            {conn.dataRoot ?? "--"}
-          </span>
-        </div>
-        <div className={styles.statusItem}>
-          <span className={styles.statusKey}>{t("settings.coreUrl")}</span>
-          <span className={`${styles.statusValue} ${styles.statusMono}`}>
-            {conn.baseUrl ?? "--"}
-          </span>
-        </div>
+        ))}
       </div>
 
-      <AppearanceSection />
+      <div
+        role="tabpanel"
+        id="settings-panel-general"
+        aria-labelledby="settings-tab-general"
+        hidden={tab !== "general"}
+        className={styles.panel}
+      >
+        <AppearanceSection />
+        {draft && (
+          <>
+            <BasicsSection
+              key={`basics-${resetKey}`}
+              defaultProject={draft.default_project}
+              budget={draft.budget}
+              onDefaultProject={(value) =>
+                setDraft((prev) => (prev ? { ...prev, default_project: value } : prev))
+              }
+              onBudget={(value) =>
+                setDraft((prev) => (prev ? { ...prev, budget: value } : prev))
+              }
+              onValidity={setNumbersValid}
+            />
+            <ProvidersSection
+              key={`providers-${resetKey}`}
+              providers={draft.llm_providers}
+              onChange={(value) => {
+                setProvidersValid(value !== null);
+                if (value !== null) {
+                  setDraft((prev) => (prev ? { ...prev, llm_providers: value } : prev));
+                }
+              }}
+            />
+          </>
+        )}
+      </div>
 
-      {draft && (
-        <>
-          <BasicsSection
-            key={`basics-${resetKey}`}
-            defaultProject={draft.default_project}
-            budget={draft.budget}
-            onDefaultProject={(value) =>
-              setDraft((prev) => (prev ? { ...prev, default_project: value } : prev))
-            }
-            onBudget={(value) =>
-              setDraft((prev) => (prev ? { ...prev, budget: value } : prev))
-            }
-            onValidity={setNumbersValid}
-          />
-          <ProvidersSection
-            key={`providers-${resetKey}`}
-            providers={draft.llm_providers}
-            onChange={(value) => {
-              setProvidersValid(value !== null);
-              if (value !== null) {
-                setDraft((prev) => (prev ? { ...prev, llm_providers: value } : prev));
+      <div
+        role="tabpanel"
+        id="settings-panel-video"
+        aria-labelledby="settings-tab-video"
+        hidden={tab !== "video"}
+        className={styles.panel}
+      >
+        <AsrSection />
+      </div>
+
+      <div
+        role="tabpanel"
+        id="settings-panel-integrations"
+        aria-labelledby="settings-tab-integrations"
+        hidden={tab !== "integrations"}
+        className={styles.panel}
+      >
+        {draft && (
+          <>
+            <ChannelsSection
+              key={`channels-${resetKey}`}
+              channels={draft.notifications.channels}
+              onChange={(value) => {
+                setChannelsValid(value !== null);
+                if (value !== null) {
+                  setDraft((prev) =>
+                    prev
+                      ? { ...prev, notifications: { ...prev.notifications, channels: value } }
+                      : prev,
+                  );
+                }
+              }}
+              onTest={(channel) => api.testNotification(channel)}
+            />
+            <BotSection
+              key={`bot-${resetKey}`}
+              bot={draft.discord_bot}
+              onChange={(value) => {
+                setBotValid(value !== null);
+                if (value !== null) {
+                  setDraft((prev) => (prev ? { ...prev, discord_bot: value } : prev));
+                }
+              }}
+            />
+            <SyncSection
+              key={`sync-${resetKey}`}
+              sync={draft.sync}
+              status={syncStatus ?? EMPTY_STATUS}
+              onChange={(value) => {
+                setSyncValid(value !== null);
+                if (value !== null) {
+                  setDraft((prev) => (prev ? { ...prev, sync: value } : prev));
+                }
+              }}
+              onSyncNow={() => runSync.mutate()}
+              onResolve={(file, source, choice) =>
+                resolveConflict.mutate({ file, source, choice })
               }
-            }}
-          />
-          <AsrSection />
-          <ChannelsSection
-            key={`channels-${resetKey}`}
-            channels={draft.notifications.channels}
-            onChange={(value) => {
-              setChannelsValid(value !== null);
-              if (value !== null) {
-                setDraft((prev) =>
-                  prev
-                    ? { ...prev, notifications: { ...prev.notifications, channels: value } }
-                    : prev,
-                );
-              }
-            }}
-            onTest={(channel) => api.testNotification(channel)}
-          />
-          <BotSection
-            key={`bot-${resetKey}`}
-            bot={draft.discord_bot}
-            onChange={(value) => {
-              setBotValid(value !== null);
-              if (value !== null) {
-                setDraft((prev) => (prev ? { ...prev, discord_bot: value } : prev));
-              }
-            }}
-          />
-          <SyncSection
-            key={`sync-${resetKey}`}
-            sync={draft.sync}
-            status={syncStatus ?? EMPTY_STATUS}
-            onChange={(value) => {
-              setSyncValid(value !== null);
-              if (value !== null) {
-                setDraft((prev) => (prev ? { ...prev, sync: value } : prev));
-              }
-            }}
-            onSyncNow={() => runSync.mutate()}
-            onResolve={(file, source, choice) =>
-              resolveConflict.mutate({ file, source, choice })
-            }
-          />
-          {(dirty || save.isSuccess) && (
-            <div className={styles.saveBar}>
-              {dirty ? (
-                <>
-                  <span>{t("settings.dirty")}</span>
-                  {save.isError && (
-                    <span className={styles.saveError}>{t("settings.saveFailed")}</span>
-                  )}
-                  <button
-                    type="button"
-                    className={styles.secondaryButton}
-                    onClick={discard}
-                  >
-                    {t("settings.discard")}
-                  </button>
-                  <button
-                    type="button"
-                    className={styles.primaryButton}
-                    disabled={!valid || save.isPending}
-                    onClick={() => save.mutate()}
-                  >
-                    {t("settings.save")}
-                  </button>
-                </>
-              ) : (
-                <span className={styles.savedNote}>{t("settings.saved")}</span>
+            />
+          </>
+        )}
+      </div>
+
+      <div
+        role="tabpanel"
+        id="settings-panel-about"
+        aria-labelledby="settings-tab-about"
+        hidden={tab !== "about"}
+        className={styles.panel}
+      >
+        <div className={styles.statusCard}>
+          <div className={styles.statusPillRow}>
+            <span className={styles.pill} data-status={conn.status}>
+              <span className={styles.pillDot} aria-hidden="true" />
+              {statusText}
+            </span>
+            <button type="button" className={styles.retry} onClick={conn.retry}>
+              {t("conn.retry")}
+            </button>
+          </div>
+          <div className={styles.statusItem}>
+            <span className={styles.statusKey}>{t("settings.dataRoot")}</span>
+            <span className={`${styles.statusValue} ${styles.statusMono}`}>
+              {conn.dataRoot ?? "--"}
+            </span>
+          </div>
+          <div className={styles.statusItem}>
+            <span className={styles.statusKey}>{t("settings.coreUrl")}</span>
+            <span className={`${styles.statusValue} ${styles.statusMono}`}>
+              {conn.baseUrl ?? "--"}
+            </span>
+          </div>
+        </div>
+        <AboutSection />
+      </div>
+
+      {draft && (dirty || save.isSuccess) && (
+        <div className={styles.saveBar}>
+          {dirty ? (
+            <>
+              <span>{t("settings.dirty")}</span>
+              {invalidTabs.length > 0 && (
+                <span className={styles.saveError}>
+                  {t("settings.invalidTabs") +
+                    invalidTabs.map((id) => t(TAB_LABELS[id])).join("、")}
+                </span>
               )}
-            </div>
+              {save.isError && (
+                <span className={styles.saveError}>{t("settings.saveFailed")}</span>
+              )}
+              <button
+                type="button"
+                className={styles.secondaryButton}
+                onClick={discard}
+              >
+                {t("settings.discard")}
+              </button>
+              <button
+                type="button"
+                className={styles.primaryButton}
+                disabled={!valid || save.isPending}
+                onClick={() => save.mutate()}
+              >
+                {t("settings.save")}
+              </button>
+            </>
+          ) : (
+            <span className={styles.savedNote}>{t("settings.saved")}</span>
           )}
-        </>
+        </div>
       )}
-
-      <AboutSection />
     </div>
   );
 }
