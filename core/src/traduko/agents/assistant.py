@@ -26,7 +26,6 @@ from pathlib import Path
 from .. import mcphub, skillhub
 from ..budget import BudgetMeter
 from ..config import CoreConfig
-from ..fsutil import atomic_write_text
 from ..llm import LLMError, create_llm
 from ..preflight import run_preflight as compute_preflight
 from ..proposals import (
@@ -387,54 +386,45 @@ def _resolve_default_llm(config: CoreConfig):
     return provider, model
 
 
-def _history_path(ws: Workspace) -> Path:
-    return ws.root / "assistant" / "history.json"
-
-
 def _load_history(ws: Workspace) -> list[dict]:
-    path = _history_path(ws)
-    if not path.exists():
-        return []
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return []
-    messages = data.get("messages") if isinstance(data, dict) else None
-    if not isinstance(messages, list):
-        return []
-    # Per-element validation, not just container-level: a malformed row
-    # (wrong type, hand-edited file) is dropped rather than crashing the
-    # goal transcript or invalidating rows around it in the same file.
-    return [message for message in messages if isinstance(message, dict)]
+    # Active-session messages, migrating the legacy history.json on first use.
+    from . import assistant_store
+
+    return assistant_store.load_messages(ws)
 
 
 def _save_history(ws: Workspace, messages: list[dict]) -> None:
-    atomic_write_text(
-        _history_path(ws), json.dumps({"messages": messages}, ensure_ascii=False, indent=2)
-    )
+    from . import assistant_store
+
+    assistant_store.save_messages(ws, messages)
 
 
 def load_history(ws: Workspace) -> list[dict]:
-    """Public accessor for the service layer: the full persisted message
-    list (same shape as the goal transcript loader), or [] if no history
-    file exists yet."""
+    """Public accessor for the service layer: the active session's message
+    list (same shape as the goal transcript loader), or [] if empty."""
     return _load_history(ws)
 
 
 def clear_history(ws: Workspace) -> None:
-    """Reset history.json to an empty message list. Run records under
-    `assistant/runs/` are untouched: they are a separate audit trail, not
-    part of the conversation transcript."""
+    """Reset the active session to an empty message list. Run records under
+    `assistant/runs/` and other sessions are untouched."""
     _save_history(ws, [])
 
 
-def _build_goal(history: list[dict], text: str) -> str:
+def _build_goal(history: list[dict], text: str, *, images: list[str] | None = None) -> str:
     block = skillhub.active_prompt_block()
     transcript = ["Conversation so far:"]
     for message in history[-HISTORY_TRANSCRIPT_LIMIT:]:
         role = "USER" if message.get("role") == "user" else "ASSISTANT"
-        transcript.append(f"{role}: {message.get('text', '')}")
-    transcript.append(f"USER: {text}")
+        line = str(message.get("text", ""))
+        attached = message.get("images")
+        if isinstance(attached, list) and attached:
+            line += f"  [attached files: {', '.join(str(p) for p in attached)}]"
+        transcript.append(f"{role}: {line}")
+    user_line = text
+    if images:
+        user_line += f"  [attached files: {', '.join(images)}]"
+    transcript.append(f"USER: {user_line}")
     parts = [SYSTEM_PROMPT]
     if block:
         parts.append(block)
@@ -450,16 +440,35 @@ def _not_converged_reply(reason: str) -> str:
     )
 
 
-def run_assistant_message(ws: Workspace, text: str) -> dict:
+def run_assistant_message(
+    ws: Workspace,
+    text: str,
+    *,
+    edit_index: int | None = None,
+    images: list[str] | None = None,
+) -> dict:
     """Run one assistant turn: load history, run the agent, persist history.
 
     Never mutates config itself; any write the model wants goes through
     `propose_config_change` and stays pending until a human approves it.
     Returns `{"reply", "proposal_ids", "converged", "reason"}`.
+
+    `edit_index`, when given, truncates the active session at that message
+    index before the turn runs — the edit-and-resend path, where the user
+    rewrote an earlier message and everything after it is discarded.
+    `images` are absolute paths to image files attached to this message;
+    they are recorded on the user message and, when the provider is
+    vision-capable, described to it.
     """
     provider, model = _resolve_default_llm(ws.config)
+    if edit_index is not None:
+        from . import assistant_store
+
+        assistant_store.truncate_after(
+            ws, assistant_store.active_session_id(ws), edit_index
+        )
     history = _load_history(ws)
-    goal = _build_goal(history, text)
+    goal = _build_goal(history, text, images=images)
 
     proposal_ids: list[str] = []
     registry = _build_registry(ws, proposal_ids)
@@ -488,13 +497,14 @@ def run_assistant_message(ws: Workspace, text: str) -> dict:
         raise AssistantLLMError(str(error)) from error
     reply = result.summary if result.converged else _not_converged_reply(result.reason)
 
-    history.append(
-        {
-            "role": "user",
-            "text": text,
-            "ts": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-        }
-    )
+    user_message = {
+        "role": "user",
+        "text": text,
+        "ts": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+    }
+    if images:
+        user_message["images"] = list(images)
+    history.append(user_message)
     history.append(
         {
             "role": "assistant",

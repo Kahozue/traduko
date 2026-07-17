@@ -834,6 +834,11 @@ def render_frame(
 
 class AssistantMessageRequest(BaseModel):
     text: str
+    # Present on the edit-and-resend path: truncate the active session at this
+    # message index before running the turn.
+    edit_index: int | None = None
+    # Absolute paths of image files attached to this message.
+    images: list[str] | None = None
 
 
 @router.post("/assistant/message")
@@ -842,7 +847,9 @@ def post_assistant_message(request: Request, body: AssistantMessageRequest) -> d
     if not body.text.strip():
         raise HTTPException(status_code=422, detail="text must not be empty")
     try:
-        result = run_assistant_message(ws, body.text)
+        result = run_assistant_message(
+            ws, body.text, edit_index=body.edit_index, images=body.images
+        )
     except AssistantUnavailable as error:
         # No usable LLM provider: 409 so the panel can guide the operator to
         # configuration rather than surfacing a generic server error.
@@ -866,6 +873,83 @@ def post_assistant_clear(request: Request) -> dict:
     ws: Workspace = request.app.state.workspace
     clear_assistant_history(ws)
     return {"cleared": True}
+
+
+@router.get("/assistant/sessions")
+def list_assistant_sessions(request: Request) -> list[dict]:
+    ws: Workspace = request.app.state.workspace
+    from ..agents import assistant_store
+
+    return assistant_store.list_sessions(ws)
+
+
+@router.post("/assistant/sessions", status_code=201)
+def create_assistant_session(request: Request) -> dict:
+    ws: Workspace = request.app.state.workspace
+    from ..agents import assistant_store
+
+    return {"id": assistant_store.create_session(ws)}
+
+
+@router.get("/assistant/sessions/{session_id}")
+def get_assistant_session(request: Request, session_id: str) -> dict:
+    ws: Workspace = request.app.state.workspace
+    from ..agents import assistant_store
+
+    try:
+        return assistant_store.get_session(ws, session_id)
+    except KeyError:
+        raise HTTPException(
+            status_code=404, detail=f"session not found: {session_id}"
+        ) from None
+
+
+@router.post("/assistant/sessions/{session_id}/activate")
+def activate_assistant_session(request: Request, session_id: str) -> dict:
+    ws: Workspace = request.app.state.workspace
+    from ..agents import assistant_store
+
+    try:
+        assistant_store.activate_session(ws, session_id)
+    except KeyError:
+        raise HTTPException(
+            status_code=404, detail=f"session not found: {session_id}"
+        ) from None
+    return {"active": session_id}
+
+
+class SessionArchiveRequest(BaseModel):
+    archived: bool
+
+
+@router.patch("/assistant/sessions/{session_id}")
+def patch_assistant_session(
+    request: Request, session_id: str, body: SessionArchiveRequest
+) -> dict:
+    ws: Workspace = request.app.state.workspace
+    from ..agents import assistant_store
+
+    try:
+        assistant_store.set_archived(ws, session_id, body.archived)
+    except KeyError:
+        raise HTTPException(
+            status_code=404, detail=f"session not found: {session_id}"
+        ) from None
+    return {"archived": body.archived}
+
+
+@router.delete("/assistant/sessions/{session_id}")
+def delete_assistant_session(request: Request, session_id: str) -> dict:
+    ws: Workspace = request.app.state.workspace
+    from ..agents import assistant_store
+
+    try:
+        assistant_store.delete_session(ws, session_id)
+    except KeyError:
+        raise HTTPException(
+            status_code=404, detail=f"session not found: {session_id}"
+        ) from None
+    return {"deleted": True}
 
 
 def _log_bot_exit(task: "asyncio.Task") -> None:

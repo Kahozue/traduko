@@ -1273,3 +1273,90 @@ def test_skills_import_rejects_invalid_and_duplicate(tmp_path: Path) -> None:
             "/skills/import", json={"content": VALID_SKILL}, headers=headers
         )
         assert dup.status_code == 409
+
+
+def test_assistant_sessions_list_create_activate_delete(tmp_path: Path) -> None:
+    with service(tmp_path) as (client, headers, token):
+        configure_scripted_assistant(
+            client, headers, ['{"done": true, "summary": "one"}']
+        )
+        client.post("/assistant/message", headers=headers, json={"text": "first talk"})
+
+        rows = client.get("/assistant/sessions", headers=headers).json()
+        assert len(rows) == 1
+        assert rows[0]["title"] == "first talk"
+        first_id = rows[0]["id"]
+
+        created = client.post("/assistant/sessions", headers=headers)
+        assert created.status_code == 201
+        new_id = created.json()["id"]
+        # New session is now active and empty.
+        assert client.get("/assistant/history", headers=headers).json() == []
+
+        # Reactivate the first and its history returns.
+        client.post(f"/assistant/sessions/{first_id}/activate", headers=headers)
+        assert client.get("/assistant/history", headers=headers).json() != []
+
+        # Archive then delete the new one.
+        archived = client.patch(
+            f"/assistant/sessions/{new_id}", headers=headers, json={"archived": True}
+        )
+        assert archived.status_code == 200
+        deleted = client.delete(f"/assistant/sessions/{new_id}", headers=headers)
+        assert deleted.status_code == 200
+        remaining = [row["id"] for row in client.get("/assistant/sessions", headers=headers).json()]
+        assert new_id not in remaining
+
+
+def test_assistant_edit_resend_truncates_and_reruns(tmp_path: Path) -> None:
+    with service(tmp_path) as (client, headers, token):
+        configure_scripted_assistant(
+            client,
+            headers,
+            [
+                '{"done": true, "summary": "reply one"}',
+                '{"done": true, "summary": "reply two"}',
+            ],
+        )
+        client.post("/assistant/message", headers=headers, json={"text": "hello v1"})
+        # Edit the first user message (index 0): drop everything from there and
+        # rerun with the corrected text.
+        resent = client.post(
+            "/assistant/message",
+            headers=headers,
+            json={"text": "hello v2", "edit_index": 0},
+        )
+        assert resent.status_code == 200, resent.text
+        history = resent.json()["history"]
+        # The v1 turn (user + reply) was dropped at index 0 before the rerun,
+        # so exactly one user/assistant pair remains, carrying the edited text.
+        assert [m["role"] for m in history] == ["user", "assistant"]
+        assert history[0]["text"] == "hello v2"
+
+
+def test_assistant_message_records_attached_images(tmp_path: Path) -> None:
+    with service(tmp_path) as (client, headers, token):
+        configure_scripted_assistant(
+            client, headers, ['{"done": true, "summary": "saw it"}']
+        )
+        response = client.post(
+            "/assistant/message",
+            headers=headers,
+            json={"text": "check this", "images": ["/tmp/shot.png"]},
+        )
+        assert response.status_code == 200, response.text
+        history = response.json()["history"]
+        assert history[0]["images"] == ["/tmp/shot.png"]
+
+
+def test_assistant_session_unknown_id_is_404(tmp_path: Path) -> None:
+    with service(tmp_path) as (client, headers, token):
+        assert (
+            client.get("/assistant/sessions/nope", headers=headers).status_code == 404
+        )
+        assert (
+            client.post(
+                "/assistant/sessions/nope/activate", headers=headers
+            ).status_code
+            == 404
+        )

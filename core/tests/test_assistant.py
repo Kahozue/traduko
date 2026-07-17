@@ -315,6 +315,21 @@ def history_path(ws: Workspace) -> Path:
     return ws.root / "assistant" / "history.json"
 
 
+def read_active_messages(ws: Workspace) -> list[dict]:
+    """Messages of the active assistant session (post-store refactor: the
+    conversation lives under assistant/sessions/, not history.json)."""
+    from traduko.agents import assistant_store
+
+    session = assistant_store.get_session(ws, assistant_store.active_session_id(ws))
+    return session["messages"]
+
+
+def write_active_messages(ws: Workspace, messages: list[dict]) -> None:
+    from traduko.agents import assistant_store
+
+    assistant_store.save_messages(ws, messages)
+
+
 def run_files(ws: Workspace) -> list[Path]:
     return sorted((ws.root / "assistant" / "runs").glob("*.jsonl"))
 
@@ -407,8 +422,7 @@ def test_propose_config_change_acceptance_chain_propose_approve_load_config(
     assert "monthly_usd_limit: null" in proposal["diff"]
     assert "monthly_usd_limit: 250" in proposal["diff"]
 
-    data = json.loads(history_path(ws).read_text(encoding="utf-8"))
-    messages = data["messages"]
+    messages = read_active_messages(ws)
     assert len(messages) == 2
     assert messages[0]["role"] == "user"
     assert messages[0]["text"] == "please raise the monthly budget limit to 250"
@@ -493,9 +507,7 @@ def test_history_transcript_in_goal_is_truncated_to_last_40_messages(
         }
         for i in range(45)
     ]
-    history_path(ws).write_text(
-        json.dumps({"messages": messages}), encoding="utf-8"
-    )
+    write_active_messages(ws, messages)
 
     run_assistant_message(ws, "new message")
 
@@ -519,8 +531,7 @@ def test_non_converged_reply_states_reason_and_history_records_it(
     assert "protocol_error" in result["reply"]
     assert result["proposal_ids"] == []
 
-    data = json.loads(history_path(ws).read_text(encoding="utf-8"))
-    messages = data["messages"]
+    messages = read_active_messages(ws)
     assert messages[1]["text"] == result["reply"]
     assert messages[1]["proposal_ids"] == []
 
@@ -560,10 +571,10 @@ def test_invalid_json_history_file_degrades_to_empty_history(tmp_path: Path) -> 
 
     assert result["converged"] is True
     assert result["reply"] == "ok"
-    data = json.loads(history_path(ws).read_text(encoding="utf-8"))
-    # The corrupt file was discarded; the run starts fresh and appends its
-    # own user/assistant pair.
-    assert len(data["messages"]) == 2
+    messages = read_active_messages(ws)
+    # The corrupt legacy file was discarded on migration; the run starts fresh
+    # and appends its own user/assistant pair.
+    assert len(messages) == 2
 
 
 def test_malformed_history_elements_are_dropped_not_crashed_on(
@@ -596,11 +607,11 @@ def test_malformed_history_elements_are_dropped_not_crashed_on(
     goal = start_record_goal(files[0])
     assert "surviving-msg-001" in goal
 
-    data = json.loads(history_path(ws).read_text(encoding="utf-8"))
+    messages = read_active_messages(ws)
     # Malformed rows were dropped, not preserved and not fatal; only the
     # one valid row plus this turn's new user/assistant pair remain.
-    assert len(data["messages"]) == 3
-    assert all(isinstance(row, dict) for row in data["messages"])
+    assert len(messages) == 3
+    assert all(isinstance(row, dict) for row in messages)
 
 
 def test_run_assistant_message_records_model_on_assistant_reply(tmp_path: Path) -> None:
@@ -616,7 +627,7 @@ def test_run_assistant_message_records_model_on_assistant_reply(tmp_path: Path) 
     save_config(tmp_path, config)
     ws = Workspace.open(tmp_path)
     run_assistant_message(ws, "hi")
-    messages = json.loads(history_path(ws).read_text(encoding="utf-8"))["messages"]
+    messages = read_active_messages(ws)
     assert messages[1]["role"] == "assistant"
     assert messages[1]["model"] == "gpt-4o-mini"
     assert "model" not in messages[0]
@@ -630,5 +641,5 @@ def test_run_assistant_message_wraps_provider_failure_as_llm_error(
     ws = scripted_ws(tmp_path, [])
     with pytest.raises(AssistantLLMError):
         run_assistant_message(ws, "hello")
-    # A failed turn is not persisted: no half-written conversation.
-    assert not history_path(ws).exists()
+    # A failed turn is not persisted: no assistant reply exists to record.
+    assert read_active_messages(ws) == []
