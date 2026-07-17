@@ -3,9 +3,9 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
+from .. import mcphub, skillhub
 from ..agents.proofread import ProofreadSettings, run_proofread
 from ..agents.recorder import AgentRunRecorder
-from ..mcphub import active_tools
 from ..budget import BudgetMeter
 from ..config import load_config
 from ..events import Event
@@ -77,7 +77,8 @@ class ProofreadStage:
                 recorder=recorder,
                 emit_progress=ctx.emit_progress,
                 on_round=on_round,
-                extra_tools=active_tools(),
+                extra_tools=[*mcphub.active_tools(), *skillhub.active_tools()],
+                extra_context=skillhub.active_prompt_block(),
             )
         except LLMError as error:
             raise StageError(str(error)) from error

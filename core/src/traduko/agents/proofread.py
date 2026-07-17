@@ -230,6 +230,7 @@ def run_proofread(
     emit_progress: Callable[[int, int], None],
     on_round: Callable[[int], None] | None = None,
     extra_tools: Iterable[AgentTool] = (),
+    extra_context: str = "",
 ) -> ProofreadResult:
     workspace = ProofreadWorkspace(segments)
     total = len(segments)
@@ -290,6 +291,10 @@ def run_proofread(
             "glossary": format_for_prompt(glossary_entries),
         },
     )
+    if extra_context:
+        # Appending to the goal keeps the context ahead of the protocol
+        # header + AGENT_TOOLS block that AgentRunner.run adds after it.
+        goal = f"{goal}\n\n{extra_context}"
     runner = AgentRunner(
         provider=provider,
         meter=meter,

@@ -116,6 +116,110 @@ def test_fake_provider_dry_run_converges(tmp_path: Path) -> None:
     assert len(result.artifacts) == 2
 
 
+HONORIFIC_DESCRIPTION = (
+    "Translation honorific rule that every target segment must follow."
+)
+HONORIFIC_INSTRUCTION = (
+    "Every target segment must end with the suffix -sama TEST-MARKER."
+)
+HONORIFIC_SKILL_MD = f"""---
+name: honorific-style
+description: {HONORIFIC_DESCRIPTION}
+---
+
+{HONORIFIC_INSTRUCTION}
+"""
+
+
+def write_honorific_skill(tmp_path: Path) -> None:
+    skill_dir = tmp_path / "skills" / "honorific-style"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text(HONORIFIC_SKILL_MD, encoding="utf-8")
+
+
+def test_proofread_agent_applies_custom_skill(tmp_path: Path) -> None:
+    """v2-05 milestone acceptance: a custom skill announced in the goal is
+    loaded in full via use_skill and changes how the agent edits targets."""
+    from traduko import skillhub
+    from traduko.config import SkillConfig
+    from traduko.skillhub import SkillsManager
+
+    write_honorific_skill(tmp_path)
+    script = [
+        '{"tool": "use_skill", "arguments": {"name": "honorific-style"}}',
+        '{"tool": "edit_segment", "arguments": {"id": 1, '
+        '"new_target": "Saluton -sama TEST-MARKER", '
+        '"reason": "apply honorific-style skill"}}',
+        '{"done": true, "summary": "honorific style applied"}',
+    ]
+    config = CoreConfig(
+        llm_providers={"agent": {"type": "scripted", "responses": script}},
+        skills={"honorific-style": SkillConfig(enabled=True, confirmed=True)},
+    )
+    save_config(tmp_path, config)
+    skillhub.set_active(SkillsManager(tmp_path, config.skills))
+    try:
+        ctx, _, task_dir = make_ctx(
+            tmp_path, {"provider": "agent", "intensity": "deep", "max_rounds": 2}
+        )
+        registry.create("proofread").run(ctx)
+    finally:
+        skillhub.set_active(None)
+
+    runs = list((task_dir / "agent-runs").glob("03-proofread-*.jsonl"))
+    assert len(runs) == 1
+    records = [json.loads(line) for line in runs[0].read_text().splitlines()]
+    start = next(r for r in records if r["kind"] == "start")
+    assert "honorific-style" in start["goal"]
+    assert HONORIFIC_DESCRIPTION in start["goal"]
+    assert "use_skill" in start["tools"]
+    skill_turn = next(
+        r for r in records if r["kind"] == "turn" and r["tool"] == "use_skill"
+    )
+    assert HONORIFIC_INSTRUCTION in skill_turn["result"]
+
+    translation = ctx.artifacts.read_json(3, "translation.json")
+    assert translation["segments"][0]["target"] == "Saluton -sama TEST-MARKER"
+    assert translation["segments"][1]["target"] == "[T] world"
+
+
+def test_unconfirmed_skill_stays_out_of_proofread_agent(tmp_path: Path) -> None:
+    """Safety-gate counter-case: enabled but unconfirmed leaves no trace in
+    the agent, with an empty prompt block and no use_skill tool registered."""
+    from traduko import skillhub
+    from traduko.config import SkillConfig
+    from traduko.skillhub import SkillsManager
+
+    write_honorific_skill(tmp_path)
+    config = CoreConfig(
+        llm_providers={
+            "agent": {
+                "type": "scripted",
+                "responses": ['{"done": true, "summary": "nothing to do"}'],
+            }
+        },
+        skills={"honorific-style": SkillConfig(enabled=True, confirmed=False)},
+    )
+    save_config(tmp_path, config)
+    skillhub.set_active(SkillsManager(tmp_path, config.skills))
+    try:
+        assert skillhub.active_prompt_block() == ""
+        assert skillhub.active_tools() == []
+        ctx, _, task_dir = make_ctx(
+            tmp_path, {"provider": "agent", "intensity": "deep", "max_rounds": 2}
+        )
+        registry.create("proofread").run(ctx)
+    finally:
+        skillhub.set_active(None)
+
+    runs = list((task_dir / "agent-runs").glob("03-proofread-*.jsonl"))
+    assert len(runs) == 1
+    records = [json.loads(line) for line in runs[0].read_text().splitlines()]
+    start = next(r for r in records if r["kind"] == "start")
+    assert "use_skill" not in start["tools"]
+    assert "honorific-style" not in start["goal"]
+
+
 def test_proofread_agent_calls_mounted_mcp_tool(tmp_path: Path) -> None:
     """v2-04 acceptance: an external MCP server's tool, namespaced
     server.tool, is callable from the proofread agent."""
