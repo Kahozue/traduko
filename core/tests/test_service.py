@@ -1110,3 +1110,84 @@ def test_proposal_approve_invalid_patch_is_422(tmp_path: Path) -> None:
             client.get("/proposals?status=pending", headers=headers).json()[0]["id"]
             == "prop-x"
         )
+
+
+# --- assistant --------------------------------------------------------------
+
+
+def configure_scripted_assistant(client, headers, responses: list[str]) -> None:
+    """Point the running service's default llm provider at the scripted
+    provider so /assistant/message runs deterministically, the same way
+    test_assistant.py's scripted_ws drives run_assistant_message directly."""
+    config = client.get("/config", headers=headers).json()
+    config["llm_providers"]["default"] = {"type": "scripted", "responses": responses}
+    response = client.put("/config", headers=headers, json=config)
+    assert response.status_code == 200, response.text
+
+
+def test_assistant_history_is_empty_list_before_any_message(tmp_path: Path) -> None:
+    with service(tmp_path) as (client, headers, token):
+        response = client.get("/assistant/history", headers=headers)
+        assert response.status_code == 200
+        assert response.json() == []
+
+
+def test_assistant_message_without_llm_provider_is_409(tmp_path: Path) -> None:
+    with service(tmp_path) as (client, headers, token):
+        response = client.post(
+            "/assistant/message", headers=headers, json={"text": "hi"}
+        )
+        assert response.status_code == 409
+        assert "llm_providers" in response.json()["detail"]
+
+
+def test_assistant_message_blank_text_is_422(tmp_path: Path) -> None:
+    with service(tmp_path) as (client, headers, token):
+        response = client.post(
+            "/assistant/message", headers=headers, json={"text": "   "}
+        )
+        assert response.status_code == 422
+
+
+def test_assistant_message_full_flow_and_history_persists(tmp_path: Path) -> None:
+    with service(tmp_path) as (client, headers, token):
+        configure_scripted_assistant(
+            client, headers, ['{"done": true, "summary": "hello there"}']
+        )
+
+        response = client.post(
+            "/assistant/message", headers=headers, json={"text": "hi assistant"}
+        )
+        assert response.status_code == 200, response.text
+        body = response.json()
+        assert body["reply"] == "hello there"
+        assert body["converged"] is True
+        assert body["reason"] == "done"
+        assert body["proposal_ids"] == []
+        assert [m["role"] for m in body["history"]] == ["user", "assistant"]
+        assert body["history"][0]["text"] == "hi assistant"
+        assert body["history"][1]["text"] == "hello there"
+
+        # persists across a second GET, independent of the POST response
+        again = client.get("/assistant/history", headers=headers)
+        assert again.status_code == 200
+        assert again.json() == body["history"]
+
+
+def test_assistant_clear_empties_history_but_keeps_run_records(
+    tmp_path: Path,
+) -> None:
+    with service(tmp_path) as (client, headers, token):
+        configure_scripted_assistant(
+            client, headers, ['{"done": true, "summary": "ok"}']
+        )
+        client.post("/assistant/message", headers=headers, json={"text": "hi"})
+        assert client.get("/assistant/history", headers=headers).json() != []
+        run_files = sorted((tmp_path / "assistant" / "runs").glob("*.jsonl"))
+        assert len(run_files) == 1
+
+        response = client.post("/assistant/clear", headers=headers)
+        assert response.status_code == 200
+
+        assert client.get("/assistant/history", headers=headers).json() == []
+        assert sorted((tmp_path / "assistant" / "runs").glob("*.jsonl")) == run_files

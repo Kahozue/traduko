@@ -392,6 +392,20 @@ def _save_history(ws: Workspace, messages: list[dict]) -> None:
     )
 
 
+def load_history(ws: Workspace) -> list[dict]:
+    """Public accessor for the service layer: the full persisted message
+    list (same shape as the goal transcript loader), or [] if no history
+    file exists yet."""
+    return _load_history(ws)
+
+
+def clear_history(ws: Workspace) -> None:
+    """Reset history.json to an empty message list. Run records under
+    `assistant/runs/` are untouched: they are a separate audit trail, not
+    part of the conversation transcript."""
+    _save_history(ws, [])
+
+
 def _build_goal(history: list[dict], text: str) -> str:
     block = skillhub.active_prompt_block()
     transcript = ["Conversation so far:"]

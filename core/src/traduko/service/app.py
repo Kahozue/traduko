@@ -35,6 +35,12 @@ import yaml
 
 from .. import asrsetup
 from ..asrsetup import AsrManager
+from ..agents.assistant import (
+    AssistantUnavailable,
+    clear_history as clear_assistant_history,
+    load_history as load_assistant_history,
+    run_assistant_message,
+)
 from ..artifacts import (
     ArtifactStore,
     ArtifactValidationError,
@@ -766,6 +772,37 @@ def render_frame(
         except MediaError as error:
             raise HTTPException(status_code=500, detail=str(error)) from None
         return Response(content=out.read_bytes(), media_type="image/png")
+
+
+class AssistantMessageRequest(BaseModel):
+    text: str
+
+
+@router.post("/assistant/message")
+def post_assistant_message(request: Request, body: AssistantMessageRequest) -> dict:
+    ws: Workspace = request.app.state.workspace
+    if not body.text.strip():
+        raise HTTPException(status_code=422, detail="text must not be empty")
+    try:
+        result = run_assistant_message(ws, body.text)
+    except AssistantUnavailable as error:
+        # No usable LLM provider: 409 so the panel can guide the operator to
+        # configuration rather than surfacing a generic server error.
+        raise HTTPException(status_code=409, detail=str(error)) from None
+    return {**result, "history": load_assistant_history(ws)}
+
+
+@router.get("/assistant/history")
+def get_assistant_history(request: Request) -> list[dict]:
+    ws: Workspace = request.app.state.workspace
+    return load_assistant_history(ws)
+
+
+@router.post("/assistant/clear")
+def post_assistant_clear(request: Request) -> dict:
+    ws: Workspace = request.app.state.workspace
+    clear_assistant_history(ws)
+    return {"cleared": True}
 
 
 def _log_bot_exit(task: "asyncio.Task") -> None:
