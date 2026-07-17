@@ -404,7 +404,6 @@ export function TasksView({
                         />
                         <div className={styles.rowMain}>
                           <div className={styles.rowName}>{row.name || row.id}</div>
-                          <div className={styles.rowId}>{row.id}</div>
                         </div>
                         <span className={styles.rowProfile}>{row.profile}</span>
                         <StatusBadge status={row.status} />

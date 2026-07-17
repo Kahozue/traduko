@@ -21,6 +21,15 @@ function api(overrides = {}) {
       return { schema_version: 1, flags: [{ id: 2, note: "確認術語", round: 1 }] };
     }) as unknown as ApiClient["readArtifact"],
     saveArtifact: vi.fn(async () => ({ file: "06-translation.json", stages_reset: 1 })),
+    getStyles: vi.fn(async () => ({
+      default: {
+        font_name: "Arial", font_size: 48, primary_color: "#FFFFFF",
+        outline_color: "#000000", outline: 2, shadow: 0, bold: false,
+        alignment: 2, margin_v: 40,
+      },
+    })),
+    saveStyles: vi.fn(async () => ({ saved: true })),
+    renderFrame: vi.fn(async () => new Blob([new Uint8Array([137, 80])], { type: "image/png" })),
     ...overrides,
   };
 }
@@ -148,6 +157,34 @@ describe("SubtitleEditorView", () => {
     await userEvent.click(screen.getByText("返回任務"));
     fireEvent.click(screen.getByText("放棄修改"));
     expect(onBack).toHaveBeenCalledTimes(1);
+  });
+
+  test("style tab shows the live preview and saves styles", async () => {
+    const client = render();
+    await screen.findByText("你好");
+    await userEvent.click(screen.getByRole("tab", { name: "樣式" }));
+    const preview = await screen.findByTestId("css-preview");
+    expect(preview).toHaveStyle({ fontSize: "48px" });
+    const size = screen.getByLabelText("字級");
+    await userEvent.type(size, "0");
+    expect(screen.getByTestId("css-preview")).toHaveStyle({ fontSize: "480px" });
+    await userEvent.click(screen.getByText("儲存樣式"));
+    await waitFor(() => expect(client.saveStyles).toHaveBeenCalled());
+    const [doc] = (client.saveStyles as ReturnType<typeof vi.fn>).mock.calls[0] as [
+      Record<string, { font_size: number }>,
+    ];
+    expect(doc.default.font_size).toBe(480);
+  });
+
+  test("style edits also guard against leaving", async () => {
+    const onBack = vi.fn();
+    render(onBack);
+    await screen.findByText("你好");
+    await userEvent.click(screen.getByRole("tab", { name: "樣式" }));
+    await userEvent.type(await screen.findByLabelText("字級"), "0");
+    await userEvent.click(screen.getByText("返回任務"));
+    expect(onBack).not.toHaveBeenCalled();
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
   });
 
   test("back without edits leaves immediately", async () => {

@@ -35,7 +35,7 @@ test("lists tasks and opens detail on click", async () => {
   const onOpenTask = vi.fn();
   renderWithConnection(<TasksView onOpenTask={onOpenTask} />, { api });
   await waitFor(() => expect(screen.getByText("第三集")).toBeInTheDocument());
-  expect(screen.getByText(/20260716-0001/)).toBeInTheDocument();
+  expect(screen.queryByText(/20260716-0001/)).not.toBeInTheDocument();
   expect(
     screen.getAllByText("已完成").some((el) => el.tagName !== "OPTION"),
   ).toBe(true);

@@ -44,7 +44,6 @@ test("renders stages and metadata", async () => {
       taskId="t1"
       onBack={() => {}}
       onOpenSubtitleEditor={() => {}}
-      onOpenStyleEditor={() => {}}
     />, {
     api,
   });
@@ -64,7 +63,6 @@ test("run button queues the task", async () => {
       taskId="t1"
       onBack={() => {}}
       onOpenSubtitleEditor={() => {}}
-      onOpenStyleEditor={() => {}}
     />, {
     api,
   });
@@ -90,7 +88,6 @@ test("preflight failure offers skip and re-run", async () => {
       taskId="t1"
       onBack={() => {}}
       onOpenSubtitleEditor={() => {}}
-      onOpenStyleEditor={() => {}}
     />, {
     api,
   });
@@ -134,7 +131,6 @@ test("missing ASR model offers download-and-run", async () => {
       taskId="t1"
       onBack={() => {}}
       onOpenSubtitleEditor={() => {}}
-      onOpenStyleEditor={() => {}}
     />, {
     api,
   });
@@ -164,7 +160,6 @@ test("completed task lists outputs and enables the subtitle editor", async () =>
       taskId="t1"
       onBack={() => {}}
       onOpenSubtitleEditor={onOpenSubtitleEditor}
-      onOpenStyleEditor={() => {}}
     />, {
     api,
   });
@@ -187,7 +182,6 @@ test("subtitle editor entry is disabled without a translation artifact", async (
       taskId="t1"
       onBack={() => {}}
       onOpenSubtitleEditor={() => {}}
-      onOpenStyleEditor={() => {}}
     />, {
     api,
   });
@@ -204,7 +198,6 @@ test("cancel button cancels the task", async () => {
       taskId="t1"
       onBack={() => {}}
       onOpenSubtitleEditor={() => {}}
-      onOpenStyleEditor={() => {}}
     />, {
     api,
   });
@@ -223,30 +216,12 @@ test("shows checkpoint banner and opens subtitle editor when waiting_review", as
       taskId="t1"
       onBack={() => {}}
       onOpenSubtitleEditor={onOpenSubtitleEditor}
-      onOpenStyleEditor={() => {}}
     />,
     { api },
   );
   expect(await screen.findByText("任務停於人工檢查點")).toBeInTheDocument();
   await userEvent.click(screen.getByText("開啟字幕編輯器"));
   expect(onOpenSubtitleEditor).toHaveBeenCalled();
-});
-
-test("style editor entry opens from the header actions", async () => {
-  const onOpenStyleEditor = vi.fn();
-  const api: Partial<ApiClient> = { showTask: vi.fn().mockResolvedValue(task) };
-  renderWithConnection(
-    <TaskDetailView
-      project="default"
-      taskId="t1"
-      onBack={() => {}}
-      onOpenSubtitleEditor={() => {}}
-      onOpenStyleEditor={onOpenStyleEditor}
-    />,
-    { api },
-  );
-  await userEvent.click(await screen.findByText("字幕樣式"));
-  expect(onOpenStyleEditor).toHaveBeenCalled();
 });
 
 test("renders localized stage labels and named title", async () => {
@@ -258,7 +233,6 @@ test("renders localized stage labels and named title", async () => {
       taskId="t1"
       onBack={() => {}}
       onOpenSubtitleEditor={() => {}}
-      onOpenStyleEditor={() => {}}
     />,
     { api },
   );
@@ -280,7 +254,6 @@ test("rename flow calls renameTask", async () => {
       taskId="t1"
       onBack={() => {}}
       onOpenSubtitleEditor={() => {}}
-      onOpenStyleEditor={() => {}}
     />,
     { api },
   );
@@ -305,7 +278,6 @@ test("pause button pauses a running task", async () => {
       taskId="t1"
       onBack={() => {}}
       onOpenSubtitleEditor={() => {}}
-      onOpenStyleEditor={() => {}}
     />,
     { api },
   );
@@ -322,7 +294,6 @@ test("pause button is disabled when task is not running", async () => {
       taskId="t1"
       onBack={() => {}}
       onOpenSubtitleEditor={() => {}}
-      onOpenStyleEditor={() => {}}
     />,
     { api },
   );

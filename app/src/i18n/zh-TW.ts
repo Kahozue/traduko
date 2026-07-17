@@ -227,6 +227,8 @@ export const zhTW = {
   "editor.leave.message": "有未存回的修改，離開後將遺失。",
   "editor.leave.stay": "留下",
   "editor.leave.discard": "放棄修改",
+  "editor.tab.subtitle": "字幕",
+  "editor.tab.style": "樣式",
   "editor.style.title": "字幕樣式編輯器",
   "editor.style.preset": "樣式組",
   "editor.style.font": "字型",

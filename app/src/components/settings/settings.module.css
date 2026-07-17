@@ -184,11 +184,18 @@
 
 .fieldRow {
   display: flex;
+  align-items: flex-start;
   gap: 16px;
 }
 
 .fieldRow .field {
   flex: 1;
+}
+
+/* The adjacent-sibling vertical rhythm above must not apply to fields
+   sitting side by side inside a fieldRow. */
+.fieldRow > .field + .field {
+  margin-top: 0;
 }
 
 .label {

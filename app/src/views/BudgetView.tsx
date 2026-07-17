@@ -76,11 +76,8 @@ export function BudgetView() {
               <tbody>
                 {spend.map((row) => (
                   <tr key={row.task_id}>
-                    <td>
-                      <div>{row.name || row.task_id}</div>
-                      {row.name && <div className={styles.spendId}>{row.task_id}</div>}
-                    </td>
-                    <td>{row.project}</td>
+                    <td>{row.name || row.task_id}</td>
+                    <td className={styles.spendProject}>{row.project}</td>
                     <td className={styles.spendUsd}>{usd(row.usd)}</td>
                   </tr>
                 ))}

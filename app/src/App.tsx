@@ -7,7 +7,6 @@ import { t } from "./i18n";
 import { ConnectionProvider, useConnection } from "./lib/connection";
 import { BudgetView } from "./views/BudgetView";
 import { SettingsView } from "./views/SettingsView";
-import { StyleEditorView } from "./views/StyleEditorView";
 import { SubtitleEditorView } from "./views/SubtitleEditorView";
 import { TaskDetailView } from "./views/TaskDetailView";
 import { TasksView } from "./views/TasksView";
@@ -17,7 +16,6 @@ export type View =
   | { name: "tasks" }
   | { name: "task"; project: string; taskId: string }
   | { name: "subtitle-editor"; project: string; taskId: string }
-  | { name: "style-editor"; project: string; taskId: string }
   | { name: "budget" }
   | { name: "settings" };
 
@@ -95,7 +93,7 @@ function Main() {
   }, []);
 
   const active: NavKey =
-    view.name === "task" || view.name === "subtitle-editor" || view.name === "style-editor"
+    view.name === "task" || view.name === "subtitle-editor"
       ? "tasks"
       : view.name;
   return (
@@ -139,22 +137,11 @@ function renderView(
           onOpenSubtitleEditor={() =>
             setView({ name: "subtitle-editor", project: view.project, taskId: view.taskId })
           }
-          onOpenStyleEditor={() =>
-            setView({ name: "style-editor", project: view.project, taskId: view.taskId })
-          }
         />
       );
     case "subtitle-editor":
       return (
         <SubtitleEditorView
-          project={view.project}
-          taskId={view.taskId}
-          onBack={() => setView({ name: "task", project: view.project, taskId: view.taskId })}
-        />
-      );
-    case "style-editor":
-      return (
-        <StyleEditorView
           project={view.project}
           taskId={view.taskId}
           onBack={() => setView({ name: "task", project: view.project, taskId: view.taskId })}

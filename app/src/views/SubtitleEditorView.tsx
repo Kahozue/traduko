@@ -1,9 +1,21 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
+import { StyleEditorPanel } from "../components/StyleEditorPanel";
 import { t } from "../i18n";
-import type { ProofreadFlag, TranslationArtifact, TranslationSegment } from "../lib/api/types";
+import type {
+  ProofreadFlag,
+  SubtitleStylePreset,
+  TranslationArtifact,
+  TranslationSegment,
+} from "../lib/api/types";
 import { useApi } from "../lib/connection";
 import styles from "./SubtitleEditorView.module.css";
+
+const STYLE_FALLBACK: SubtitleStylePreset = {
+  font_name: "Arial", font_size: 48, primary_color: "#FFFFFF",
+  outline_color: "#000000", outline: 2, shadow: 0, bold: false,
+  alignment: 2, margin_v: 40,
+};
 
 function formatRange(start: number, end: number): string {
   const fmt = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
@@ -40,6 +52,27 @@ export function SubtitleEditorView({
   const [replaceText, setReplaceText] = useState("");
   const [flaggedOnly, setFlaggedOnly] = useState(false);
   const [confirmLeave, setConfirmLeave] = useState(false);
+  const [tab, setTab] = useState<"subtitle" | "style">("subtitle");
+  const [styleDraft, setStyleDraft] = useState<SubtitleStylePreset | null>(null);
+  const [styleDirty, setStyleDirty] = useState(false);
+  const [styleSaved, setStyleSaved] = useState(false);
+
+  const { data: stylesDoc } = useQuery({ queryKey: ["styles"], queryFn: () => api.getStyles() });
+
+  useEffect(() => {
+    if (stylesDoc && styleDraft === null) {
+      setStyleDraft(stylesDoc.default ?? STYLE_FALLBACK);
+    }
+  }, [stylesDoc, styleDraft]);
+
+  const saveStyle = useMutation({
+    mutationFn: () =>
+      api.saveStyles({ ...(stylesDoc ?? {}), default: styleDraft ?? STYLE_FALLBACK }),
+    onSuccess: () => {
+      setStyleDirty(false);
+      setStyleSaved(true);
+    },
+  });
 
   const gridRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
@@ -77,8 +110,15 @@ export function SubtitleEditorView({
     },
   });
 
-  const saveRef = useRef({ dirty, pending: save.isPending, mutate: save.mutate });
-  saveRef.current = { dirty, pending: save.isPending, mutate: save.mutate };
+  const saveRef = useRef<{ dirty: boolean; pending: boolean; mutate: () => void }>({
+    dirty,
+    pending: save.isPending,
+    mutate: () => save.mutate(),
+  });
+  saveRef.current =
+    tab === "subtitle"
+      ? { dirty, pending: save.isPending, mutate: () => save.mutate() }
+      : { dirty: styleDirty, pending: saveStyle.isPending, mutate: () => saveStyle.mutate() };
 
   function editTarget(id: number, value: string) {
     setSegments((prev) => prev.map((s) => (s.id === id ? { ...s, target: value } : s)));
@@ -149,7 +189,7 @@ export function SubtitleEditorView({
   }, []);
 
   function handleBack() {
-    if (dirty) setConfirmLeave(true);
+    if (dirty || styleDirty) setConfirmLeave(true);
     else onBack();
   }
 
@@ -162,21 +202,75 @@ export function SubtitleEditorView({
         {t("editor.back")}
       </button>
       <header className={styles.header}>
-        <h1 className={styles.title}>{t("editor.subtitle.title")}</h1>
+        <div className={styles.headline}>
+          <h1 className={styles.title}>{t("editor.subtitle.title")}</h1>
+          <div className={styles.tabs} role="tablist">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={tab === "subtitle"}
+              className={`${styles.tabButton} ${tab === "subtitle" ? styles.tabActive : ""}`}
+              onClick={() => setTab("subtitle")}
+            >
+              {t("editor.tab.subtitle")}
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={tab === "style"}
+              className={`${styles.tabButton} ${tab === "style" ? styles.tabActive : ""}`}
+              onClick={() => setTab("style")}
+            >
+              {t("editor.tab.style")}
+            </button>
+          </div>
+        </div>
         <div className={styles.actions}>
-          {dirty && <span className={styles.dirty}>{t("editor.dirty")}</span>}
-          {saved && <span className={styles.saved}>{t("editor.saved")}</span>}
-          <button
-            type="button"
-            className={styles.primary}
-            disabled={!dirty || save.isPending}
-            onClick={() => save.mutate()}
-          >
-            {t("editor.save")}
-          </button>
+          {tab === "subtitle" ? (
+            <>
+              {dirty && <span className={styles.dirty}>{t("editor.dirty")}</span>}
+              {saved && <span className={styles.saved}>{t("editor.saved")}</span>}
+              <button
+                type="button"
+                className={styles.primary}
+                disabled={!dirty || save.isPending}
+                onClick={() => save.mutate()}
+              >
+                {t("editor.save")}
+              </button>
+            </>
+          ) : (
+            <>
+              {styleDirty && <span className={styles.dirty}>{t("editor.dirty")}</span>}
+              {styleSaved && <span className={styles.saved}>{t("editor.style.saved")}</span>}
+              <button
+                type="button"
+                className={styles.primary}
+                disabled={!styleDirty || saveStyle.isPending}
+                onClick={() => saveStyle.mutate()}
+              >
+                {t("editor.style.save")}
+              </button>
+            </>
+          )}
         </div>
       </header>
 
+      {tab === "style" && styleDraft && (
+        <StyleEditorPanel
+          project={project}
+          taskId={taskId}
+          style={styleDraft}
+          onChange={(next) => {
+            setStyleDraft(next);
+            setStyleDirty(true);
+            setStyleSaved(false);
+          }}
+        />
+      )}
+
+      {tab === "subtitle" && (
+      <>
       <div className={styles.toolbar}>
         <input
           ref={searchRef}
@@ -292,6 +386,8 @@ export function SubtitleEditorView({
         })}
       </div>
       <p className={styles.shortcuts}>{t("editor.shortcuts")}</p>
+      </>
+      )}
 
       {confirmLeave && (
         <div className={styles.scrim}>

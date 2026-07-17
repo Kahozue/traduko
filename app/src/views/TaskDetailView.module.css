@@ -416,7 +416,9 @@
 
 .eventType {
   flex-shrink: 0;
-  font-weight: 500;
+  margin-left: auto;
+  color: var(--text-secondary);
+  font-size: var(--fs-meta);
 }
 
 .eventData {

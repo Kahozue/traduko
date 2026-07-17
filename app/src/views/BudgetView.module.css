@@ -89,13 +89,19 @@
   border-bottom: none;
 }
 
-.spendId {
-  color: var(--text-secondary);
-  font-family: var(--font-mono);
-  font-size: var(--fs-meta);
-}
 
+.spendTable th.spendUsd,
 .spendUsd {
   text-align: right;
   font-variant-numeric: tabular-nums;
+  width: 150px;
+}
+
+.spendProject {
+  width: 220px;
+  color: var(--text-secondary);
+}
+
+.spendTable th:nth-child(2) {
+  width: 220px;
 }

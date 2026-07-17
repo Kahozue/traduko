@@ -55,14 +55,12 @@ export function TaskDetailView({
   onBack,
   onOpenSettings,
   onOpenSubtitleEditor,
-  onOpenStyleEditor,
 }: {
   project: string;
   taskId: string;
   onBack: () => void;
   onOpenSettings?: () => void;
   onOpenSubtitleEditor: () => void;
-  onOpenStyleEditor: () => void;
 }) {
   const api = useApi();
   const { dataRoot } = useConnection();
@@ -275,9 +273,6 @@ export function TaskDetailView({
           >
             {t("task.subtitleEditor")}
           </button>
-          <button type="button" className={styles.secondary} onClick={onOpenStyleEditor}>
-            {t("task.openStyleEditor")}
-          </button>
         </div>
       </header>
 
@@ -467,8 +462,8 @@ export function TaskDetailView({
                   title={JSON.stringify(event.data)}
                 >
                   <span className={styles.eventTs}>{formatTime(event.ts)}</span>
-                  <span className={styles.eventType}>{eventTypeLabel(event.type)}</span>
                   <span className={styles.eventData}>{summarizeEventData(event.data)}</span>
+                  <span className={styles.eventType}>{eventTypeLabel(event.type)}</span>
                 </li>
               ))}
           </ul>
