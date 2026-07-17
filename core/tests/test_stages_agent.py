@@ -230,7 +230,7 @@ def test_proofread_agent_calls_mounted_mcp_tool(tmp_path: Path) -> None:
 
     session = FakeSession([ECHO_TOOL], {"echo": text_result("echo:hi")})
     manager = MCPManager(
-        {"demo": McpServerConfig(command="demo-cmd", enabled=True)},
+        {"demo": McpServerConfig(command="demo-cmd", enabled=True, confirmed=True)},
         connector=make_connector({"demo-cmd": session}),
     )
     shutdown = run_manager(manager)

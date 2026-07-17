@@ -5,7 +5,9 @@ from pathlib import Path
 from typing import Literal
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+from .fsutil import atomic_write_text
 
 CONFIG_FILE = "config/core.yaml"
 
@@ -73,18 +75,6 @@ class SyncConfig(BaseModel):
     auto_interval_minutes: int = 0
 
 
-def _migrate_confirmed(data: object) -> object:
-    """Shared migration for McpServerConfig and SkillConfig.
-
-    Entries written before the `confirmed` field existed that were already
-    enabled are treated as confirmed, so upgrading does not silently unmount
-    servers the user had running. Brand-new entries default both to False.
-    """
-    if isinstance(data, dict) and data.get("enabled") and "confirmed" not in data:
-        return {**data, "confirmed": True}
-    return data
-
-
 class McpServerConfig(BaseModel):
     """One external MCP server. stdio spawns a local command; http talks
     Streamable HTTP, with an optional OAuth bearer token. `confirmed` is the
@@ -102,11 +92,6 @@ class McpServerConfig(BaseModel):
     enabled: bool = False
     confirmed: bool = False
 
-    @model_validator(mode="before")
-    @classmethod
-    def _migrate(cls, data: object) -> object:
-        return _migrate_confirmed(data)
-
 
 class SkillConfig(BaseModel):
     """Per-skill settings, keyed by skill name (= data/skills/<name>/).
@@ -117,11 +102,6 @@ class SkillConfig(BaseModel):
 
     enabled: bool = False
     confirmed: bool = False
-
-    @model_validator(mode="before")
-    @classmethod
-    def _migrate(cls, data: object) -> object:
-        return _migrate_confirmed(data)
 
 
 class CoreConfig(BaseModel):
@@ -138,18 +118,38 @@ class CoreConfig(BaseModel):
     skills: dict[str, SkillConfig] = Field(default_factory=dict)
 
 
+def _migrate_confirmed(data: dict) -> None:
+    """v2-04 files predate the `confirmed` safety-gate field: entries that
+    were already enabled are treated as confirmed, so upgrading does not
+    silently unmount servers the user had running. This runs only on the
+    raw dict read from disk; API bodies and proposal patches never migrate,
+    so a new enabled entry without an explicit confirmed field stays behind
+    the gate."""
+    for section in ("mcp_servers", "skills"):
+        entries = data.get(section)
+        if not isinstance(entries, dict):
+            continue
+        for entry in entries.values():
+            if (
+                isinstance(entry, dict)
+                and entry.get("enabled") is True
+                and "confirmed" not in entry
+            ):
+                entry["confirmed"] = True
+
+
 def load_config(root: Path) -> CoreConfig:
     path = root / CONFIG_FILE
     if not path.exists():
         return CoreConfig()
     data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    if isinstance(data, dict):
+        _migrate_confirmed(data)
     return CoreConfig.model_validate(data)
 
 
 def save_config(root: Path, config: CoreConfig) -> None:
-    path = root / CONFIG_FILE
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
+    atomic_write_text(
+        root / CONFIG_FILE,
         yaml.safe_dump(config.model_dump(), sort_keys=True, allow_unicode=True),
-        encoding="utf-8",
     )

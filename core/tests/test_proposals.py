@@ -96,7 +96,7 @@ def test_approve_merges_against_current_config(tmp_path: Path) -> None:
     assert final.default_project == "other"  # top-level B survives
 
 
-def test_approve_revalidates_and_stays_pending_on_failure(tmp_path: Path) -> None:
+def test_approve_stays_pending_on_unloadable_config(tmp_path: Path) -> None:
     proposal = propose_config(tmp_path, {"budget": {"task_usd_limit": 9.0}}, "raise cap")
 
     # The config drifts into an invalid state between propose and approve.

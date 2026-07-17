@@ -184,7 +184,10 @@ export class ApiClient {
     return this.request(`/skills/${encodeURIComponent(name)}`);
   }
 
-  putSkill(name: string, content: string): Promise<{ saved: boolean }> {
+  putSkill(
+    name: string,
+    content: string,
+  ): Promise<{ saved: boolean; confirmation_reset: boolean }> {
     return this.request(`/skills/${encodeURIComponent(name)}`, {
       method: "PUT",
       body: JSON.stringify({ content }),

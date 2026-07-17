@@ -206,17 +206,35 @@ def test_mcp_confirmed_round_trip(tmp_path: Path) -> None:
 
 
 def test_confirmed_migration_rules() -> None:
-    # Entries written before `confirmed` existed: enabled implies confirmed.
-    assert McpServerConfig.model_validate({"enabled": True}).confirmed is True
-    assert SkillConfig.model_validate({"enabled": True}).confirmed is True
+    # Migration lives in load_config only (see the v2-04 yaml test below).
+    # Validation of API bodies and proposal patches never auto-confirms: a
+    # new enabled entry without an explicit confirmed stays behind the gate.
+    assert McpServerConfig.model_validate({"enabled": True}).confirmed is False
+    assert SkillConfig.model_validate({"enabled": True}).confirmed is False
+    assert McpServerConfig(enabled=True).confirmed is False
+    assert SkillConfig(enabled=True).confirmed is False
     # An explicit confirmed value is always respected.
-    assert McpServerConfig.model_validate({"enabled": True, "confirmed": False}).confirmed is False
-    assert SkillConfig.model_validate({"enabled": True, "confirmed": False}).confirmed is False
+    assert McpServerConfig.model_validate({"enabled": True, "confirmed": True}).confirmed is True
+    assert SkillConfig.model_validate({"enabled": True, "confirmed": True}).confirmed is True
     # Disabled or brand-new entries stay unconfirmed.
     assert McpServerConfig.model_validate({"enabled": False}).confirmed is False
     assert SkillConfig.model_validate({}).confirmed is False
     assert McpServerConfig().confirmed is False
     assert SkillConfig().confirmed is False
+
+
+def test_disk_migration_skips_string_enabled_and_api_shapes(tmp_path: Path) -> None:
+    # A pathological quoted string ("no" parses to enabled=False) must not
+    # count as enabled for migration purposes: `is True` guards the check.
+    path = tmp_path / "config" / "core.yaml"
+    path.parent.mkdir(parents=True)
+    path.write_text(
+        'skills:\n  odd-one:\n    enabled: "no"\n',
+        encoding="utf-8",
+    )
+    config = load_config(tmp_path)
+    assert config.skills["odd-one"].enabled is False
+    assert config.skills["odd-one"].confirmed is False
 
 
 def test_v2_04_yaml_migrates_confirmed_and_persists(tmp_path: Path) -> None:

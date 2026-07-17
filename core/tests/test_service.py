@@ -817,7 +817,12 @@ def test_mcp_reload_picks_up_saved_config(tmp_path: Path, monkeypatch) -> None:
         config = load_config(tmp_path)
         payload = config.model_dump()
         payload["mcp_servers"] = {
-            "demo": {"transport": "stdio", "command": "demo-cmd", "enabled": True}
+            "demo": {
+                "transport": "stdio",
+                "command": "demo-cmd",
+                "enabled": True,
+                "confirmed": True,
+            }
         }
         save_config(tmp_path, CoreConfig.model_validate(payload))
 
@@ -940,6 +945,37 @@ def test_put_config_rebuilds_skills_manager(tmp_path: Path) -> None:
         rows = client.get("/skills", headers=headers).json()
         assert rows[0]["enabled"] is True
         assert rows[0]["confirmed"] is True
+
+
+def test_put_skill_content_change_resets_confirmation(tmp_path: Path) -> None:
+    with service(tmp_path) as (client, headers, token):
+        assert (
+            client.post("/skills", json={"name": "demo"}, headers=headers).status_code
+            == 201
+        )
+        config = client.get("/config", headers=headers).json()
+        config["skills"] = {"demo": {"enabled": True, "confirmed": True}}
+        assert client.put("/config", headers=headers, json=config).status_code == 200
+
+        content = client.get("/skills/demo", headers=headers).json()["content"]
+
+        # Saving identical content keeps the confirmation.
+        saved = client.put("/skills/demo", json={"content": content}, headers=headers)
+        assert saved.json() == {"saved": True, "confirmation_reset": False}
+        assert client.get("/skills", headers=headers).json()[0]["confirmed"] is True
+
+        # Changing the body reopens the gate: the confirmation covered the
+        # reviewed content, not the name.
+        changed = content.replace(
+            "Write the skill instructions here.", "Always use formal tone."
+        )
+        saved = client.put("/skills/demo", json={"content": changed}, headers=headers)
+        assert saved.json() == {"saved": True, "confirmation_reset": True}
+        row = client.get("/skills", headers=headers).json()[0]
+        assert row["enabled"] is True
+        assert row["confirmed"] is False
+        # The reset is persisted, not just held in memory.
+        assert load_config(tmp_path).skills["demo"].confirmed is False
 
 
 def test_proposal_approve_applies_config_and_syncs_state(tmp_path: Path) -> None:

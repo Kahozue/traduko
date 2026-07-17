@@ -273,6 +273,40 @@ test("skill edit button routes through onEditSkill", async () => {
   expect(onEditSkill).toHaveBeenCalledWith("honorific-style");
 });
 
+test("dirty draft gates skill editing behind a confirmation", async () => {
+  const onEditSkill = vi.fn();
+  setup(
+    {
+      listSkills: vi.fn().mockResolvedValue([
+        {
+          name: "honorific-style", description: "敬語",
+          enabled: false, confirmed: false, valid: true, errors: [],
+        },
+      ]),
+    },
+    { initialTab: "agent", onEditSkill },
+  );
+  // Dirty the draft from another tab, then come back.
+  await userEvent.click(await screen.findByRole("tab", { name: "一般" }));
+  await userEvent.type(screen.getByLabelText("預設專案"), "-x");
+  await userEvent.click(screen.getByRole("tab", { name: "Agent" }));
+
+  await userEvent.click(await screen.findByRole("button", { name: "編輯" }));
+  expect(onEditSkill).not.toHaveBeenCalled();
+  expect(
+    screen.getByRole("dialog", { name: "放棄未儲存的變更？" }),
+  ).toBeInTheDocument();
+  // Staying keeps the draft and stays put.
+  await userEvent.click(screen.getByRole("button", { name: "留下" }));
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  expect(onEditSkill).not.toHaveBeenCalled();
+  expect(screen.getByText("有未儲存的變更")).toBeInTheDocument();
+  // Discarding proceeds to the editor.
+  await userEvent.click(screen.getByRole("button", { name: "編輯" }));
+  await userEvent.click(screen.getByRole("button", { name: "放棄修改" }));
+  expect(onEditSkill).toHaveBeenCalledWith("honorific-style");
+});
+
 test("confirming a skill dirties the draft and saves both flags", async () => {
   const { saveConfig } = setup(
     {

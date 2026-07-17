@@ -36,3 +36,13 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/traduko"]
+
+[tool.pytest.ini_options]
+filterwarnings = [
+    # discord.py imports the stdlib audioop module, deprecated since 3.11;
+    # third-party noise we cannot fix locally.
+    "ignore:'audioop' is deprecated:DeprecationWarning",
+    # fastapi's TestClient shim re-exports starlette.testclient, which warns
+    # about its httpx dependency; third-party noise we cannot fix locally.
+    "ignore:Using `httpx` with `starlette.testclient` is deprecated",
+]

@@ -136,6 +136,10 @@ export function SettingsView({
   const [botValid, setBotValid] = useState(true);
   const [syncValid, setSyncValid] = useState(true);
   const [agentValid, setAgentValid] = useState(true);
+  // Editing a skill navigates away and unmounts this view; with unsaved
+  // draft edits that would silently discard them, so gate the navigation
+  // behind an explicit confirmation.
+  const [pendingEditSkill, setPendingEditSkill] = useState<string | null>(null);
 
   useEffect(() => {
     if (data && draft === null) setDraft(normalize(data));
@@ -308,7 +312,10 @@ export function SettingsView({
             onSkillsChange={(value) =>
               setDraft((prev) => (prev ? { ...prev, skills: value } : prev))
             }
-            onEditSkill={onEditSkill}
+            onEditSkill={(name) => {
+              if (dirty) setPendingEditSkill(name);
+              else onEditSkill?.(name);
+            }}
           />
         )}
       </div>
@@ -432,6 +439,44 @@ export function SettingsView({
           ) : (
             <span className={styles.savedNote}>{t("settings.saved")}</span>
           )}
+        </div>
+      )}
+
+      {pendingEditSkill !== null && (
+        <div className={styles.scrim}>
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label={t("editor.skill.leaveTitle")}
+            className={styles.confirmCard}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") setPendingEditSkill(null);
+            }}
+          >
+            <h3 className={styles.confirmTitle}>{t("editor.skill.leaveTitle")}</h3>
+            <p className={styles.confirmIntro}>{t("editor.skill.leaveMessage")}</p>
+            <div className={styles.confirmActions}>
+              <button
+                type="button"
+                autoFocus
+                className={styles.secondaryButton}
+                onClick={() => setPendingEditSkill(null)}
+              >
+                {t("editor.leave.stay")}
+              </button>
+              <button
+                type="button"
+                className={styles.primaryButton}
+                onClick={() => {
+                  const name = pendingEditSkill;
+                  setPendingEditSkill(null);
+                  onEditSkill?.(name);
+                }}
+              >
+                {t("editor.leave.discard")}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

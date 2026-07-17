@@ -184,14 +184,12 @@ test("confirming an unconfirmed server writes enabled and confirmed to the draft
   expect(screen.getByLabelText("啟用")).toBeChecked();
 });
 
-test("unconnected server admits it cannot list tools yet", async () => {
+test("server without a tool list states what confirming means", async () => {
   setup({
     servers: { files: { ...STDIO_SERVER, enabled: false, confirmed: false } },
   });
   await userEvent.click(screen.getByLabelText("啟用"));
-  expect(
-    screen.getByText(/尚未連線，須待連線後才能列出工具清單/),
-  ).toBeInTheDocument();
+  expect(screen.getByText(/尚未回報工具清單/)).toBeInTheDocument();
 });
 
 test("remove deletes the server", async () => {
@@ -245,6 +243,54 @@ test("enabling an unconfirmed skill shows the SKILL.md; cancel keeps it off", as
 test("confirming a skill writes enabled and confirmed into the draft", async () => {
   const { onSkillsChange } = setup({ skillList: [SKILL] });
   await userEvent.click(await screen.findByLabelText("啟用 honorific-style"));
+  // The accept button only arms once the content is on screen.
+  await screen.findByText(/以敬語翻譯。/);
+  await userEvent.click(screen.getByRole("button", { name: "確認啟用" }));
+  expect(onSkillsChange).toHaveBeenCalledWith({
+    "honorific-style": { enabled: true, confirmed: true },
+  });
+});
+
+test("skill confirm stays disabled until the content is visible", async () => {
+  let resolve: (value: { name: string; content: string }) => void = () => {};
+  const getSkill = vi.fn().mockReturnValue(
+    new Promise((r) => {
+      resolve = r;
+    }),
+  );
+  setup({ skillList: [SKILL], api: { getSkill } });
+  await userEvent.click(await screen.findByLabelText("啟用 honorific-style"));
+  expect(screen.getByRole("button", { name: "確認啟用" })).toBeDisabled();
+  resolve({ name: SKILL.name, content: SKILL_MD });
+  await waitFor(() =>
+    expect(screen.getByRole("button", { name: "確認啟用" })).toBeEnabled(),
+  );
+});
+
+test("skill confirm stays disabled when the content fails to load", async () => {
+  setup({
+    skillList: [SKILL],
+    api: { getSkill: vi.fn().mockRejectedValue(new ApiError(500, "boom")) },
+  });
+  await userEvent.click(await screen.findByLabelText("啟用 honorific-style"));
+  expect(await screen.findByText("無法載入 skill 內容")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "確認啟用" })).toBeDisabled();
+});
+
+test("enabled but unconfirmed skill offers reconfirmation", async () => {
+  const { onSkillsChange } = setup({
+    skillList: [{ ...SKILL, enabled: true, confirmed: false }],
+    skills: { "honorific-style": { enabled: true, confirmed: false } },
+  });
+  expect(await screen.findByText("未確認")).toBeInTheDocument();
+  expect(
+    screen.getByText("內容已變更，重新確認後才會提供給校對 agent"),
+  ).toBeInTheDocument();
+  await userEvent.click(screen.getByRole("button", { name: "重新確認" }));
+  expect(
+    screen.getByRole("dialog", { name: "確認啟用 skill" }),
+  ).toBeInTheDocument();
+  await screen.findByText(/以敬語翻譯。/);
   await userEvent.click(screen.getByRole("button", { name: "確認啟用" }));
   expect(onSkillsChange).toHaveBeenCalledWith({
     "honorific-style": { enabled: true, confirmed: true },

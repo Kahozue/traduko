@@ -477,11 +477,27 @@ class SkillContentRequest(BaseModel):
 
 @router.put("/skills/{name}")
 def put_skill(request: Request, name: str, body: SkillContentRequest) -> dict:
+    ws: Workspace = request.app.state.workspace
+    manager = _skills_manager()
     try:
-        _skills_manager().write(name, body.content)
+        previous = manager.read(name)
+    except FileNotFoundError:
+        previous = None
+    try:
+        manager.write(name, body.content)
     except SkillValidationError as error:
         raise HTTPException(status_code=422, detail=error.errors) from None
-    return {"saved": True}
+    # The confirmation covered the content the user reviewed, not the name:
+    # rewriting the body reopens the gate. The active manager shares
+    # ws.config.skills, so the reset takes effect without a reload.
+    confirmation_reset = False
+    if previous is not None and previous != body.content:
+        skill_config = ws.config.skills.get(name)
+        if skill_config is not None and skill_config.confirmed:
+            skill_config.confirmed = False
+            save_config(ws.root, ws.config)
+            confirmation_reset = True
+    return {"saved": True, "confirmation_reset": confirmation_reset}
 
 
 class SkillCreateRequest(BaseModel):

@@ -40,7 +40,7 @@ export function SkillEditorView({
 
   const save = useMutation({
     mutationFn: () => api.putSkill(skill, content),
-    onSuccess: () => {
+    onSuccess: (result) => {
       setDirty(false);
       setSaved(true);
       setLoadedFrom(content);
@@ -49,6 +49,11 @@ export function SkillEditorView({
       // new description or validity.
       queryClient.setQueryData(["skill", skill], { name: skill, content });
       void queryClient.invalidateQueries({ queryKey: ["skills"] });
+      if (result.confirmation_reset) {
+        // The core dropped this skill's confirmed flag; forget the cached
+        // config so the settings view rebuilds its draft from fresh data.
+        queryClient.removeQueries({ queryKey: ["config"] });
+      }
     },
   });
 

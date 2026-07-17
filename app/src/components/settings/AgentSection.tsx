@@ -355,7 +355,13 @@ export function AgentSection({
           <p className={styles.emptyBox}>{t("settings.skills.empty")}</p>
         )}
         {visibleSkills.map((skill) => {
-          const enabled = skills[skill.name]?.enabled ?? false;
+          const skillConfig = skills[skill.name];
+          const enabled = skillConfig?.enabled ?? false;
+          // Enabled but unconfirmed (the core reset the flag after a
+          // content change): the skill is not reaching the agent, say so
+          // and offer the confirmation card again.
+          const needsReconfirm =
+            enabled && !(skillConfig?.confirmed ?? false) && skill.valid;
           return (
             <div key={skill.name} className={styles.skillRow}>
               <div className={styles.skillText}>
@@ -371,6 +377,14 @@ export function AgentSection({
                     {skill.errors.join("; ")}
                   </p>
                 )}
+                {needsReconfirm && (
+                  <p className={styles.skillErrors}>
+                    <span className={styles.errorPill}>
+                      {t("settings.skills.unconfirmed")}
+                    </span>
+                    {t("settings.skills.unconfirmedHint")}
+                  </p>
+                )}
               </div>
               <div className={styles.skillActions}>
                 <label className={styles.checkItem}>
@@ -383,6 +397,15 @@ export function AgentSection({
                   />
                   {t("settings.skills.enable")}
                 </label>
+                {needsReconfirm && (
+                  <button
+                    type="button"
+                    className={styles.secondary}
+                    onClick={() => setPending({ kind: "skill", name: skill.name })}
+                  >
+                    {t("settings.skills.reconfirm")}
+                  </button>
+                )}
                 {!skill.errors.includes("missing") && (
                   <button
                     type="button"
@@ -468,6 +491,17 @@ function ConfirmCard({
   onConfirm: () => void;
   onCancel: () => void;
 }) {
+  const api = useApi();
+  const skillContent = useQuery({
+    queryKey: ["skill", pending.kind === "skill" ? pending.name : ""],
+    queryFn: () => api.getSkill(pending.name),
+    enabled: pending.kind === "skill",
+  });
+  // The gate must not be passable before the content could have been
+  // reviewed: while the skill body is loading or failed to load, the
+  // accept button stays off.
+  const acceptDisabled =
+    pending.kind === "skill" && skillContent.data === undefined;
   const title =
     pending.kind === "mcp"
       ? t("settings.confirm.mcpTitle")
@@ -488,7 +522,10 @@ function ConfirmCard({
         {pending.kind === "mcp" ? (
           <McpConfirmBody tools={tools} />
         ) : (
-          <SkillConfirmBody name={pending.name} />
+          <SkillConfirmBody
+            content={skillContent.data?.content}
+            isError={skillContent.isError}
+          />
         )}
         <div className={styles.confirmActions}>
           <button
@@ -499,7 +536,12 @@ function ConfirmCard({
           >
             {t("settings.confirm.cancel")}
           </button>
-          <button type="button" className={styles.primaryButton} onClick={onConfirm}>
+          <button
+            type="button"
+            className={styles.primaryButton}
+            disabled={acceptDisabled}
+            onClick={onConfirm}
+          >
             {t("settings.confirm.accept")}
           </button>
         </div>
@@ -529,19 +571,20 @@ function McpConfirmBody({ tools }: { tools: McpToolInfo[] }) {
   );
 }
 
-function SkillConfirmBody({ name }: { name: string }) {
-  const api = useApi();
-  const { data, isError } = useQuery({
-    queryKey: ["skill", name],
-    queryFn: () => api.getSkill(name),
-  });
+function SkillConfirmBody({
+  content,
+  isError,
+}: {
+  content: string | undefined;
+  isError: boolean;
+}) {
   return (
     <>
       <p className={styles.confirmIntro}>{t("settings.confirm.skillIntro")}</p>
       {isError ? (
         <p className={styles.skillFormError}>{t("settings.confirm.loadFailed")}</p>
-      ) : data ? (
-        <pre className={styles.confirmContent}>{data.content}</pre>
+      ) : content !== undefined ? (
+        <pre className={styles.confirmContent}>{content}</pre>
       ) : (
         <p className={styles.confirmIntro}>{t("editor.loading")}</p>
       )}

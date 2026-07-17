@@ -99,7 +99,7 @@ def wait_for(predicate, timeout: float = 5.0) -> None:
 def test_manager_connects_and_snapshots_tools() -> None:
     session = FakeSession([ECHO_TOOL], {"echo": text_result("echo:hi")})
     manager = MCPManager(
-        {"demo": McpServerConfig(command="demo-cmd", enabled=True)},
+        {"demo": McpServerConfig(command="demo-cmd", enabled=True, confirmed=True)},
         connector=make_connector({"demo-cmd": session}),
     )
     shutdown = run_manager(manager)
@@ -107,7 +107,6 @@ def test_manager_connects_and_snapshots_tools() -> None:
         wait_for(lambda: manager.status()[0]["state"] == "connected")
         status = manager.status()[0]
         assert status["name"] == "demo"
-        # enabled=True without an explicit confirmed migrates to confirmed.
         assert status["confirmed"] is True
         assert status["tools"] == [
             {"name": "echo", "description": "Echo the text back."}
@@ -120,7 +119,7 @@ def test_manager_connects_and_snapshots_tools() -> None:
 def test_agent_tools_wrap_namespace_and_bridge_from_worker_thread() -> None:
     session = FakeSession([ECHO_TOOL], {"echo": text_result("echo:hi")})
     manager = MCPManager(
-        {"demo": McpServerConfig(command="demo-cmd", enabled=True)},
+        {"demo": McpServerConfig(command="demo-cmd", enabled=True, confirmed=True)},
         connector=make_connector({"demo-cmd": session}),
     )
     shutdown = run_manager(manager)
@@ -159,8 +158,8 @@ def test_failing_server_degrades_without_touching_others() -> None:
     session = FakeSession([ECHO_TOOL], {"echo": text_result("echo:hi")})
     manager = MCPManager(
         {
-            "good": McpServerConfig(command="good-cmd", enabled=True),
-            "bad": McpServerConfig(command="bad-cmd", enabled=True),
+            "good": McpServerConfig(command="good-cmd", enabled=True, confirmed=True),
+            "bad": McpServerConfig(command="bad-cmd", enabled=True, confirmed=True),
         },
         connector=make_connector(
             {"good-cmd": session, "bad-cmd": RuntimeError("cannot spawn")}

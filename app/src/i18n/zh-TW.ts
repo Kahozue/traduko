@@ -140,11 +140,14 @@ export const zhTW = {
   "settings.skills.invalid": "無效",
   "settings.skills.edit": "編輯",
   "settings.skills.enable": "啟用",
+  "settings.skills.unconfirmed": "未確認",
+  "settings.skills.unconfirmedHint": "內容已變更，重新確認後才會提供給校對 agent",
+  "settings.skills.reconfirm": "重新確認",
   "settings.confirm.mcpTitle": "確認掛載 MCP 伺服器",
   "settings.confirm.mcpIntro":
     "確認後，此伺服器提供的工具會掛進校對 agent，可讀取傳入的譯文並執行其宣告的操作。目前列出的工具：",
   "settings.confirm.mcpNoTools":
-    "此伺服器尚未連線，須待連線後才能列出工具清單。現在確認即代表允許其全部工具掛進校對 agent；儲存並連線後可回到此處檢視清單。",
+    "此伺服器尚未回報工具清單。現在確認即代表允許其全部工具掛進校對 agent；儲存並連線後，伺服器列會顯示工具數量與連線狀態。",
   "settings.confirm.skillTitle": "確認啟用 skill",
   "settings.confirm.skillIntro":
     "確認後，此 skill 的全文會提供給校對 agent 作為指示。請先檢視內容：",

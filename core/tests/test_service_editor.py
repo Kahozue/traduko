@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 from traduko.media import ffmpeg_available
 
 from traduko.artifacts import ArtifactStore
-from traduko.models import StageStatus, TaskRecord
+from traduko.models import StageStatus, TaskRecord, TaskStatus
 from traduko.service.app import create_app
 
 
@@ -85,7 +85,7 @@ def _mark_pipeline_completed(tmp_path, task):
         st.status = StageStatus.COMPLETED
         if st.type == "translate":
             st.artifacts = ["05-translation.json"]
-    record.status = "completed"
+    record.status = TaskStatus.COMPLETED
     (task_dir / "task.json").write_text(record.model_dump_json(indent=2))
 
 

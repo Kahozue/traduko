@@ -71,7 +71,7 @@ def _split_frontmatter(text: str) -> tuple[dict, str, str]:
     frontmatter/body are unusable.
     """
     lines = text.split("\n")
-    if not lines or lines[0].strip() != "---":
+    if lines[0].strip() != "---":
         return {}, "", "missing frontmatter fence"
     for index in range(1, len(lines)):
         if lines[index].strip() != "---":
@@ -124,9 +124,11 @@ class SkillsManager:
     def _load(self, name: str) -> tuple[dict, str, list[str]]:
         # A file that vanishes mid-scan or holds non-utf-8 bytes degrades to
         # an invalid skill instead of blowing up listing or agent assembly.
+        # utf-8-sig strips the BOM that Windows editors prepend, which would
+        # otherwise break the frontmatter fence with a misleading error.
         path = self._skill_path(name)
         try:
-            text = path.read_text(encoding="utf-8")
+            text = path.read_text(encoding="utf-8-sig")
         except (OSError, UnicodeDecodeError) as error:
             return {}, "", [f"unreadable file: {error}"]
         return validate_skill(name, text)
@@ -173,7 +175,9 @@ class SkillsManager:
             meta, _, errors = self._load(name)
             if errors:
                 continue
-            result.append((name, str(meta.get("description"))))
+            # Fold whitespace so a multi-line description cannot forge
+            # extra list entries or instruction lines in the prompt block.
+            result.append((name, " ".join(str(meta.get("description")).split())))
         return result
 
     def prompt_block(self) -> str:
@@ -230,9 +234,13 @@ class SkillsManager:
         path = self._skill_path(name)
         if _name_errors(name) or not path.is_file():
             raise FileNotFoundError(f"skill not found: {name}")
-        return path.read_text(encoding="utf-8")
+        return path.read_text(encoding="utf-8-sig")
 
     def write(self, name: str, content: str) -> None:
+        # Deliberately PUT-as-create: writing a name that has no directory
+        # yet materializes it, unlike create() which rejects duplicates.
+        # Validation ties the frontmatter name to the directory name, which
+        # also transitively enforces the path-safety rule of read().
         _, _, errors = validate_skill(name, content)
         if errors:
             raise SkillValidationError(errors)
