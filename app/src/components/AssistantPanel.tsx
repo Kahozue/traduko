@@ -83,6 +83,12 @@ export function AssistantPanel({ onClose }: { onClose: () => void }) {
     mutationFn: (text: string) => api.sendAssistantMessage(text),
     onSuccess: (data) => {
       queryClient.setQueryData(HISTORY_KEY, data.history);
+      // A reply that filed proposals carries ids the proposals query has
+      // never seen (it resolved at mount); refetch so the new cards render
+      // without a panel remount.
+      if (data.proposal_ids.length > 0) {
+        void queryClient.invalidateQueries({ queryKey: PROPOSALS_KEY });
+      }
       setDraft("");
     },
   });
@@ -142,7 +148,10 @@ export function AssistantPanel({ onClose }: { onClose: () => void }) {
             key={`${message.role}-${message.ts}-${index}`}
             message={message}
             proposals={proposalsById}
-            proposalsLoading={proposals.isLoading}
+            // A fetch error counts as not-yet-loaded: without proposal data
+            // we cannot tell removed from present, so keep the card silent
+            // rather than render a false "proposal removed" note.
+            proposalsLoading={proposals.isLoading || proposals.isError}
             onApprove={(id) => approveProposal.mutate(id)}
             onReject={(id) => rejectProposal.mutate(id)}
             approvingId={approveProposal.isPending ? approveProposal.variables : undefined}
@@ -223,10 +232,10 @@ function MessageBubble({
         {proposalIds.map((id) => {
           const proposal = proposals[id];
           if (!proposal) {
-            // Loading: the shared proposals query hasn't resolved yet — say
-            // nothing rather than flash a false "gone" note. Resolved but
-            // absent: the id genuinely doesn't map to a known proposal, so
-            // say so instead of silently dropping the card.
+            // Loading or errored: the shared proposals query has no usable
+            // data yet — say nothing rather than flash a false "gone" note.
+            // Resolved but absent: the id genuinely doesn't map to a known
+            // proposal, so say so instead of silently dropping the card.
             return proposalsLoading ? null : (
               <p key={id} className={styles.proposalMissing}>
                 {t("assistant.proposal.missing")}

@@ -227,6 +227,44 @@ test("a proposal id with no matching proposal (after load) renders a removed not
   expect(await screen.findByText("此提案已無法取得。")).toBeInTheDocument();
 });
 
+test("a proposal created by the just-sent message renders its card without remount", async () => {
+  const reply: AssistantReply = {
+    reply: "已建立提案，請確認後核准。",
+    proposal_ids: ["prop-1"],
+    converged: true,
+    reason: "",
+    history: HISTORY_WITH_PROPOSAL,
+  };
+  // First fetch (at mount) predates the proposal; the refetch triggered by
+  // send.onSuccess's invalidation returns it.
+  const listProposals = vi.fn().mockResolvedValueOnce([]).mockResolvedValue([PROPOSAL]);
+  const sendAssistantMessage = vi.fn().mockResolvedValue(reply);
+  setup({ api: { listProposals, sendAssistantMessage } });
+  await screen.findByText("尚無對話，輸入訊息開始");
+  const textarea = screen.getByPlaceholderText("輸入訊息，Enter 送出、Shift+Enter 換行");
+  await userEvent.type(textarea, "把預設專案改成 anime");
+  await userEvent.click(screen.getByRole("button", { name: "傳送" }));
+  expect(await screen.findByText("調高單任務預算上限以配合本月大量任務。")).toBeInTheDocument();
+  expect(screen.getByText("待處理")).toBeInTheDocument();
+  expect(screen.getByText("+default_project: anime")).toBeInTheDocument();
+  expect(listProposals).toHaveBeenCalledTimes(2);
+  expect(screen.queryByText("此提案已無法取得。")).not.toBeInTheDocument();
+});
+
+test("a proposals fetch failure does not render the removed note", async () => {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  setup({
+    history: HISTORY_WITH_PROPOSAL,
+    api: { listProposals: vi.fn().mockRejectedValue(new ApiError(500, "boom")) },
+    queryClient,
+  });
+  expect(await screen.findByText("已建立提案，請確認後核准。")).toBeInTheDocument();
+  await waitFor(() =>
+    expect(queryClient.getQueryState(["proposals"])?.status).toBe("error"),
+  );
+  expect(screen.queryByText("此提案已無法取得。")).not.toBeInTheDocument();
+});
+
 test("approving a pending proposal calls approveProposal and invalidates proposals and config", async () => {
   const approveProposal = vi.fn().mockResolvedValue({});
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
