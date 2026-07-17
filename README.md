@@ -4,6 +4,10 @@
 
 Traduko 是世界語的「翻譯」。專案定位是編排層：不重造引擎，而是把現有的開源引擎（ffmpeg、faster-whisper、任何 OpenAI 相容的 LLM 端點）串成可靠、可續跑、可審校的自動化流程。
 
+![任務儀表板](docs/screenshot-tasks-light.png)
+
+![設定頁（深色主題）](docs/screenshot-settings-dark.png)
+
 ## 功能
 
 - **影音字幕管線**：影片或音檔進，抽取音軌、語音辨識、斷句、LLM 翻譯、AI agent 校對、輸出 SRT/VTT/ASS，可選硬燒字幕進影片。字幕檔（SRT/VTT/ASS/TXT）也可直接作為輸入。
@@ -13,8 +17,9 @@ Traduko 是世界語的「翻譯」。專案定位是編排層：不重造引擎
 - **成本控制**：內建 token 計價與預算計量，觸頂自動暫停任務，補預算後可續跑；翻譯進度以 partial artifact 落盤，中斷不丟已翻內容。
 - **名詞表與提示詞**：名詞表強制術語一致；翻譯與校對的提示詞模板皆為資料根下的純文字檔，可直接編輯。
 - **任務預檢**：執行前檢查輸入檔、ffmpeg、ASR 模型、LLM 金鑰與預算，問題先擋在開跑之前。
-- **通知**：任務事件可推送 Webhook、Discord（webhook）與 Email。
-- **桌面 App**：任務儀表板、WebSocket 即時事件流、亮暗雙主題、系統匣常駐（關窗不退出）；App 內建 core 執行檔，開箱即用。
+- **通知與遙控**：任務事件可推送 Webhook、Discord 與 Email；Discord bot 提供 slash 指令遙控（列任務、執行、暫停、取消），進度訊息在頻道內即時更新。
+- **雲端同步**：設定、提示詞、名詞表與任務紀錄可經本地資料夾（Dropbox 等雲盤同步夾）或 WebDAV 在多機間同步，名詞表做列級三方合併、衝突留給人工裁決，他機任務以唯讀呈現。
+- **桌面 App**：任務儀表板、WebSocket 即時事件流、亮暗雙主題、供應商／預算／通知／同步的集中設定頁、系統匣常駐（關窗不退出）；App 內建 core 執行檔，開箱即用。
 - **資料開放**：所有任務、產物、設定都是資料根下人類可讀的分層檔案，檔案是唯一真相來源，SQLite 僅作查詢索引，可隨時重建。
 
 介面語言目前為繁體中文。
@@ -111,6 +116,6 @@ cd app/src-tauri && cargo test      # Rust 殼測試
 
 - 文件翻譯管線（長篇小說取向：Markdown/TXT/EPUB/HTML）
 - TTS 配音
-- Discord bot 雙向遙控
-- 設定與提示詞的雲端同步（WebDAV）
+- 內建設定與診斷助理
+- Anthropic 與 Gemini 原生 adapter
 - 漫畫翻譯管線
