@@ -70,7 +70,9 @@ export function AppShell({
         </div>
       </aside>
       <main className={styles.content}>{children}</main>
-      {assistantOpen && <AssistantPanel onClose={() => setAssistantOpen(false)} />}
+      {assistantOpen && conn.status === "ready" && (
+        <AssistantPanel onClose={() => setAssistantOpen(false)} />
+      )}
     </div>
   );
 }

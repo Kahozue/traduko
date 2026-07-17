@@ -384,6 +384,9 @@ export interface AssistantMessageDoc {
   ts: string;
   // Only present on assistant messages that filed a config proposal.
   proposal_ids?: string[];
+  // The model that produced this assistant reply; absent on older rows and
+  // on user messages.
+  model?: string;
 }
 
 export interface AssistantReply {

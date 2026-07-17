@@ -190,7 +190,9 @@ export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <ConnectionProvider>
-        <Main />
+        <ErrorBoundary>
+          <Main />
+        </ErrorBoundary>
       </ConnectionProvider>
     </QueryClientProvider>
   );

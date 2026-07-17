@@ -76,6 +76,15 @@ class AssistantUnavailable(Exception):
     """No usable LLM provider is configured for the assistant to run on."""
 
 
+class AssistantLLMError(Exception):
+    """The assistant's provider was reachable but the chat call failed.
+
+    Distinct from AssistantUnavailable (no provider at all): here a provider
+    is configured but the request was rejected — a bad key, an unknown
+    model, exhausted quota, a network fault. The raw provider message is
+    preserved so the UI can classify it into readable wording."""
+
+
 def _is_secret_key(name: str) -> bool:
     lowered = name.lower()
     return any(marker in lowered for marker in _SECRET_MARKERS)
@@ -469,7 +478,14 @@ def run_assistant_message(ws: Workspace, text: str) -> dict:
         recorder=recorder,
         limits=ASSISTANT_LIMITS,
     )
-    result = runner.run(goal)
+    try:
+        result = runner.run(goal)
+    except LLMError as error:
+        # The provider was reachable enough to try but rejected the call (bad
+        # key, unknown model, quota). Surface the raw message so the UI layer
+        # can classify it; the turn is not persisted to history because no
+        # assistant reply exists.
+        raise AssistantLLMError(str(error)) from error
     reply = result.summary if result.converged else _not_converged_reply(result.reason)
 
     history.append(
@@ -485,6 +501,9 @@ def run_assistant_message(ws: Workspace, text: str) -> dict:
             "text": reply,
             "ts": datetime.now(timezone.utc).isoformat(timespec="seconds"),
             "proposal_ids": proposal_ids,
+            # Record which model produced this reply so the panel can show it;
+            # older history rows without this field render no model chip.
+            "model": model,
         }
     )
     _save_history(ws, history)

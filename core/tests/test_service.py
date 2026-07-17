@@ -1151,6 +1151,22 @@ def test_assistant_message_blank_text_is_422(tmp_path: Path) -> None:
         assert response.status_code == 422
 
 
+def test_assistant_message_provider_failure_is_502_with_raw_detail(
+    tmp_path: Path,
+) -> None:
+    # An empty scripted response list makes the provider raise LLMError on the
+    # first turn (a runtime bad-key / unknown-model stand-in). The endpoint
+    # must surface it as 502 with the raw message, not a generic 500, so the
+    # panel can classify it into readable wording.
+    with service(tmp_path) as (client, headers, token):
+        configure_scripted_assistant(client, headers, [])
+        response = client.post(
+            "/assistant/message", headers=headers, json={"text": "hi"}
+        )
+        assert response.status_code == 502
+        assert "scripted provider ran out of responses" in response.json()["detail"]
+
+
 def test_assistant_message_full_flow_and_history_persists(tmp_path: Path) -> None:
     with service(tmp_path) as (client, headers, token):
         configure_scripted_assistant(

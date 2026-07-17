@@ -36,6 +36,7 @@ import yaml
 from .. import asrsetup
 from ..asrsetup import AsrManager
 from ..agents.assistant import (
+    AssistantLLMError,
     AssistantUnavailable,
     clear_history as clear_assistant_history,
     load_history as load_assistant_history,
@@ -789,6 +790,11 @@ def post_assistant_message(request: Request, body: AssistantMessageRequest) -> d
         # No usable LLM provider: 409 so the panel can guide the operator to
         # configuration rather than surfacing a generic server error.
         raise HTTPException(status_code=409, detail=str(error)) from None
+    except AssistantLLMError as error:
+        # Provider configured but the call failed (bad key, unknown model,
+        # quota, network). 502 with the raw message so the panel classifies
+        # it into readable wording instead of a generic 500.
+        raise HTTPException(status_code=502, detail=str(error)) from None
     return {**result, "history": load_assistant_history(ws)}
 
 

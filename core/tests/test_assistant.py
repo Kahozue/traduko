@@ -5,6 +5,7 @@ import pytest
 
 from traduko import skillhub
 from traduko.agents.assistant import (
+    AssistantLLMError,
     AssistantUnavailable,
     _build_propose_tool,
     build_assistant_tools,
@@ -600,3 +601,34 @@ def test_malformed_history_elements_are_dropped_not_crashed_on(
     # one valid row plus this turn's new user/assistant pair remain.
     assert len(data["messages"]) == 3
     assert all(isinstance(row, dict) for row in data["messages"])
+
+
+def test_run_assistant_message_records_model_on_assistant_reply(tmp_path: Path) -> None:
+    config = CoreConfig(
+        llm_providers={
+            "default": {
+                "type": "scripted",
+                "responses": ['{"done": true, "summary": "ok"}'],
+                "model": "gpt-4o-mini",
+            }
+        },
+    )
+    save_config(tmp_path, config)
+    ws = Workspace.open(tmp_path)
+    run_assistant_message(ws, "hi")
+    messages = json.loads(history_path(ws).read_text(encoding="utf-8"))["messages"]
+    assert messages[1]["role"] == "assistant"
+    assert messages[1]["model"] == "gpt-4o-mini"
+    assert "model" not in messages[0]
+
+
+def test_run_assistant_message_wraps_provider_failure_as_llm_error(
+    tmp_path: Path,
+) -> None:
+    # An empty scripted response list makes the provider raise LLMError on the
+    # first turn, standing in for a bad key / unknown model at runtime.
+    ws = scripted_ws(tmp_path, [])
+    with pytest.raises(AssistantLLMError):
+        run_assistant_message(ws, "hello")
+    # A failed turn is not persisted: no half-written conversation.
+    assert not history_path(ws).exists()

@@ -347,6 +347,8 @@ export const zhTW = {
   "error.auth.hint": "到設定檢查該供應商的 API key 與額度。",
   "error.keyMissing.summary": "找不到 API key",
   "error.keyMissing.hint": "到設定填入 API key，或確認對應的環境變數已設定。",
+  "error.model.summary": "模型不存在或無法使用",
+  "error.model.hint": "到設定確認模型名稱是否正確，或換一個該供應商支援的模型。",
   "error.rateLimit.summary": "供應商限流或額度用盡",
   "error.rateLimit.hint": "稍後重試，或到設定換一個供應商或模型。",
   "error.ffmpeg.summary": "ffmpeg 不可用",

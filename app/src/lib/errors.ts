@@ -20,7 +20,13 @@ const PATTERNS: { pattern: RegExp; summary: MessageKey; hint: MessageKey }[] = [
     hint: "error.keyMissing.hint",
   },
   {
-    pattern: /429|rate.?limit|quota/i,
+    pattern:
+      /model[_ ]?not[_ ]?found|does not exist|no such model|unknown model|invalid model|model.*(not found|unavailable)/i,
+    summary: "error.model.summary",
+    hint: "error.model.hint",
+  },
+  {
+    pattern: /429|rate.?limit|quota|insufficient|exceeded your current quota|billing/i,
     summary: "error.rateLimit.summary",
     hint: "error.rateLimit.hint",
   },
