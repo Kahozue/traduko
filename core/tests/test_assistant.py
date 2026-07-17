@@ -335,6 +335,25 @@ def test_default_llm_provider_falls_back_to_sole_entry(tmp_path: Path) -> None:
     }
 
 
+def test_default_llm_provider_picks_first_key_in_sorted_order_when_no_default(
+    tmp_path: Path,
+) -> None:
+    config = CoreConfig(
+        llm_providers={
+            "zeta": {"type": "scripted", "responses": ["should not be used"]},
+            "alpha": {
+                "type": "scripted",
+                "responses": ['{"done": true, "summary": "ok"}'],
+            },
+        }
+    )
+    save_config(tmp_path, config)
+    ws = Workspace.open(tmp_path)
+    result = run_assistant_message(ws, "hi")
+    assert result["converged"] is True
+    assert result["reply"] == "ok"
+
+
 def test_propose_config_change_acceptance_chain_propose_approve_load_config(
     tmp_path: Path,
 ) -> None:
@@ -451,3 +470,55 @@ def test_skills_prompt_block_is_injected_into_goal(tmp_path: Path) -> None:
         assert "Helps operate the translation pipeline." in goal
     finally:
         skillhub.set_active(None)
+
+
+def test_invalid_json_history_file_degrades_to_empty_history(tmp_path: Path) -> None:
+    ws = scripted_ws(tmp_path, ['{"done": true, "summary": "ok"}'])
+    history_path(ws).parent.mkdir(parents=True, exist_ok=True)
+    history_path(ws).write_text("{not valid json", encoding="utf-8")
+
+    result = run_assistant_message(ws, "hello")
+
+    assert result["converged"] is True
+    assert result["reply"] == "ok"
+    data = json.loads(history_path(ws).read_text(encoding="utf-8"))
+    # The corrupt file was discarded; the run starts fresh and appends its
+    # own user/assistant pair.
+    assert len(data["messages"]) == 2
+
+
+def test_malformed_history_elements_are_dropped_not_crashed_on(
+    tmp_path: Path,
+) -> None:
+    ws = scripted_ws(tmp_path, ['{"done": true, "summary": "ok"}'])
+    history_path(ws).parent.mkdir(parents=True, exist_ok=True)
+    history_path(ws).write_text(
+        json.dumps(
+            {
+                "messages": [
+                    "not a dict",
+                    42,
+                    None,
+                    {
+                        "role": "user",
+                        "text": "surviving-msg-001",
+                        "ts": "2026-01-01T00:00:00+00:00",
+                    },
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = run_assistant_message(ws, "hello again")
+
+    assert result["converged"] is True
+    files = run_files(ws)
+    goal = start_record_goal(files[0])
+    assert "surviving-msg-001" in goal
+
+    data = json.loads(history_path(ws).read_text(encoding="utf-8"))
+    # Malformed rows were dropped, not preserved and not fatal; only the
+    # one valid row plus this turn's new user/assistant pair remain.
+    assert len(data["messages"]) == 3
+    assert all(isinstance(row, dict) for row in data["messages"])

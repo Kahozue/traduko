@@ -378,7 +378,12 @@ def _load_history(ws: Workspace) -> list[dict]:
     except (OSError, json.JSONDecodeError):
         return []
     messages = data.get("messages") if isinstance(data, dict) else None
-    return messages if isinstance(messages, list) else []
+    if not isinstance(messages, list):
+        return []
+    # Per-element validation, not just container-level: a malformed row
+    # (wrong type, hand-edited file) is dropped rather than crashing the
+    # goal transcript or invalidating rows around it in the same file.
+    return [message for message in messages if isinstance(message, dict)]
 
 
 def _save_history(ws: Workspace, messages: list[dict]) -> None:
