@@ -1,8 +1,9 @@
+import { QueryClient } from "@tanstack/react-query";
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test, vi } from "vitest";
 import { ApiError, type ApiClient } from "../lib/api/client";
-import type { AssistantMessageDoc, AssistantReply } from "../lib/api/types";
+import type { AssistantMessageDoc, AssistantReply, ProposalDoc } from "../lib/api/types";
 import { renderWithConnection } from "../test/helpers";
 import { AssistantPanel } from "./AssistantPanel";
 
@@ -15,21 +16,52 @@ const HISTORY: AssistantMessageDoc[] = [
   },
 ];
 
+const PROPOSAL: ProposalDoc = {
+  id: "prop-1",
+  kind: "config",
+  reason: "調高單任務預算上限以配合本月大量任務。",
+  patch: { default_project: "anime" },
+  diff: [
+    "--- traduko.yaml (current)",
+    "+++ traduko.yaml (proposed)",
+    "@@ -1,3 +1,3 @@",
+    " budget:",
+    "-default_project: default",
+    "+default_project: anime",
+    "",
+  ].join("\n"),
+  status: "pending",
+  created_at: "2026-07-18T01:00:02+00:00",
+};
+
+const HISTORY_WITH_PROPOSAL: AssistantMessageDoc[] = [
+  { role: "user", text: "把預設專案改成 anime", ts: "2026-07-18T01:00:00+00:00" },
+  {
+    role: "assistant",
+    text: "已建立提案，請確認後核准。",
+    ts: "2026-07-18T01:00:02+00:00",
+    proposal_ids: ["prop-1"],
+  },
+];
+
 function setup({
   history = [],
   api: apiOverrides = {},
+  queryClient,
 }: {
   history?: AssistantMessageDoc[];
   api?: Partial<ApiClient>;
+  queryClient?: QueryClient;
 } = {}) {
   const onClose = vi.fn();
   const api: Partial<ApiClient> = {
     getAssistantHistory: vi.fn().mockResolvedValue(history),
     sendAssistantMessage: vi.fn(),
     clearAssistant: vi.fn().mockResolvedValue({ cleared: true }),
+    listProposals: vi.fn().mockResolvedValue([]),
     ...apiOverrides,
   };
-  renderWithConnection(<AssistantPanel onClose={onClose} />, { api });
+  renderWithConnection(<AssistantPanel onClose={onClose} />, { api, queryClient });
   return { onClose, api };
 }
 
@@ -155,4 +187,85 @@ test("a generic send failure shows a generic error message", async () => {
   await userEvent.type(textarea, "hello");
   await userEvent.click(screen.getByRole("button", { name: "傳送" }));
   expect(await screen.findByText("傳送失敗，請稍後再試。")).toBeInTheDocument();
+});
+
+test("a pending proposal renders reason, diff lines, status pill and both action buttons", async () => {
+  setup({
+    history: HISTORY_WITH_PROPOSAL,
+    api: { listProposals: vi.fn().mockResolvedValue([PROPOSAL]) },
+  });
+  expect(await screen.findByText("調高單任務預算上限以配合本月大量任務。")).toBeInTheDocument();
+  expect(screen.getByText("待處理")).toBeInTheDocument();
+  expect(screen.getByText("-default_project: default")).toBeInTheDocument();
+  expect(screen.getByText("+default_project: anime")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "核准" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "駁回" })).toBeInTheDocument();
+});
+
+test("an applied proposal shows its pill but no action buttons", async () => {
+  setup({
+    history: HISTORY_WITH_PROPOSAL,
+    api: { listProposals: vi.fn().mockResolvedValue([{ ...PROPOSAL, status: "applied" }]) },
+  });
+  expect(await screen.findByText("已套用")).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "核准" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "駁回" })).not.toBeInTheDocument();
+});
+
+test("a proposal id with no matching proposal (after load) renders a removed note", async () => {
+  setup({
+    history: [
+      {
+        role: "assistant",
+        text: "已建立提案。",
+        ts: "2026-07-18T01:00:02+00:00",
+        proposal_ids: ["gone"],
+      },
+    ],
+    api: { listProposals: vi.fn().mockResolvedValue([]) },
+  });
+  expect(await screen.findByText("此提案已無法取得。")).toBeInTheDocument();
+});
+
+test("approving a pending proposal calls approveProposal and invalidates proposals and config", async () => {
+  const approveProposal = vi.fn().mockResolvedValue({});
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+  setup({
+    history: HISTORY_WITH_PROPOSAL,
+    api: { listProposals: vi.fn().mockResolvedValue([PROPOSAL]), approveProposal },
+    queryClient,
+  });
+  await userEvent.click(await screen.findByRole("button", { name: "核准" }));
+  await waitFor(() => expect(approveProposal).toHaveBeenCalledWith("prop-1"));
+  await waitFor(() =>
+    expect(invalidateSpy).toHaveBeenCalledWith(expect.objectContaining({ queryKey: ["proposals"] })),
+  );
+  expect(invalidateSpy).toHaveBeenCalledWith(expect.objectContaining({ queryKey: ["config"] }));
+});
+
+test("rejecting a pending proposal calls rejectProposal and invalidates proposals", async () => {
+  const rejectProposal = vi.fn().mockResolvedValue({ ...PROPOSAL, status: "rejected" });
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+  setup({
+    history: HISTORY_WITH_PROPOSAL,
+    api: { listProposals: vi.fn().mockResolvedValue([PROPOSAL]), rejectProposal },
+    queryClient,
+  });
+  await userEvent.click(await screen.findByRole("button", { name: "駁回" }));
+  await waitFor(() => expect(rejectProposal).toHaveBeenCalledWith("prop-1"));
+  await waitFor(() =>
+    expect(invalidateSpy).toHaveBeenCalledWith(expect.objectContaining({ queryKey: ["proposals"] })),
+  );
+});
+
+test("a failed approve shows an inline error on that proposal's card", async () => {
+  const approveProposal = vi.fn().mockRejectedValue(new ApiError(500, "boom"));
+  setup({
+    history: HISTORY_WITH_PROPOSAL,
+    api: { listProposals: vi.fn().mockResolvedValue([PROPOSAL]), approveProposal },
+  });
+  await userEvent.click(await screen.findByRole("button", { name: "核准" }));
+  expect(await screen.findByText("核准失敗，請稍後再試。")).toBeInTheDocument();
 });

@@ -79,8 +79,15 @@
   justify-content: flex-end;
 }
 
-.bubble {
+.bubbleColumn {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
   max-width: 88%;
+  min-width: 0;
+}
+
+.bubble {
   padding: 9px 12px;
   border-radius: var(--radius-m);
   font-size: var(--fs-body);
@@ -98,6 +105,159 @@
   border: 1px solid var(--border);
   background: var(--bg-subtle);
   color: var(--text-primary);
+}
+
+/* Proposal card: a config change an assistant reply filed, attached below
+   the bubble that filed it (never nested inside the bubble itself). */
+.proposalCard {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-m);
+  background: var(--bg-surface);
+}
+
+.proposalHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.proposalTitle {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--fs-note);
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.proposalStatus {
+  flex-shrink: 0;
+  padding: 3px 10px;
+  border-radius: var(--radius-full);
+  background: var(--neutral-soft);
+  color: var(--text-secondary);
+  font-size: var(--fs-meta);
+  font-weight: 500;
+}
+
+.proposalStatus[data-status="pending"] {
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+
+.proposalStatus[data-status="applied"] {
+  background: var(--ok-soft);
+  color: var(--ok);
+}
+
+.proposalStatus[data-status="rejected"] {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.proposalReason {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--fs-note);
+  line-height: 1.6;
+}
+
+.diff {
+  margin: 0;
+  padding: 6px 0;
+  border-radius: var(--radius-s);
+  background: var(--bg-subtle);
+  font-family: var(--font-mono);
+  font-size: var(--fs-meta);
+  line-height: 1.6;
+  overflow-x: auto;
+  white-space: pre;
+}
+
+.diffLine {
+  display: block;
+  padding: 0 10px;
+  color: var(--text-secondary);
+}
+
+.diffLine[data-kind="add"] {
+  background: var(--ok-soft);
+  color: var(--ok);
+}
+
+.diffLine[data-kind="remove"] {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.diffLine[data-kind="context"] {
+  color: var(--text-primary);
+}
+
+.proposalActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.proposalReject {
+  height: 30px;
+  padding: 0 12px;
+  border: 1px solid var(--danger);
+  border-radius: var(--radius-s);
+  background: var(--bg-surface);
+  color: var(--danger);
+  font-size: var(--fs-note);
+  font-weight: 500;
+  cursor: pointer;
+  transition: background var(--transition);
+}
+
+.proposalReject:hover:not(:disabled) {
+  background: var(--danger-soft);
+}
+
+.proposalApprove {
+  height: 30px;
+  padding: 0 12px;
+  border: none;
+  border-radius: var(--radius-s);
+  background: var(--accent);
+  color: var(--text-on-dark);
+  font-size: var(--fs-note);
+  font-weight: 500;
+  cursor: pointer;
+  transition: background var(--transition);
+}
+
+.proposalApprove:hover:not(:disabled) {
+  background: var(--accent-strong);
+}
+
+.proposalReject:disabled,
+.proposalApprove:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.proposalError {
+  margin: 0;
+  color: var(--danger);
+  font-size: var(--fs-meta);
+}
+
+.proposalMissing {
+  margin: 0;
+  padding: 8px 12px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-m);
+  color: var(--text-secondary);
+  font-size: var(--fs-note);
+  font-style: italic;
 }
 
 .notice {

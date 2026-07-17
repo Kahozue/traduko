@@ -4,8 +4,11 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ApiClient } from "../lib/api/client";
 import { ConnectionContext } from "../lib/connection";
 
-export function renderWithConnection(ui: ReactNode, { api }: { api: Partial<ApiClient> }) {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+export function renderWithConnection(
+  ui: ReactNode,
+  { api, queryClient }: { api: Partial<ApiClient>; queryClient?: QueryClient },
+) {
+  const client = queryClient ?? new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={client}>
       <ConnectionContext.Provider
