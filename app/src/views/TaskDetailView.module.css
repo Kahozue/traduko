@@ -182,9 +182,59 @@
 }
 
 .primary:disabled,
-.danger:disabled {
+.danger:disabled,
+.secondary:disabled {
   opacity: 0.45;
   cursor: default;
+}
+
+.outputs {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.output {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+  border-top: 1px solid var(--border);
+}
+
+.output:first-child {
+  border-top: none;
+}
+
+.outputName {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: var(--fs-note);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.outputSize {
+  color: var(--text-secondary);
+  font-size: var(--fs-meta);
+  font-variant-numeric: tabular-nums;
+}
+
+.outputButton {
+  padding: 5px 11px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-s);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font-size: var(--fs-note);
+  cursor: pointer;
+  transition: background var(--transition);
+}
+
+.outputButton:hover {
+  background: var(--bg-inset);
 }
 
 .checkpoint {

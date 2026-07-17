@@ -19,6 +19,55 @@ fn connection_info() -> ConnectionInfo {
     }
 }
 
+// Only files under the Traduko data root may be opened or revealed; the
+// webview never gets a general "open any path" primitive.
+fn checked_data_path(path: &str) -> Result<std::path::PathBuf, String> {
+    let root = paths::resolve_data_root();
+    let target = std::path::PathBuf::from(path);
+    if !target.starts_with(&root) {
+        return Err("path is outside the data root".into());
+    }
+    if !target.exists() {
+        return Err("file not found".into());
+    }
+    Ok(target)
+}
+
+#[tauri::command]
+fn open_artifact(path: String) -> Result<(), String> {
+    let target = checked_data_path(&path)?;
+    #[cfg(target_os = "macos")]
+    let status = std::process::Command::new("open").arg(&target).status();
+    #[cfg(target_os = "windows")]
+    let status = std::process::Command::new("cmd")
+        .args(["/C", "start", ""])
+        .arg(&target)
+        .status();
+    #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
+    let status = std::process::Command::new("xdg-open").arg(&target).status();
+    status.map_err(|e| e.to_string()).and_then(|s| {
+        if s.success() { Ok(()) } else { Err("opener exited with an error".into()) }
+    })
+}
+
+#[tauri::command]
+fn reveal_artifact(path: String) -> Result<(), String> {
+    let target = checked_data_path(&path)?;
+    #[cfg(target_os = "macos")]
+    let status = std::process::Command::new("open").arg("-R").arg(&target).status();
+    #[cfg(target_os = "windows")]
+    let status = std::process::Command::new("explorer")
+        .arg(format!("/select,{}", target.display()))
+        .status();
+    #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
+    let status = std::process::Command::new("xdg-open")
+        .arg(target.parent().unwrap_or(&target))
+        .status();
+    status.map_err(|e| e.to_string()).and_then(|s| {
+        if s.success() { Ok(()) } else { Err("opener exited with an error".into()) }
+    })
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     use tauri::Manager;
@@ -29,6 +78,8 @@ pub fn run() {
         .manage(core_process::CoreProcess(std::sync::Mutex::new(None)))
         .invoke_handler(tauri::generate_handler![
             connection_info,
+            open_artifact,
+            reveal_artifact,
             core_process::ensure_core_running
         ])
         .setup(|app| {

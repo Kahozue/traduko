@@ -148,6 +148,54 @@ test("missing ASR model offers download-and-run", async () => {
   );
 });
 
+test("completed task lists outputs and enables the subtitle editor", async () => {
+  const completed = { ...task, status: "completed" as const };
+  const listArtifacts = vi.fn().mockResolvedValue([
+    { file: "06-translation.json", index: 6, name: "translation.json", schema_version: 1, size: 2048, mtime: 1 },
+    { file: "07-output.srt", index: 7, name: "output.srt", schema_version: null, size: 4096, mtime: 2 },
+  ]);
+  const onOpenSubtitleEditor = vi.fn();
+  const api: Partial<ApiClient> = {
+    showTask: vi.fn().mockResolvedValue(completed),
+    listArtifacts,
+  };
+  renderWithConnection(<TaskDetailView
+      project="default"
+      taskId="t1"
+      onBack={() => {}}
+      onOpenSubtitleEditor={onOpenSubtitleEditor}
+      onOpenStyleEditor={() => {}}
+    />, {
+    api,
+  });
+  await waitFor(() => expect(screen.getByText("07-output.srt")).toBeInTheDocument());
+  expect(screen.queryByText("06-translation.json")).not.toBeInTheDocument();
+  expect(screen.getByText("在 Finder 顯示")).toBeInTheDocument();
+  const editorButton = screen.getByRole("button", { name: "字幕編輯器" });
+  expect(editorButton).toBeEnabled();
+  await userEvent.click(editorButton);
+  expect(onOpenSubtitleEditor).toHaveBeenCalled();
+});
+
+test("subtitle editor entry is disabled without a translation artifact", async () => {
+  const api: Partial<ApiClient> = {
+    showTask: vi.fn().mockResolvedValue(task),
+    listArtifacts: vi.fn().mockResolvedValue([]),
+  };
+  renderWithConnection(<TaskDetailView
+      project="default"
+      taskId="t1"
+      onBack={() => {}}
+      onOpenSubtitleEditor={() => {}}
+      onOpenStyleEditor={() => {}}
+    />, {
+    api,
+  });
+  await waitFor(() =>
+    expect(screen.getByRole("button", { name: "字幕編輯器" })).toBeDisabled(),
+  );
+});
+
 test("cancel button cancels the task", async () => {
   const cancelTask = vi.fn().mockResolvedValue({ canceled: true });
   const api: Partial<ApiClient> = { showTask: vi.fn().mockResolvedValue(task), cancelTask };

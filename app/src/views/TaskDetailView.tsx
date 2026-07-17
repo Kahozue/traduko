@@ -6,7 +6,8 @@ import { StatusBadge } from "../components/StatusBadge";
 import { t } from "../i18n";
 import { ApiError } from "../lib/api/client";
 import type { PreflightCheck } from "../lib/api/types";
-import { useApi } from "../lib/connection";
+import { useApi, useConnection } from "../lib/connection";
+import { openArtifact, revealArtifact } from "../lib/shell";
 import { humanizeError } from "../lib/errors";
 import { useTaskLive } from "../lib/events/store";
 import { eventTypeLabel, stageStatusLabel, stageTypeLabel } from "../lib/labels";
@@ -64,12 +65,18 @@ export function TaskDetailView({
   onOpenStyleEditor: () => void;
 }) {
   const api = useApi();
+  const { dataRoot } = useConnection();
   const queryClient = useQueryClient();
   const live = useTaskLive(project, taskId);
   const [failedChecks, setFailedChecks] = useState<PreflightCheck[] | null>(null);
   const { data: task } = useQuery({
     queryKey: ["task", project, taskId],
     queryFn: () => api.showTask(project, taskId),
+  });
+  const { data: artifacts } = useQuery({
+    queryKey: ["artifacts", project, taskId, task?.updated_at],
+    queryFn: () => api.listArtifacts(project, taskId),
+    enabled: !!task,
   });
   const { data: pastEvents } = useQuery({
     queryKey: ["task-events", project, taskId],
@@ -166,6 +173,18 @@ export function TaskDetailView({
 
   const lastStageError = [...task.stages].reverse().find((stage) => stage.error)?.error;
 
+  const hasTranslation = (artifacts ?? []).some((item) => item.name === "translation.json");
+  const outputs = (artifacts ?? []).filter((item) => !item.file.endsWith(".json"));
+
+  function artifactPath(file: string): string {
+    return `${dataRoot}/projects/${project}/tasks/${taskId}/artifacts/${file}`;
+  }
+
+  function formatSize(bytes: number): string {
+    if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+    return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+  }
+
   return (
     <div>
       <button type="button" className={styles.back} onClick={onBack}>
@@ -247,6 +266,14 @@ export function TaskDetailView({
             onClick={() => cancel.mutate()}
           >
             {t("task.cancel")}
+          </button>
+          <button
+            type="button"
+            className={styles.secondary}
+            disabled={!hasTranslation}
+            onClick={onOpenSubtitleEditor}
+          >
+            {t("task.subtitleEditor")}
           </button>
           <button type="button" className={styles.secondary} onClick={onOpenStyleEditor}>
             {t("task.openStyleEditor")}
@@ -395,6 +422,34 @@ export function TaskDetailView({
           ))}
         </ol>
       </section>
+
+      {outputs.length > 0 && (
+        <section className={styles.section}>
+          <h2 className={styles.sectionTitle}>{t("task.outputs")}</h2>
+          <ul className={styles.outputs}>
+            {outputs.map((item) => (
+              <li key={item.file} className={styles.output}>
+                <span className={styles.outputName}>{item.file}</span>
+                <span className={styles.outputSize}>{formatSize(item.size)}</span>
+                <button
+                  type="button"
+                  className={styles.outputButton}
+                  onClick={() => void openArtifact(artifactPath(item.file))}
+                >
+                  {t("task.outputs.open")}
+                </button>
+                <button
+                  type="button"
+                  className={styles.outputButton}
+                  onClick={() => void revealArtifact(artifactPath(item.file))}
+                >
+                  {t("task.outputs.reveal")}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       <section className={styles.section}>
         <h2 className={styles.sectionTitle}>{t("task.events")}</h2>
