@@ -671,3 +671,72 @@ def test_budget_endpoint_breaks_down_per_task_spend(tmp_path: Path) -> None:
             {"task_id": "gone", "project": "old", "name": None, "usd": 2.0},
             {"task_id": task_id, "project": "default", "name": "第七話", "usd": 0.75},
         ]
+
+
+def test_delete_task_removes_files_and_index(tmp_path: Path) -> None:
+    with service(tmp_path) as (client, headers, token):
+        task_id = create_task(client, headers, tmp_path)
+        response = client.delete(f"/tasks/default/{task_id}", headers=headers)
+        assert response.status_code == 200
+        assert response.json() == {"deleted": True}
+        assert client.get(f"/tasks/default/{task_id}", headers=headers).status_code == 404
+        assert client.get("/tasks", headers=headers).json() == []
+        assert not (tmp_path / "projects" / "default" / "tasks" / task_id).exists()
+
+
+def test_delete_missing_task_is_404(tmp_path: Path) -> None:
+    with service(tmp_path) as (client, headers, token):
+        assert client.delete("/tasks/default/none", headers=headers).status_code == 404
+
+
+def test_delete_and_move_reject_active_task(tmp_path: Path) -> None:
+    ServiceGateStage.gate = threading.Event()
+    ServiceGateStage.started = threading.Event()
+    with service(tmp_path) as (client, headers, token):
+        create_profile(tmp_path, "gated", ["svc-gate", "noop"])
+        task_id = create_task(client, headers, tmp_path, profile="gated")
+        url = f"/tasks/default/{task_id}"
+        assert client.post(f"{url}/run", headers=headers).status_code == 202
+        assert ServiceGateStage.started.wait(timeout=5)
+        assert client.delete(url, headers=headers).status_code == 409
+        moved = client.patch(url, json={"project": "other"}, headers=headers)
+        assert moved.status_code == 409
+        ServiceGateStage.gate.set()
+        wait_completed(client, headers, "default", task_id)
+        assert client.delete(url, headers=headers).status_code == 200
+
+
+def test_move_task_to_new_project(tmp_path: Path) -> None:
+    with service(tmp_path) as (client, headers, token):
+        task_id = create_task(client, headers, tmp_path)
+        response = client.patch(
+            f"/tasks/default/{task_id}",
+            json={"project": "anime", "name": "第一話"},
+            headers=headers,
+        )
+        assert response.status_code == 200
+        body = response.json()
+        assert body["project"] == "anime"
+        assert body["name"] == "第一話"
+        assert client.get(f"/tasks/default/{task_id}", headers=headers).status_code == 404
+        shown = client.get(f"/tasks/anime/{task_id}", headers=headers).json()
+        assert shown["project"] == "anime"
+        rows = client.get("/tasks", headers=headers).json()
+        assert [(row["project"], row["name"]) for row in rows] == [("anime", "第一話")]
+        assert (tmp_path / "projects" / "anime" / "tasks" / task_id / "task.json").exists()
+        assert not (tmp_path / "projects" / "default" / "tasks" / task_id).exists()
+
+
+def test_patch_task_requires_a_field(tmp_path: Path) -> None:
+    with service(tmp_path) as (client, headers, token):
+        task_id = create_task(client, headers, tmp_path)
+        assert (
+            client.patch(f"/tasks/default/{task_id}", json={}, headers=headers).status_code
+            == 422
+        )
+        assert (
+            client.patch(
+                f"/tasks/default/{task_id}", json={"project": "  "}, headers=headers
+            ).status_code
+            == 422
+        )

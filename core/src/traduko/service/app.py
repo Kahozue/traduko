@@ -256,22 +256,51 @@ def task_events(
     return entries[-max(limit, 0) :]
 
 
-class TaskRenameRequest(BaseModel):
-    name: str
+class TaskUpdateRequest(BaseModel):
+    name: str | None = None
+    project: str | None = None
 
 
 @router.patch("/tasks/{project}/{task_id}")
-def rename_task(
-    request: Request, project: str, task_id: str, body: TaskRenameRequest
+def update_task(
+    request: Request, project: str, task_id: str, body: TaskUpdateRequest
 ) -> dict:
     ws: Workspace = request.app.state.workspace
     record = _load_task(ws, project, task_id)
-    name = body.name.strip()
-    if not name:
-        raise HTTPException(status_code=422, detail="name must not be empty")
-    record.name = name
-    ws.store.save(record)
+    if body.name is None and body.project is None:
+        raise HTTPException(status_code=422, detail="name or project required")
+    name_changed = False
+    if body.name is not None:
+        name = body.name.strip()
+        if not name:
+            raise HTTPException(status_code=422, detail="name must not be empty")
+        record.name = name
+        name_changed = True
+    if body.project is not None:
+        new_project = body.project.strip()
+        if not new_project:
+            raise HTTPException(status_code=422, detail="project must not be empty")
+        if new_project != record.project:
+            worker: TaskWorker = request.app.state.worker
+            if worker.is_active(project, task_id):
+                raise HTTPException(status_code=409, detail="task is queued or running")
+            record = ws.store.move(record, new_project)
+        elif name_changed:
+            ws.store.save(record)
+    elif name_changed:
+        ws.store.save(record)
     return record.model_dump()
+
+
+@router.delete("/tasks/{project}/{task_id}")
+def delete_task(request: Request, project: str, task_id: str) -> dict:
+    ws: Workspace = request.app.state.workspace
+    _load_task(ws, project, task_id)
+    worker: TaskWorker = request.app.state.worker
+    if worker.is_active(project, task_id):
+        raise HTTPException(status_code=409, detail="task is queued or running")
+    ws.store.delete(project, task_id)
+    return {"deleted": True}
 
 
 @router.get("/tasks/{project}/{task_id}/preflight")

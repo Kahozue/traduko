@@ -1,6 +1,7 @@
 """TaskStore: task.json persistence. Files are the source of truth."""
 from __future__ import annotations
 
+import shutil
 from collections.abc import Iterator
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -58,6 +59,23 @@ class TaskStore:
         atomic_write_text(path, record.model_dump_json(indent=2))
         if self.index is not None:
             self.index.upsert(record)
+
+    def delete(self, project: str, task_id: str) -> None:
+        task_dir = self.task_dir(project, task_id)
+        if not (task_dir / "task.json").exists():
+            raise FileNotFoundError(task_dir / "task.json")
+        shutil.rmtree(task_dir)
+        if self.index is not None:
+            self.index.delete(task_id)
+
+    def move(self, record: TaskRecord, new_project: str) -> TaskRecord:
+        src = self.task_dir(record.project, record.id)
+        dst = self.task_dir(new_project, record.id)
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(src), str(dst))
+        record.project = new_project
+        self.save(record)
+        return record
 
     def iter_tasks(self, project: str | None = None) -> Iterator[TaskRecord]:
         projects_dir = self.root / "projects"

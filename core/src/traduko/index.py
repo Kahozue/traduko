@@ -43,6 +43,7 @@ class TaskIndex:
                 INSERT INTO tasks (id, project, status, profile, name, created_at, updated_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
+                    project = excluded.project,
                     status = excluded.status,
                     name = excluded.name,
                     updated_at = excluded.updated_at
@@ -73,6 +74,11 @@ class TaskIndex:
         query += " ORDER BY created_at DESC"
         with self._lock:
             return [dict(row) for row in self._conn.execute(query, args)]
+
+    def delete(self, task_id: str) -> None:
+        with self._lock:
+            self._conn.execute("DELETE FROM tasks WHERE id = ?", (task_id,))
+            self._conn.commit()
 
     def rebuild(self, store: TaskStore) -> int:
         with self._lock:
