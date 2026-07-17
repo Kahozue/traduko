@@ -4,7 +4,14 @@ import pytest
 import yaml
 from pydantic import ValidationError
 
-from traduko.config import CoreConfig, DiscordBotConfig, load_config, save_config
+from traduko.config import (
+    CoreConfig,
+    DiscordBotConfig,
+    McpServerConfig,
+    SkillConfig,
+    load_config,
+    save_config,
+)
 
 
 def test_missing_file_returns_defaults(tmp_path: Path) -> None:
@@ -162,3 +169,79 @@ def test_mcp_server_defaults_and_unknown_transport() -> None:
     assert CoreConfig().mcp_servers == {}
     with pytest.raises(ValidationError):
         CoreConfig.model_validate({"mcp_servers": {"x": {"transport": "ws"}}})
+
+
+def test_skills_defaults_and_round_trip(tmp_path: Path) -> None:
+    assert CoreConfig().skills == {}
+    fresh = SkillConfig()
+    assert fresh.enabled is False
+    assert fresh.confirmed is False
+
+    config = CoreConfig.model_validate(
+        {
+            "skills": {
+                "honorific-style": {"enabled": True, "confirmed": True, "note": "keep"},
+                "draft": {},
+            }
+        }
+    )
+    save_config(tmp_path, config)
+    loaded = load_config(tmp_path)
+    skill = loaded.skills["honorific-style"]
+    assert skill.enabled is True
+    assert skill.confirmed is True
+    assert skill.model_dump()["note"] == "keep"
+    draft = loaded.skills["draft"]
+    assert draft.enabled is False
+    assert draft.confirmed is False
+
+
+def test_mcp_confirmed_round_trip(tmp_path: Path) -> None:
+    config = CoreConfig.model_validate(
+        {"mcp_servers": {"files": {"command": "uvx", "enabled": True, "confirmed": True}}}
+    )
+    save_config(tmp_path, config)
+    loaded = load_config(tmp_path)
+    assert loaded.mcp_servers["files"].confirmed is True
+
+
+def test_confirmed_migration_rules() -> None:
+    # Entries written before `confirmed` existed: enabled implies confirmed.
+    assert McpServerConfig.model_validate({"enabled": True}).confirmed is True
+    assert SkillConfig.model_validate({"enabled": True}).confirmed is True
+    # An explicit confirmed value is always respected.
+    assert McpServerConfig.model_validate({"enabled": True, "confirmed": False}).confirmed is False
+    assert SkillConfig.model_validate({"enabled": True, "confirmed": False}).confirmed is False
+    # Disabled or brand-new entries stay unconfirmed.
+    assert McpServerConfig.model_validate({"enabled": False}).confirmed is False
+    assert SkillConfig.model_validate({}).confirmed is False
+    assert McpServerConfig().confirmed is False
+    assert SkillConfig().confirmed is False
+
+
+def test_v2_04_yaml_migrates_confirmed_and_persists(tmp_path: Path) -> None:
+    path = tmp_path / "config" / "core.yaml"
+    path.parent.mkdir(parents=True)
+    path.write_text(
+        "mcp_servers:\n"
+        "  files:\n"
+        "    transport: stdio\n"
+        "    command: uvx\n"
+        "    enabled: true\n"
+        "  dormant:\n"
+        "    transport: http\n"
+        "    url: http://127.0.0.1:9000/mcp\n"
+        "skills:\n"
+        "  legacy-style:\n"
+        "    enabled: true\n",
+        encoding="utf-8",
+    )
+    config = load_config(tmp_path)
+    assert config.mcp_servers["files"].confirmed is True
+    assert config.mcp_servers["dormant"].confirmed is False
+    assert config.skills["legacy-style"].confirmed is True
+
+    save_config(tmp_path, config)
+    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    assert data["mcp_servers"]["files"]["confirmed"] is True
+    assert data["skills"]["legacy-style"]["confirmed"] is True

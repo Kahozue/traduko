@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Literal
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 CONFIG_FILE = "config/core.yaml"
 
@@ -73,9 +73,23 @@ class SyncConfig(BaseModel):
     auto_interval_minutes: int = 0
 
 
+def _migrate_confirmed(data: object) -> object:
+    """Shared migration for McpServerConfig and SkillConfig.
+
+    Entries written before the `confirmed` field existed that were already
+    enabled are treated as confirmed, so upgrading does not silently unmount
+    servers the user had running. Brand-new entries default both to False.
+    """
+    if isinstance(data, dict) and data.get("enabled") and "confirmed" not in data:
+        return {**data, "confirmed": True}
+    return data
+
+
 class McpServerConfig(BaseModel):
     """One external MCP server. stdio spawns a local command; http talks
-    Streamable HTTP, with an optional OAuth bearer token."""
+    Streamable HTTP, with an optional OAuth bearer token. `confirmed` is the
+    safety gate: an enabled server only enters the agent after the user has
+    reviewed its tools once."""
 
     model_config = ConfigDict(extra="allow")
 
@@ -86,6 +100,28 @@ class McpServerConfig(BaseModel):
     url: str = ""
     auth_token: str = ""
     enabled: bool = False
+    confirmed: bool = False
+
+    @model_validator(mode="before")
+    @classmethod
+    def _migrate(cls, data: object) -> object:
+        return _migrate_confirmed(data)
+
+
+class SkillConfig(BaseModel):
+    """Per-skill settings, keyed by skill name (= data/skills/<name>/).
+    `confirmed` is the safety gate: an enabled skill only enters the agent
+    after the user has reviewed its SKILL.md once."""
+
+    model_config = ConfigDict(extra="allow")
+
+    enabled: bool = False
+    confirmed: bool = False
+
+    @model_validator(mode="before")
+    @classmethod
+    def _migrate(cls, data: object) -> object:
+        return _migrate_confirmed(data)
 
 
 class CoreConfig(BaseModel):
@@ -99,6 +135,7 @@ class CoreConfig(BaseModel):
     discord_bot: DiscordBotConfig = Field(default_factory=DiscordBotConfig)
     sync: SyncConfig = Field(default_factory=SyncConfig)
     mcp_servers: dict[str, McpServerConfig] = Field(default_factory=dict)
+    skills: dict[str, SkillConfig] = Field(default_factory=dict)
 
 
 def load_config(root: Path) -> CoreConfig:
