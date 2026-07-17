@@ -97,6 +97,47 @@ def test_serve_command_exists() -> None:
     result = runner.invoke(app, ["serve", "--help"])
     assert result.exit_code == 0
     assert "--port" in result.output
+    assert "--parent-pid" in result.output
+
+
+class _FakeWatchdog:
+    calls: list[object] = []
+
+    def __init__(self, parent_pid: int, **_kwargs: object) -> None:
+        _FakeWatchdog.calls.append(parent_pid)
+
+    def start(self) -> None:
+        _FakeWatchdog.calls.append("started")
+
+    def stop(self) -> None:
+        _FakeWatchdog.calls.append("stopped")
+
+
+def _invoke_serve(monkeypatch, tmp_path: Path, args: list[str], env: dict[str, str]):
+    import uvicorn
+
+    _FakeWatchdog.calls = []
+    monkeypatch.setattr("traduko.service.parentwatch.ParentWatchdog", _FakeWatchdog)
+    monkeypatch.setattr(uvicorn, "run", lambda *a, **k: None)
+    return runner.invoke(app, ["serve", *args], env={**setup_workspace(tmp_path), **env})
+
+
+def test_serve_wires_parent_watchdog_from_flag(monkeypatch, tmp_path: Path) -> None:
+    result = _invoke_serve(monkeypatch, tmp_path, ["--parent-pid", "4242"], {})
+    assert result.exit_code == 0, result.output
+    assert _FakeWatchdog.calls == [4242, "started", "stopped"]
+
+
+def test_serve_wires_parent_watchdog_from_env(monkeypatch, tmp_path: Path) -> None:
+    result = _invoke_serve(monkeypatch, tmp_path, [], {"TRADUKO_PARENT_PID": "777"})
+    assert result.exit_code == 0, result.output
+    assert _FakeWatchdog.calls == [777, "started", "stopped"]
+
+
+def test_serve_without_parent_pid_starts_no_watchdog(monkeypatch, tmp_path: Path) -> None:
+    result = _invoke_serve(monkeypatch, tmp_path, [], {})
+    assert result.exit_code == 0, result.output
+    assert _FakeWatchdog.calls == []
 
 
 def test_sync_command_runs_and_reports(tmp_path: Path) -> None:

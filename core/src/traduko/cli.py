@@ -126,13 +126,27 @@ def serve(
     ctx: typer.Context,
     host: str = typer.Option("127.0.0.1", "--host", help="Bind address."),
     port: int = typer.Option(8686, "--port", help="Bind port."),
+    parent_pid: int | None = typer.Option(
+        None,
+        "--parent-pid",
+        envvar="TRADUKO_PARENT_PID",
+        help="Exit when this process dies (set by the desktop app).",
+    ),
 ) -> None:
     import uvicorn
 
     from .service.app import create_app
+    from .service.parentwatch import ParentWatchdog
 
     ws: Workspace = ctx.obj
-    uvicorn.run(create_app(ws.root), host=host, port=port, log_level="info")
+    watchdog = ParentWatchdog(parent_pid) if parent_pid else None
+    if watchdog:
+        watchdog.start()
+    try:
+        uvicorn.run(create_app(ws.root), host=host, port=port, log_level="info")
+    finally:
+        if watchdog:
+            watchdog.stop()
 
 
 @app.command("sync")
