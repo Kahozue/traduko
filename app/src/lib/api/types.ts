@@ -109,6 +109,71 @@ export interface TranslationArtifact {
   segments: TranslationSegment[];
 }
 
+export interface DocBlock {
+  id: string;
+  kind: string;
+  translate: boolean;
+  text: string;
+  anchor: string;
+}
+
+export interface DocChapter {
+  id: string;
+  title: string;
+  href: string;
+  blocks: DocBlock[];
+}
+
+export interface DocumentArtifact {
+  schema_version: number;
+  format: string;
+  chapters: DocChapter[];
+}
+
+export interface DocChunk {
+  id: string;
+  chapter_id: string;
+  block_ids: string[];
+  char_count: number;
+}
+
+export interface DocChunksArtifact {
+  schema_version: number;
+  chunks: DocChunk[];
+}
+
+export interface DocTranslatedBlock {
+  id: string;
+  text: string;
+}
+
+export type DocChunkStatus = "translated" | "failed" | "pending";
+
+export interface DocTranslatedChunk {
+  id: string;
+  status: DocChunkStatus;
+  blocks: DocTranslatedBlock[];
+}
+
+export interface DocTranslationArtifact {
+  schema_version: number;
+  chunks: DocTranslatedChunk[];
+}
+
+export type QcFlagType = "untranslated" | "echo" | "glossary";
+
+export interface QcFlag {
+  chunk_id: string;
+  block_id: string;
+  type: QcFlagType;
+  evidence: string;
+}
+
+export interface QcArtifact {
+  schema_version: number;
+  flags: QcFlag[];
+}
+
 export interface ArtifactListItem {
   file: string;
   index: number;

@@ -469,7 +469,70 @@ stages:
     assert out == "# Ĉapitro\n\nSaluton alineo.\n\nDua alineo.\n"
 
 
-def test_novel_pipeline_epub_end_to_end(tmp_path: Path) -> None:
+def test_novel_pipeline_checkpoint_edit_resume_loop(tmp_path: Path) -> None:
+    env = {"TRADUKO_DATA_ROOT": str(tmp_path)}
+    src = tmp_path / "novel.md"
+    src.write_text(MD_NOVEL, encoding="utf-8")
+    (tmp_path / "profiles").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "profiles" / "novel-review.yaml").write_text(
+        """schema_version: 1
+name: novel-review
+stages:
+  - type: ingest_document
+  - type: chunk
+  - type: translate_chunks
+    params:
+      provider: fake
+      target_language: eo
+  - type: qc_scan
+    params:
+      target_language: eo
+    pause_after: true
+  - type: export_document
+""",
+        encoding="utf-8",
+    )
+
+    created = runner.invoke(
+        app, ["task", "create", str(src), "--profile", "novel-review"], env=env
+    )
+    assert created.exit_code == 0, created.output
+    task_id = created.output.strip().splitlines()[-1]
+
+    ran = runner.invoke(app, ["task", "run", task_id], env=env)
+    assert ran.exit_code == 0, ran.output
+    assert "waiting_review" in ran.output
+
+    task_dir = tmp_path / "projects" / "default" / "tasks" / task_id
+    artifacts = task_dir / "artifacts"
+    translation = json.loads(
+        (artifacts / "03-translation.json").read_text(encoding="utf-8")
+    )
+    # Human review through the service API: rewrite the heading block.
+    translation["chunks"][0]["blocks"][0]["text"] = "# Reviewed\n"
+    service = create_app(tmp_path)
+    token = (tmp_path / "config" / "api-token").read_text(encoding="utf-8").strip()
+    headers = {"Authorization": f"Bearer {token}"}
+    with TestClient(service) as client:
+        saved = client.put(
+            f"/tasks/default/{task_id}/artifacts/translation.json",
+            headers=headers,
+            json={k: v for k, v in translation.items() if k != "schema_version"},
+        )
+        assert saved.status_code == 200, saved.text
+        assert saved.json()["stages_reset"] >= 1
+
+    resumed = runner.invoke(app, ["task", "run", task_id], env=env)
+    assert resumed.exit_code == 0, resumed.output
+    # qc_scan reruns and pauses again; resume once more to export.
+    assert "waiting_review" in resumed.output
+    final = runner.invoke(app, ["task", "run", task_id], env=env)
+    assert final.exit_code == 0, final.output
+    assert "completed" in final.output
+
+    out = (artifacts / "05-translated.md").read_text(encoding="utf-8")
+    assert out.startswith("# Reviewed\n")
+    assert "[T] Hello paragraph." in out
     from test_documents_epub import make_epub
     from traduko.documents.epubdoc import parse_epub
 

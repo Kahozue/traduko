@@ -140,6 +140,67 @@ def test_save_invalid_translation_returns_422(tmp_path):
         assert resp.status_code == 422
 
 
+MD = "# T\n\nHello.\n"
+
+
+def make_doc_task(client, headers, tmp_path):
+    (tmp_path / "book.md").write_text(MD, encoding="utf-8")
+    resp = client.post(
+        "/tasks",
+        headers=headers,
+        json={"input_path": str(tmp_path / "book.md"), "profile": "novel-translate"},
+    )
+    assert resp.status_code == 201
+    return resp.json()
+
+
+DOC_TRANSLATION = {
+    "chunks": [
+        {
+            "id": "c-0001",
+            "status": "translated",
+            "blocks": [{"id": "b-00001", "text": "# 標題\n"}],
+        }
+    ]
+}
+
+
+def test_save_document_translation_accepted(tmp_path):
+    with service(tmp_path) as (client, headers):
+        task = make_doc_task(client, headers, tmp_path)
+        resp = client.put(
+            f"/tasks/{task['project']}/{task['id']}/artifacts/translation.json",
+            headers=headers, json=DOC_TRANSLATION,
+        )
+        assert resp.status_code == 200
+        latest = client.get(
+            f"/tasks/{task['project']}/{task['id']}/artifacts/translation.json",
+            headers=headers,
+        ).json()
+        assert latest["chunks"][0]["blocks"][0]["text"] == "# 標題\n"
+
+
+def test_save_document_translation_bad_status_returns_422(tmp_path):
+    with service(tmp_path) as (client, headers):
+        task = make_doc_task(client, headers, tmp_path)
+        bad = {"chunks": [{"id": "c-0001", "status": "skipped", "blocks": []}]}
+        resp = client.put(
+            f"/tasks/{task['project']}/{task['id']}/artifacts/translation.json",
+            headers=headers, json=bad,
+        )
+        assert resp.status_code == 422
+
+
+def test_save_unrecognized_translation_payload_returns_422(tmp_path):
+    with service(tmp_path) as (client, headers):
+        task = make_doc_task(client, headers, tmp_path)
+        resp = client.put(
+            f"/tasks/{task['project']}/{task['id']}/artifacts/translation.json",
+            headers=headers, json={"lines": []},
+        )
+        assert resp.status_code == 422
+
+
 def test_get_styles_returns_default_preset(tmp_path):
     with service(tmp_path) as (client, headers):
         resp = client.get("/styles", headers=headers)

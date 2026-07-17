@@ -54,13 +54,13 @@ export function TaskDetailView({
   taskId,
   onBack,
   onOpenSettings,
-  onOpenSubtitleEditor,
+  onOpenEditor,
 }: {
   project: string;
   taskId: string;
   onBack: () => void;
   onOpenSettings?: () => void;
-  onOpenSubtitleEditor: () => void;
+  onOpenEditor: (kind: "subtitle" | "document") => void;
 }) {
   const api = useApi();
   const { dataRoot } = useConnection();
@@ -172,6 +172,11 @@ export function TaskDetailView({
   const lastStageError = [...task.stages].reverse().find((stage) => stage.error)?.error;
 
   const hasTranslation = (artifacts ?? []).some((item) => item.name === "translation.json");
+  const isDocumentTask = (task?.stages ?? []).some(
+    (stage) => stage.type === "ingest_document",
+  );
+  const editorKind = isDocumentTask ? "document" : "subtitle";
+  const editorLabel = isDocumentTask ? t("task.textEditor") : t("task.subtitleEditor");
   const outputs = (artifacts ?? []).filter((item) => !item.file.endsWith(".json"));
 
   function artifactPath(file: string): string {
@@ -269,9 +274,9 @@ export function TaskDetailView({
             type="button"
             className={styles.secondary}
             disabled={!hasTranslation}
-            onClick={onOpenSubtitleEditor}
+            onClick={() => onOpenEditor(editorKind)}
           >
-            {t("task.subtitleEditor")}
+            {editorLabel}
           </button>
         </div>
       </header>
@@ -336,10 +341,16 @@ export function TaskDetailView({
         <section className={styles.checkpoint}>
           <div>
             <h2 className={styles.sectionTitle}>{t("task.checkpoint.title")}</h2>
-            <p className={styles.checkpointHint}>{t("task.checkpoint.hint")}</p>
+            <p className={styles.checkpointHint}>
+              {isDocumentTask ? t("task.checkpoint.hint.document") : t("task.checkpoint.hint")}
+            </p>
           </div>
-          <button type="button" className={styles.primary} onClick={onOpenSubtitleEditor}>
-            {t("task.openSubtitleEditor")}
+          <button
+            type="button"
+            className={styles.primary}
+            onClick={() => onOpenEditor(editorKind)}
+          >
+            {isDocumentTask ? t("task.openTextEditor") : t("task.openSubtitleEditor")}
           </button>
         </section>
       )}

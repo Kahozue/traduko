@@ -42,6 +42,7 @@ from ..artifacts import (
 )
 from ..budget import BudgetMeter
 from ..config import CoreConfig, load_config, save_config
+from ..documents.model import DocTranslationDoc
 from ..eventlog import EventLogger
 from ..executor import reset_stages_after_artifact
 from ..events import Event
@@ -457,10 +458,22 @@ def save_artifact(
     ws: Workspace = request.app.state.workspace
     record = _load_task(ws, project, task_id)
     if name == "translation.json":
-        try:
-            validate_translation_payload(body)
-        except ArtifactValidationError as error:
-            raise HTTPException(status_code=422, detail=str(error)) from None
+        # Subtitle and document pipelines share the artifact name but not
+        # the shape; dispatch on the payload's top-level key.
+        if "segments" in body:
+            try:
+                validate_translation_payload(body)
+            except ArtifactValidationError as error:
+                raise HTTPException(status_code=422, detail=str(error)) from None
+        elif "chunks" in body:
+            try:
+                DocTranslationDoc.model_validate(body)
+            except ValidationError as error:
+                raise HTTPException(status_code=422, detail=str(error)) from None
+        else:
+            raise HTTPException(
+                status_code=422, detail="unrecognized translation payload"
+            )
     store = _artifact_store(ws, project, task_id)
     path = store.write_next_json(name, body)
     stages_reset = reset_stages_after_artifact(record, name)

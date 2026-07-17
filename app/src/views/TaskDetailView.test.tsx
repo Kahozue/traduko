@@ -43,7 +43,7 @@ test("renders stages and metadata", async () => {
       project="default"
       taskId="t1"
       onBack={() => {}}
-      onOpenSubtitleEditor={() => {}}
+      onOpenEditor={() => {}}
     />, {
     api,
   });
@@ -62,7 +62,7 @@ test("run button queues the task", async () => {
       project="default"
       taskId="t1"
       onBack={() => {}}
-      onOpenSubtitleEditor={() => {}}
+      onOpenEditor={() => {}}
     />, {
     api,
   });
@@ -87,7 +87,7 @@ test("preflight failure offers skip and re-run", async () => {
       project="default"
       taskId="t1"
       onBack={() => {}}
-      onOpenSubtitleEditor={() => {}}
+      onOpenEditor={() => {}}
     />, {
     api,
   });
@@ -130,7 +130,7 @@ test("missing ASR model offers download-and-run", async () => {
       project="default"
       taskId="t1"
       onBack={() => {}}
-      onOpenSubtitleEditor={() => {}}
+      onOpenEditor={() => {}}
     />, {
     api,
   });
@@ -150,7 +150,7 @@ test("completed task lists outputs and enables the subtitle editor", async () =>
     { file: "06-translation.json", index: 6, name: "translation.json", schema_version: 1, size: 2048, mtime: 1 },
     { file: "07-output.srt", index: 7, name: "output.srt", schema_version: null, size: 4096, mtime: 2 },
   ]);
-  const onOpenSubtitleEditor = vi.fn();
+  const onOpenEditor = vi.fn();
   const api: Partial<ApiClient> = {
     showTask: vi.fn().mockResolvedValue(completed),
     listArtifacts,
@@ -159,7 +159,7 @@ test("completed task lists outputs and enables the subtitle editor", async () =>
       project="default"
       taskId="t1"
       onBack={() => {}}
-      onOpenSubtitleEditor={onOpenSubtitleEditor}
+      onOpenEditor={onOpenEditor}
     />, {
     api,
   });
@@ -169,7 +169,7 @@ test("completed task lists outputs and enables the subtitle editor", async () =>
   const editorButton = screen.getByRole("button", { name: "字幕編輯器" });
   expect(editorButton).toBeEnabled();
   await userEvent.click(editorButton);
-  expect(onOpenSubtitleEditor).toHaveBeenCalled();
+  expect(onOpenEditor).toHaveBeenCalledWith("subtitle");
 });
 
 test("subtitle editor entry is disabled without a translation artifact", async () => {
@@ -181,7 +181,7 @@ test("subtitle editor entry is disabled without a translation artifact", async (
       project="default"
       taskId="t1"
       onBack={() => {}}
-      onOpenSubtitleEditor={() => {}}
+      onOpenEditor={() => {}}
     />, {
     api,
   });
@@ -197,7 +197,7 @@ test("cancel button cancels the task", async () => {
       project="default"
       taskId="t1"
       onBack={() => {}}
-      onOpenSubtitleEditor={() => {}}
+      onOpenEditor={() => {}}
     />, {
     api,
   });
@@ -207,7 +207,7 @@ test("cancel button cancels the task", async () => {
 });
 
 test("shows checkpoint banner and opens subtitle editor when waiting_review", async () => {
-  const onOpenSubtitleEditor = vi.fn();
+  const onOpenEditor = vi.fn();
   const waiting: TaskRecord = { ...task, status: "waiting_review" };
   const api: Partial<ApiClient> = { showTask: vi.fn().mockResolvedValue(waiting) };
   renderWithConnection(
@@ -215,13 +215,65 @@ test("shows checkpoint banner and opens subtitle editor when waiting_review", as
       project="default"
       taskId="t1"
       onBack={() => {}}
-      onOpenSubtitleEditor={onOpenSubtitleEditor}
+      onOpenEditor={onOpenEditor}
     />,
     { api },
   );
   expect(await screen.findByText("任務停於人工檢查點")).toBeInTheDocument();
   await userEvent.click(screen.getByText("開啟字幕編輯器"));
-  expect(onOpenSubtitleEditor).toHaveBeenCalled();
+  expect(onOpenEditor).toHaveBeenCalledWith("subtitle");
+});
+
+const docTask: TaskRecord = {
+  ...task,
+  profile: "novel-translate",
+  stages: [
+    { type: "ingest_document", status: "completed", params: {}, pause_after: false, artifacts: [], error: null },
+    { type: "translate_chunks", status: "completed", params: {}, pause_after: false, artifacts: [], error: null },
+  ],
+};
+
+test("document task shows text editor entry and opens document editor", async () => {
+  const onOpenEditor = vi.fn();
+  const api: Partial<ApiClient> = {
+    showTask: vi.fn().mockResolvedValue({ ...docTask, status: "completed" }),
+    listArtifacts: vi.fn().mockResolvedValue([
+      { file: "03-translation.json", index: 3, name: "translation.json", schema_version: 1, size: 1, mtime: 1 },
+    ]),
+  };
+  renderWithConnection(
+    <TaskDetailView
+      project="default"
+      taskId="t1"
+      onBack={() => {}}
+      onOpenEditor={onOpenEditor}
+    />,
+    { api },
+  );
+  const editorButton = await screen.findByRole("button", { name: "文本編輯器" });
+  expect(screen.queryByRole("button", { name: "字幕編輯器" })).not.toBeInTheDocument();
+  await waitFor(() => expect(editorButton).toBeEnabled());
+  await userEvent.click(editorButton);
+  expect(onOpenEditor).toHaveBeenCalledWith("document");
+});
+
+test("document task checkpoint banner opens the document editor", async () => {
+  const onOpenEditor = vi.fn();
+  const api: Partial<ApiClient> = {
+    showTask: vi.fn().mockResolvedValue({ ...docTask, status: "waiting_review" }),
+  };
+  renderWithConnection(
+    <TaskDetailView
+      project="default"
+      taskId="t1"
+      onBack={() => {}}
+      onOpenEditor={onOpenEditor}
+    />,
+    { api },
+  );
+  expect(await screen.findByText("任務停於人工檢查點")).toBeInTheDocument();
+  await userEvent.click(screen.getByText("開啟文本編輯器"));
+  expect(onOpenEditor).toHaveBeenCalledWith("document");
 });
 
 test("renders localized stage labels and named title", async () => {
@@ -232,7 +284,7 @@ test("renders localized stage labels and named title", async () => {
       project="default"
       taskId="t1"
       onBack={() => {}}
-      onOpenSubtitleEditor={() => {}}
+      onOpenEditor={() => {}}
     />,
     { api },
   );
@@ -253,7 +305,7 @@ test("rename flow calls renameTask", async () => {
       project="default"
       taskId="t1"
       onBack={() => {}}
-      onOpenSubtitleEditor={() => {}}
+      onOpenEditor={() => {}}
     />,
     { api },
   );
@@ -277,7 +329,7 @@ test("pause button pauses a running task", async () => {
       project="default"
       taskId="t1"
       onBack={() => {}}
-      onOpenSubtitleEditor={() => {}}
+      onOpenEditor={() => {}}
     />,
     { api },
   );
@@ -293,7 +345,7 @@ test("pause button is disabled when task is not running", async () => {
       project="default"
       taskId="t1"
       onBack={() => {}}
-      onOpenSubtitleEditor={() => {}}
+      onOpenEditor={() => {}}
     />,
     { api },
   );

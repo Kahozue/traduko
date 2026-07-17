@@ -6,6 +6,7 @@ import { ErrorBoundary } from "./components/ErrorBoundary";
 import { t } from "./i18n";
 import { ConnectionProvider, useConnection } from "./lib/connection";
 import { BudgetView } from "./views/BudgetView";
+import { DocumentEditorView } from "./views/DocumentEditorView";
 import { SettingsView } from "./views/SettingsView";
 import { SubtitleEditorView } from "./views/SubtitleEditorView";
 import { TaskDetailView } from "./views/TaskDetailView";
@@ -16,6 +17,7 @@ export type View =
   | { name: "tasks" }
   | { name: "task"; project: string; taskId: string }
   | { name: "subtitle-editor"; project: string; taskId: string }
+  | { name: "document-editor"; project: string; taskId: string }
   | { name: "budget" }
   | { name: "settings" };
 
@@ -93,7 +95,9 @@ function Main() {
   }, []);
 
   const active: NavKey =
-    view.name === "task" || view.name === "subtitle-editor"
+    view.name === "task" ||
+    view.name === "subtitle-editor" ||
+    view.name === "document-editor"
       ? "tasks"
       : view.name;
   return (
@@ -134,14 +138,26 @@ function renderView(
           taskId={view.taskId}
           onBack={() => setView({ name: "tasks" })}
           onOpenSettings={() => setView({ name: "settings" })}
-          onOpenSubtitleEditor={() =>
-            setView({ name: "subtitle-editor", project: view.project, taskId: view.taskId })
+          onOpenEditor={(kind) =>
+            setView({
+              name: kind === "document" ? "document-editor" : "subtitle-editor",
+              project: view.project,
+              taskId: view.taskId,
+            })
           }
         />
       );
     case "subtitle-editor":
       return (
         <SubtitleEditorView
+          project={view.project}
+          taskId={view.taskId}
+          onBack={() => setView({ name: "task", project: view.project, taskId: view.taskId })}
+        />
+      );
+    case "document-editor":
+      return (
+        <DocumentEditorView
           project={view.project}
           taskId={view.taskId}
           onBack={() => setView({ name: "task", project: view.project, taskId: view.taskId })}
