@@ -21,6 +21,7 @@ SUBDIRS = (
     "budget",
     "skills",
     "proposals",
+    "assistant",
 )
 
 
