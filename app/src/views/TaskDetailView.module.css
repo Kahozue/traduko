@@ -78,20 +78,64 @@
   font-size: var(--fs-note);
 }
 
-.metaMono {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 8px;
-  margin: 4px 0 0;
+.metaSep {
+  color: var(--border);
+}
+
+.metaToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: 4px;
+  padding: 2px 6px;
+  border: none;
+  border-radius: var(--radius-s);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: var(--fs-note);
+  cursor: pointer;
+  transition: background var(--transition), color var(--transition);
+}
+
+.metaToggle:hover {
+  background: var(--bg-inset);
+  color: var(--text-primary);
+}
+
+.metaChevron {
+  display: inline-flex;
+  transition: transform var(--transition);
+}
+
+.metaChevronOpen {
+  transform: rotate(180deg);
+}
+
+.details {
+  margin: 10px 0 0;
+  max-width: 720px;
+}
+
+.detailsRow {
+  display: grid;
+  grid-template-columns: 88px minmax(0, 1fr);
+  gap: 12px;
+  padding: 4px 0;
+}
+
+.detailsRow dt {
+  color: var(--text-secondary);
+  font-size: var(--fs-meta);
+  line-height: 1.8;
+}
+
+.detailsRow dd {
+  margin: 0;
   color: var(--text-secondary);
   font-family: var(--font-mono);
   font-size: var(--fs-meta);
+  line-height: 1.8;
   word-break: break-all;
-}
-
-.metaSep {
-  color: var(--border);
 }
 
 .actions {

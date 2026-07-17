@@ -134,6 +134,17 @@ export class ApiClient {
     });
   }
 
+  moveTask(project: string, taskId: string, newProject: string): Promise<TaskRecord> {
+    return this.request(`/tasks/${project}/${taskId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ project: newProject }),
+    });
+  }
+
+  deleteTask(project: string, taskId: string): Promise<{ deleted: boolean }> {
+    return this.request(`/tasks/${project}/${taskId}`, { method: "DELETE" });
+  }
+
   listArtifacts(project: string, taskId: string): Promise<ArtifactListItem[]> {
     return this.request(`/tasks/${project}/${taskId}/artifacts`);
   }

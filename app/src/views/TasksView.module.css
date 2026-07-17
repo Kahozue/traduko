@@ -46,60 +46,6 @@
   transform: translateY(1px);
 }
 
-.card {
-  border-radius: var(--radius-m);
-  background: var(--bg-surface);
-  box-shadow: var(--shadow-1);
-  overflow: hidden;
-}
-
-.table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: var(--fs-note);
-}
-
-.table th {
-  padding: 12px 16px;
-  border-bottom: 1px solid var(--border);
-  color: var(--text-secondary);
-  font-weight: 500;
-  text-align: left;
-}
-
-.table td {
-  padding: 12px 16px;
-  border-bottom: 1px solid var(--border);
-}
-
-.table tbody tr {
-  cursor: pointer;
-  transition: background var(--transition);
-}
-
-.table tbody tr:hover {
-  background: var(--accent-soft);
-}
-
-.table tbody tr:last-child td {
-  border-bottom: none;
-}
-
-.taskId {
-  font-family: var(--font-mono);
-  font-size: var(--fs-note);
-}
-
-.project {
-  margin-top: 2px;
-  color: var(--text-secondary);
-  font-size: var(--fs-meta);
-}
-
-.time {
-  color: var(--text-secondary);
-}
-
 .empty {
   padding: 56px 0;
   border-radius: var(--radius-m);
@@ -160,4 +106,285 @@
 .emptyAction:hover {
   background: var(--bg-inset);
   border-color: var(--text-secondary);
+}
+
+.bulkBar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.bulkCount {
+  color: var(--text-primary);
+  font-size: var(--fs-note);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.bulkButton {
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-s);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font-size: var(--fs-note);
+  cursor: pointer;
+  transition: background var(--transition);
+}
+
+.bulkButton:hover:not(:disabled) {
+  background: var(--bg-inset);
+}
+
+.bulkButton:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.bulkDanger {
+  padding: 6px 12px;
+  border: 1px solid var(--danger);
+  border-radius: var(--radius-s);
+  background: var(--bg-surface);
+  color: var(--danger);
+  font-size: var(--fs-note);
+  cursor: pointer;
+  transition: background var(--transition);
+}
+
+.bulkDanger:hover {
+  background: var(--danger-soft);
+}
+
+.bulkNote,
+.bulkNoteLine {
+  color: var(--warn);
+  font-size: var(--fs-note);
+}
+
+.bulkNoteLine {
+  margin: 0 0 12px;
+}
+
+.moveWrap {
+  position: relative;
+}
+
+.moveMenu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 10;
+  min-width: 220px;
+  padding: 6px;
+  border-radius: var(--radius-m);
+  background: var(--bg-surface-raised);
+  box-shadow: var(--shadow-2);
+}
+
+.moveItem {
+  display: block;
+  width: 100%;
+  padding: 7px 10px;
+  border: none;
+  border-radius: var(--radius-s);
+  background: transparent;
+  color: var(--text-primary);
+  font-size: var(--fs-note);
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--transition);
+}
+
+.moveItem:hover {
+  background: var(--bg-inset);
+}
+
+.moveNewRow {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+
+.moveNewInput {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-s);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--fs-note);
+}
+
+.moveNewInput:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.groups {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.group {
+  margin-bottom: 12px;
+}
+
+.groupHead {
+  border-radius: var(--radius-s);
+  transition: background var(--transition);
+}
+
+.dropActive {
+  background: var(--accent-soft);
+}
+
+.groupToggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 6px;
+  border: none;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: var(--fs-body);
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.chevron {
+  display: inline-flex;
+  color: var(--text-secondary);
+  transition: transform var(--transition);
+}
+
+.chevronClosed {
+  transform: rotate(-90deg);
+}
+
+.groupName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.groupCount {
+  color: var(--text-secondary);
+  font-size: var(--fs-note);
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr) 170px 110px 190px;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 6px;
+  border-top: 1px solid var(--border);
+  cursor: pointer;
+  transition: background var(--transition);
+}
+
+.row:hover {
+  background: var(--bg-subtle);
+}
+
+.check {
+  width: 15px;
+  height: 15px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.rowMain {
+  min-width: 0;
+}
+
+.rowName {
+  font-size: var(--fs-body);
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rowId {
+  margin-top: 1px;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: var(--fs-meta);
+}
+
+.rowProfile {
+  color: var(--text-secondary);
+  font-size: var(--fs-note);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rowTime {
+  color: var(--text-secondary);
+  font-size: var(--fs-note);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.scrim {
+  position: fixed;
+  inset: 0;
+  background: var(--scrim);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 20;
+}
+
+.confirm {
+  background: var(--bg-surface-raised);
+  border-radius: var(--radius-m);
+  box-shadow: var(--shadow-2);
+  padding: 20px;
+  width: 360px;
+}
+
+.confirmMessage {
+  margin: 0 0 16px;
+  font-size: var(--fs-body);
+  color: var(--text-primary);
+}
+
+.confirmActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.confirmDelete {
+  padding: 6px 12px;
+  border: 1px solid var(--danger);
+  border-radius: var(--radius-s);
+  background: var(--bg-surface);
+  color: var(--danger);
+  font-size: var(--fs-note);
+  cursor: pointer;
+  transition: background var(--transition);
+}
+
+.confirmDelete:hover:not(:disabled) {
+  background: var(--danger-soft);
+}
+
+.confirmDelete:disabled {
+  opacity: 0.45;
+  cursor: default;
 }

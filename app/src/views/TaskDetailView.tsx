@@ -104,6 +104,7 @@ export function TaskDetailView({
 
   const [editingName, setEditingName] = useState(false);
   const [draftName, setDraftName] = useState("");
+  const [showDetails, setShowDetails] = useState(false);
 
   const rename = useMutation({
     mutationFn: (value: string) => api.renameTask(project, taskId, value),
@@ -219,22 +220,40 @@ export function TaskDetailView({
         </div>
       </header>
 
-      <p className={styles.metaLine}>
+      <div className={styles.metaLine}>
         <span>{task.profile}</span>
-        <span className={styles.metaSep}>·</span>
-        <span>
-          {t("task.meta.created")} {formatTime(task.created_at)}
-        </span>
         <span className={styles.metaSep}>·</span>
         <span>
           {t("task.meta.updated")} {formatTime(task.updated_at)}
         </span>
-      </p>
-      <p className={styles.metaMono}>
-        <span>{task.input_path}</span>
-        <span className={styles.metaSep}>·</span>
-        <span>{task.id}</span>
-      </p>
+        <button
+          type="button"
+          className={styles.metaToggle}
+          aria-expanded={showDetails}
+          onClick={() => setShowDetails((open) => !open)}
+        >
+          {t("task.detail.more")}
+          <span className={`${styles.metaChevron} ${showDetails ? styles.metaChevronOpen : ""}`}>
+            <Icon name="chevron-down" size={13} />
+          </span>
+        </button>
+      </div>
+      {showDetails && (
+        <dl className={styles.details}>
+          <div className={styles.detailsRow}>
+            <dt>{t("task.input")}</dt>
+            <dd>{task.input_path}</dd>
+          </div>
+          <div className={styles.detailsRow}>
+            <dt>ID</dt>
+            <dd>{task.id}</dd>
+          </div>
+          <div className={styles.detailsRow}>
+            <dt>{t("task.created")}</dt>
+            <dd>{formatTime(task.created_at)}</dd>
+          </div>
+        </dl>
+      )}
 
       {task.status === "paused" && (
         <section className={styles.noticePaused}>

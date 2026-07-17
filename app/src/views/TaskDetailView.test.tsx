@@ -51,6 +51,8 @@ test("renders stages and metadata", async () => {
   await waitFor(() => expect(screen.getAllByText("t1").length).toBeGreaterThan(0));
   expect(screen.getByText("讀入字幕")).toBeInTheDocument();
   expect(screen.getByText("翻譯")).toBeInTheDocument();
+  expect(screen.queryByText("/tmp/in.srt")).not.toBeInTheDocument();
+  await userEvent.click(screen.getByRole("button", { name: "詳細資訊" }));
   expect(screen.getByText("/tmp/in.srt")).toBeInTheDocument();
 });
 

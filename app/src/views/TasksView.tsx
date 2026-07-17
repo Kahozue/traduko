@@ -1,10 +1,11 @@
-import { useEffect, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CreateTaskDialog } from "../components/CreateTaskDialog";
+import { Icon } from "../components/icons";
 import { StatusBadge } from "../components/StatusBadge";
 import { t } from "../i18n";
 import { useApi } from "../lib/connection";
-import type { TaskStatus } from "../lib/api/types";
+import type { TaskIndexRow, TaskStatus } from "../lib/api/types";
 import styles from "./TasksView.module.css";
 
 const STATUS_OPTIONS: TaskStatus[] = [
@@ -27,8 +28,22 @@ const STATUS_LABEL: Record<TaskStatus, string> = {
   canceled: t("status.canceled"),
 };
 
+const COLLAPSE_KEY = "traduko.tasks.collapsed";
+
 function formatTime(iso: string): string {
   return new Date(iso).toLocaleString();
+}
+
+function rowKey(row: TaskIndexRow): string {
+  return `${row.project}\n${row.id}`;
+}
+
+function loadCollapsed(): Set<string> {
+  try {
+    return new Set(JSON.parse(localStorage.getItem(COLLAPSE_KEY) ?? "[]") as string[]);
+  } catch {
+    return new Set();
+  }
 }
 
 // The empty state is the sanctioned home of the verda-stelo mark.
@@ -75,8 +90,17 @@ export function TasksView({
   onConsumeDrop?: () => void;
 }) {
   const api = useApi();
+  const queryClient = useQueryClient();
   const [statusFilter, setStatusFilter] = useState("");
   const [creating, setCreating] = useState(false);
+  const [collapsed, setCollapsed] = useState<Set<string>>(loadCollapsed);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [moveMenuOpen, setMoveMenuOpen] = useState(false);
+  const [newCategory, setNewCategory] = useState("");
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [bulkNote, setBulkNote] = useState<string | null>(null);
+  const [dropTarget, setDropTarget] = useState<string | null>(null);
+  const moveMenuRef = useRef<HTMLDivElement>(null);
   const { data: rows } = useQuery({
     queryKey: ["tasks", statusFilter],
     queryFn: () => api.listTasks(statusFilter ? { status: statusFilter } : undefined),
@@ -85,6 +109,105 @@ export function TasksView({
   useEffect(() => {
     if (createSignal > 0) setCreating(true);
   }, [createSignal]);
+
+  useEffect(() => {
+    if (!moveMenuOpen) return;
+    function onDocMouseDown(event: MouseEvent) {
+      if (!moveMenuRef.current?.contains(event.target as Node)) setMoveMenuOpen(false);
+    }
+    document.addEventListener("mousedown", onDocMouseDown);
+    return () => document.removeEventListener("mousedown", onDocMouseDown);
+  }, [moveMenuOpen]);
+
+  const groups = useMemo(() => {
+    const map = new Map<string, TaskIndexRow[]>();
+    for (const row of rows ?? []) {
+      const bucket = map.get(row.project);
+      if (bucket) bucket.push(row);
+      else map.set(row.project, [row]);
+    }
+    return [...map.entries()].sort(([a], [b]) => {
+      if (a === "default") return -1;
+      if (b === "default") return 1;
+      return a.localeCompare(b);
+    });
+  }, [rows]);
+
+  const byKey = useMemo(() => {
+    const map = new Map<string, TaskIndexRow>();
+    for (const row of rows ?? []) map.set(rowKey(row), row);
+    return map;
+  }, [rows]);
+
+  function toggleCollapse(project: string) {
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      if (next.has(project)) next.delete(project);
+      else next.add(project);
+      localStorage.setItem(COLLAPSE_KEY, JSON.stringify([...next]));
+      return next;
+    });
+  }
+
+  function toggleSelect(key: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+    setBulkNote(null);
+  }
+
+  function selectionRows(): TaskIndexRow[] {
+    return [...selected].map((key) => byKey.get(key)).filter((row): row is TaskIndexRow => !!row);
+  }
+
+  const bulkDelete = useMutation({
+    mutationFn: async () => {
+      const results = await Promise.allSettled(
+        selectionRows().map((row) => api.deleteTask(row.project, row.id)),
+      );
+      return results.filter((result) => result.status === "rejected").length;
+    },
+    onSuccess: (failedCount) => {
+      queryClient.invalidateQueries({ queryKey: ["tasks"] });
+      setSelected(new Set());
+      setConfirmingDelete(false);
+      setBulkNote(failedCount > 0 ? t("tasks.bulkPartial") : null);
+    },
+  });
+
+  const bulkMove = useMutation({
+    mutationFn: async ({ keys, target }: { keys: string[]; target: string }) => {
+      const moves = keys
+        .map((key) => byKey.get(key))
+        .filter((row): row is TaskIndexRow => !!row && row.project !== target);
+      const results = await Promise.allSettled(
+        moves.map((row) => api.moveTask(row.project, row.id, target)),
+      );
+      return results.filter((result) => result.status === "rejected").length;
+    },
+    onSuccess: (failedCount) => {
+      queryClient.invalidateQueries({ queryKey: ["tasks"] });
+      setSelected(new Set());
+      setMoveMenuOpen(false);
+      setNewCategory("");
+      setBulkNote(failedCount > 0 ? t("tasks.bulkPartial") : null);
+    },
+  });
+
+  function dropOnProject(event: React.DragEvent, project: string) {
+    event.preventDefault();
+    setDropTarget(null);
+    const key = event.dataTransfer.getData("text/plain");
+    if (!key) return;
+    const keys = selected.has(key) ? [...selected] : [key];
+    bulkMove.mutate({ keys, target: project });
+  }
+
+  const projectNames = groups.map(([name]) => name);
+  const hasSelection = selected.size > 0;
 
   return (
     <div>
@@ -109,39 +232,180 @@ export function TasksView({
         </div>
       </header>
 
+      {hasSelection && (
+        <div className={styles.bulkBar}>
+          <span className={styles.bulkCount}>
+            {t("tasks.selected")} {selected.size} {t("tasks.unit")}
+          </span>
+          <div className={styles.moveWrap} ref={moveMenuRef}>
+            <button
+              type="button"
+              className={styles.bulkButton}
+              onClick={() => setMoveMenuOpen((open) => !open)}
+            >
+              {t("tasks.move")}
+            </button>
+            {moveMenuOpen && (
+              <div className={styles.moveMenu} role="menu">
+                {projectNames.map((name) => (
+                  <button
+                    key={name}
+                    type="button"
+                    role="menuitem"
+                    className={styles.moveItem}
+                    onClick={() => bulkMove.mutate({ keys: [...selected], target: name })}
+                  >
+                    {name}
+                  </button>
+                ))}
+                <div className={styles.moveNewRow}>
+                  <input
+                    className={styles.moveNewInput}
+                    placeholder={t("tasks.moveNew")}
+                    value={newCategory}
+                    onChange={(event) => setNewCategory(event.target.value)}
+                  />
+                  <button
+                    type="button"
+                    className={styles.bulkButton}
+                    disabled={newCategory.trim() === "" || bulkMove.isPending}
+                    onClick={() =>
+                      bulkMove.mutate({ keys: [...selected], target: newCategory.trim() })
+                    }
+                  >
+                    {t("tasks.moveApply")}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+          <button
+            type="button"
+            className={styles.bulkDanger}
+            onClick={() => setConfirmingDelete(true)}
+          >
+            {t("tasks.delete")}
+          </button>
+          <button
+            type="button"
+            className={styles.bulkButton}
+            onClick={() => setSelected(new Set())}
+          >
+            {t("tasks.clearSelection")}
+          </button>
+          {bulkNote && <span className={styles.bulkNote}>{bulkNote}</span>}
+        </div>
+      )}
+      {!hasSelection && bulkNote && <p className={styles.bulkNoteLine}>{bulkNote}</p>}
+
       {rows && rows.length === 0 && statusFilter === "" ? (
         <EmptyGuide onOpenSettings={onOpenSettings} />
       ) : rows && rows.length === 0 ? (
         <div className={styles.empty}>{t("tasks.empty")}</div>
       ) : (
-        <div className={styles.card}>
-          <table className={styles.table}>
-            <thead>
-              <tr>
-                <th>{t("tasks.col.task")}</th>
-                <th>{t("tasks.col.profile")}</th>
-                <th>{t("tasks.col.status")}</th>
-                <th>{t("tasks.col.updated")}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {(rows ?? []).map((row) => (
-                <tr key={row.id} onClick={() => onOpenTask(row.project, row.id)}>
-                  <td>
-                    <div className={styles.taskId}>{row.name || row.id}</div>
-                    <div className={styles.project}>
-                      {row.id} · {row.project}
-                    </div>
-                  </td>
-                  <td>{row.profile}</td>
-                  <td>
-                    <StatusBadge status={row.status} />
-                  </td>
-                  <td className={styles.time}>{formatTime(row.updated_at)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className={styles.groups}>
+          {groups.map(([project, groupRows]) => {
+            const isCollapsed = collapsed.has(project);
+            return (
+              <section key={project} className={styles.group}>
+                <div
+                  data-testid={`group-header-${project}`}
+                  className={`${styles.groupHead} ${
+                    dropTarget === project ? styles.dropActive : ""
+                  }`}
+                  onDragOver={(event) => {
+                    event.preventDefault();
+                    setDropTarget(project);
+                  }}
+                  onDragLeave={() => setDropTarget(null)}
+                  onDrop={(event) => dropOnProject(event, project)}
+                >
+                  <button
+                    type="button"
+                    className={styles.groupToggle}
+                    aria-expanded={!isCollapsed}
+                    onClick={() => toggleCollapse(project)}
+                  >
+                    <span
+                      className={`${styles.chevron} ${isCollapsed ? styles.chevronClosed : ""}`}
+                    >
+                      <Icon name="chevron-down" size={14} />
+                    </span>
+                    <span className={styles.groupName}>{project}</span>
+                    <span className={styles.groupCount}>{groupRows.length}</span>
+                  </button>
+                </div>
+                {!isCollapsed &&
+                  groupRows.map((row) => {
+                    const key = rowKey(row);
+                    return (
+                      <div
+                        key={row.id}
+                        className={styles.row}
+                        draggable
+                        onDragStart={(event) => {
+                          event.dataTransfer.setData("text/plain", key);
+                          event.dataTransfer.effectAllowed = "move";
+                        }}
+                        onClick={() => onOpenTask(row.project, row.id)}
+                      >
+                        <input
+                          type="checkbox"
+                          className={styles.check}
+                          aria-label={`${t("tasks.selectRow")} ${row.name || row.id}`}
+                          checked={selected.has(key)}
+                          onClick={(event) => event.stopPropagation()}
+                          onChange={() => toggleSelect(key)}
+                        />
+                        <div className={styles.rowMain}>
+                          <div className={styles.rowName}>{row.name || row.id}</div>
+                          <div className={styles.rowId}>{row.id}</div>
+                        </div>
+                        <span className={styles.rowProfile}>{row.profile}</span>
+                        <StatusBadge status={row.status} />
+                        <span className={styles.rowTime}>{formatTime(row.updated_at)}</span>
+                      </div>
+                    );
+                  })}
+              </section>
+            );
+          })}
+        </div>
+      )}
+
+      {confirmingDelete && (
+        <div className={styles.scrim}>
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label={t("tasks.deleteTitle")}
+            className={styles.confirm}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") setConfirmingDelete(false);
+            }}
+          >
+            <p className={styles.confirmMessage}>
+              {t("tasks.deleteConfirm1")} {selected.size} {t("tasks.deleteConfirm2")}
+            </p>
+            <div className={styles.confirmActions}>
+              <button
+                type="button"
+                autoFocus
+                className={styles.bulkButton}
+                onClick={() => setConfirmingDelete(false)}
+              >
+                {t("tasks.deleteCancel")}
+              </button>
+              <button
+                type="button"
+                className={styles.confirmDelete}
+                disabled={bulkDelete.isPending}
+                onClick={() => bulkDelete.mutate()}
+              >
+                {t("tasks.deleteApply")}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
