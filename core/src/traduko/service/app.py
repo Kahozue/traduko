@@ -47,6 +47,8 @@ from ..eventlog import EventLogger
 from ..executor import reset_stages_after_artifact
 from ..events import Event
 from ..media import MediaError, ffmpeg_available
+from .. import mcphub
+from ..mcphub import MCPManager
 from ..models import InvalidTransition, TaskRecord, TaskStatus, transition
 from ..notify import Notifier, NotifyError, create_channel
 from ..preflight import run_preflight
@@ -414,6 +416,28 @@ def asr_test(request: Request, body: AsrModelRequest | None = None) -> dict:
     return manager.test(model)
 
 
+@router.get("/mcp/status")
+def mcp_status(request: Request) -> list[dict]:
+    manager: MCPManager | None = getattr(request.app.state, "mcp", None)
+    return manager.status() if manager is not None else []
+
+
+@router.post("/mcp/reload")
+async def mcp_reload(request: Request) -> list[dict]:
+    """Rebuild the manager from the current config; the UI calls this after
+    saving mcp_servers changes."""
+    ws: Workspace = request.app.state.workspace
+    old: MCPManager | None = getattr(request.app.state, "mcp", None)
+    mcphub.set_active(None)
+    if old is not None:
+        await old.stop()
+    manager = MCPManager(load_config(ws.root).mcp_servers)
+    await manager.start()
+    mcphub.set_active(manager)
+    request.app.state.mcp = manager
+    return manager.status()
+
+
 @router.get("/profiles")
 def list_profiles(request: Request) -> list[str]:
     ws: Workspace = request.app.state.workspace
@@ -622,6 +646,10 @@ def create_app(data_root: Path | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         worker.start()
+        mcp_manager = MCPManager(workspace.config.mcp_servers)
+        await mcp_manager.start()
+        mcphub.set_active(mcp_manager)
+        app.state.mcp = mcp_manager
         bot_task: asyncio.Task | None = None
         bot_config = workspace.config.discord_bot
         if bot_config.enabled:
@@ -658,6 +686,8 @@ def create_app(data_root: Path | None = None) -> FastAPI:
             bot_task.cancel()
             with suppress(asyncio.CancelledError):
                 await bot_task
+        mcphub.set_active(None)
+        await app.state.mcp.stop()
         worker.stop()
 
     app = FastAPI(

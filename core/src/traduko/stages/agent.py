@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 
 from ..agents.proofread import ProofreadSettings, run_proofread
 from ..agents.recorder import AgentRunRecorder
+from ..mcphub import active_tools
 from ..budget import BudgetMeter
 from ..config import load_config
 from ..events import Event
@@ -76,6 +77,7 @@ class ProofreadStage:
                 recorder=recorder,
                 emit_progress=ctx.emit_progress,
                 on_round=on_round,
+                extra_tools=active_tools(),
             )
         except LLMError as error:
             raise StageError(str(error)) from error

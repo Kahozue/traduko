@@ -690,3 +690,23 @@ select.input {
   color: var(--ok);
   font-size: var(--fs-note);
 }
+
+.mcpState {
+  color: var(--text-secondary);
+  font-size: var(--fs-note);
+  white-space: nowrap;
+}
+
+.mcpState[data-state="connected"] {
+  color: var(--ok);
+}
+
+.mcpState[data-state="error"] {
+  color: var(--danger);
+}
+
+.mcpError {
+  margin: 0;
+  color: var(--danger);
+  font-size: var(--fs-note);
+}

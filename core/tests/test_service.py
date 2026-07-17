@@ -788,3 +788,47 @@ def test_asr_download_without_package_is_409(tmp_path: Path, monkeypatch) -> Non
     with service(tmp_path) as (client, headers, token):
         response = client.post("/asr/download", json={"model": "small"}, headers=headers)
         assert response.status_code == 409
+
+
+def test_mcp_status_empty_without_servers(tmp_path: Path) -> None:
+    with service(tmp_path) as (client, headers, _token):
+        resp = client.get("/mcp/status", headers=headers)
+        assert resp.status_code == 200
+        assert resp.json() == []
+
+
+def test_mcp_reload_picks_up_saved_config(tmp_path: Path, monkeypatch) -> None:
+    from contextlib import asynccontextmanager
+
+    from test_mcphub import ECHO_TOOL, FakeSession, text_result
+    from traduko import mcphub
+    from traduko.config import CoreConfig, save_config
+
+    session = FakeSession([ECHO_TOOL], {"echo": text_result("echo:hi")})
+
+    @asynccontextmanager
+    async def fake_connector(config):
+        yield session
+
+    monkeypatch.setattr(mcphub, "default_connector", fake_connector)
+    with service(tmp_path) as (client, headers, _token):
+        assert client.get("/mcp/status", headers=headers).json() == []
+        config = load_config(tmp_path)
+        payload = config.model_dump()
+        payload["mcp_servers"] = {
+            "demo": {"transport": "stdio", "command": "demo-cmd", "enabled": True}
+        }
+        save_config(tmp_path, CoreConfig.model_validate(payload))
+
+        resp = client.post("/mcp/reload", headers=headers)
+        assert resp.status_code == 200
+        deadline = time.monotonic() + 5
+        while True:
+            rows = client.get("/mcp/status", headers=headers).json()
+            if rows and rows[0]["state"] == "connected":
+                break
+            assert time.monotonic() < deadline
+            time.sleep(0.05)
+        assert rows[0]["name"] == "demo"
+        assert rows[0]["tools"] == ["echo"]
+        assert mcphub.active_tools()[0].name == "demo.echo"

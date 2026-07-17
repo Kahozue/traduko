@@ -73,6 +73,21 @@ class SyncConfig(BaseModel):
     auto_interval_minutes: int = 0
 
 
+class McpServerConfig(BaseModel):
+    """One external MCP server. stdio spawns a local command; http talks
+    Streamable HTTP, with an optional OAuth bearer token."""
+
+    model_config = ConfigDict(extra="allow")
+
+    transport: Literal["stdio", "http"] = "stdio"
+    command: str = ""
+    args: list[str] = Field(default_factory=list)
+    env: dict[str, str] = Field(default_factory=dict)
+    url: str = ""
+    auth_token: str = ""
+    enabled: bool = False
+
+
 class CoreConfig(BaseModel):
     model_config = ConfigDict(extra="allow")
 
@@ -83,6 +98,7 @@ class CoreConfig(BaseModel):
     notifications: NotificationsConfig = Field(default_factory=NotificationsConfig)
     discord_bot: DiscordBotConfig = Field(default_factory=DiscordBotConfig)
     sync: SyncConfig = Field(default_factory=SyncConfig)
+    mcp_servers: dict[str, McpServerConfig] = Field(default_factory=dict)
 
 
 def load_config(root: Path) -> CoreConfig:

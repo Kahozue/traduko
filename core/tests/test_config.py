@@ -126,3 +126,39 @@ def test_discord_bot_token_resolution(monkeypatch) -> None:
     assert via_env.resolve_token() == "from-env"
 
     assert DiscordBotConfig().resolve_token() == ""
+
+
+def test_mcp_servers_round_trip(tmp_path: Path) -> None:
+    config = CoreConfig.model_validate(
+        {
+            "mcp_servers": {
+                "files": {
+                    "transport": "stdio",
+                    "command": "uvx",
+                    "args": ["mcp-server-files"],
+                    "enabled": True,
+                },
+                "remote": {
+                    "transport": "http",
+                    "url": "http://127.0.0.1:9000/mcp",
+                    "auth_token": "secret",
+                },
+            }
+        }
+    )
+    save_config(tmp_path, config)
+    loaded = load_config(tmp_path)
+    files = loaded.mcp_servers["files"]
+    assert files.transport == "stdio"
+    assert files.args == ["mcp-server-files"]
+    assert files.enabled is True
+    remote = loaded.mcp_servers["remote"]
+    assert remote.transport == "http"
+    assert remote.auth_token == "secret"
+    assert remote.enabled is False
+
+
+def test_mcp_server_defaults_and_unknown_transport() -> None:
+    assert CoreConfig().mcp_servers == {}
+    with pytest.raises(ValidationError):
+        CoreConfig.model_validate({"mcp_servers": {"x": {"transport": "ws"}}})

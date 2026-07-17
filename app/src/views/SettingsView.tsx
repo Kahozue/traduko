@@ -4,6 +4,7 @@ import { t, type MessageKey } from "../i18n";
 import { useApi, useConnection } from "../lib/connection";
 import type { CoreConfigDoc } from "../lib/api/types";
 import { AboutSection } from "../components/settings/AboutSection";
+import { AgentSection } from "../components/settings/AgentSection";
 import { AppearanceSection } from "../components/settings/AppearanceSection";
 import { BasicsSection } from "../components/settings/BasicsSection";
 import { AsrSection } from "../components/settings/AsrSection";
@@ -16,12 +17,13 @@ import styles from "../components/settings/settings.module.css";
 // Tabs follow the information architecture in internal/design-language.md:
 // one pipeline domain per tab, future domains (documents, comics, agent)
 // slot in after "video"; integrations and about stay last.
-const TABS = ["general", "video", "integrations", "about"] as const;
+const TABS = ["general", "video", "agent", "integrations", "about"] as const;
 type TabId = (typeof TABS)[number];
 
 const TAB_LABELS: Record<TabId, MessageKey> = {
   general: "settings.tab.general",
   video: "settings.tab.video",
+  agent: "settings.tab.agent",
   integrations: "settings.tab.integrations",
   about: "settings.tab.about",
 };
@@ -62,6 +64,7 @@ function normalize(config: CoreConfigDoc): CoreConfigDoc {
       auto_interval_minutes: 0,
     };
   }
+  if (!next.mcp_servers) next.mcp_servers = {};
   return next;
 }
 
@@ -73,6 +76,11 @@ export function SettingsView() {
   const { data: syncStatus } = useQuery({
     queryKey: ["sync-status"],
     queryFn: () => api.getSyncStatus(),
+  });
+  const { data: mcpStatus } = useQuery({
+    queryKey: ["mcp-status"],
+    queryFn: () => api.getMcpStatus(),
+    refetchInterval: 5000,
   });
 
   const runSync = useMutation({
@@ -110,24 +118,36 @@ export function SettingsView() {
   const [channelsValid, setChannelsValid] = useState(true);
   const [botValid, setBotValid] = useState(true);
   const [syncValid, setSyncValid] = useState(true);
+  const [agentValid, setAgentValid] = useState(true);
 
   useEffect(() => {
     if (data && draft === null) setDraft(normalize(data));
   }, [data, draft]);
 
+  // Compare against the normalized server config: backfilled sections
+  // (added by newer app versions) must not count as unsaved edits.
   const dirty = useMemo(
     () =>
-      draft !== null && data !== undefined && JSON.stringify(draft) !== JSON.stringify(data),
+      draft !== null &&
+      data !== undefined &&
+      JSON.stringify(draft) !== JSON.stringify(normalize(data)),
     [draft, data],
   );
   const projectValid = draft !== null && draft.default_project.trim() !== "";
   const valid =
-    numbersValid && providersValid && channelsValid && botValid && syncValid && projectValid;
+    numbersValid &&
+    providersValid &&
+    channelsValid &&
+    botValid &&
+    syncValid &&
+    agentValid &&
+    projectValid;
 
   // The save bar is visible from every tab, so point at the tab that holds
   // the failing fields instead of assuming the user can see them.
   const invalidTabs: TabId[] = [];
   if (!projectValid || !numbersValid || !providersValid) invalidTabs.push("general");
+  if (!agentValid) invalidTabs.push("agent");
   if (!channelsValid || !botValid || !syncValid) invalidTabs.push("integrations");
 
   function onTabKeyDown(event: React.KeyboardEvent) {
@@ -146,6 +166,12 @@ export function SettingsView() {
       setDraft(normalize(saved));
       setResetKey((key) => key + 1);
       queryClient.invalidateQueries({ queryKey: ["budget"] });
+      // Saved mcp_servers only take effect once the core rebuilds its
+      // connections; harmless when nothing is configured.
+      void api
+        .reloadMcp()
+        .then(() => queryClient.invalidateQueries({ queryKey: ["mcp-status"] }))
+        .catch(() => {});
     },
   });
 
@@ -156,6 +182,7 @@ export function SettingsView() {
     setChannelsValid(true);
     setBotValid(true);
     setSyncValid(true);
+    setAgentValid(true);
     setResetKey((key) => key + 1);
   }
 
@@ -237,6 +264,28 @@ export function SettingsView() {
         className={styles.panel}
       >
         <AsrSection />
+      </div>
+
+      <div
+        role="tabpanel"
+        id="settings-panel-agent"
+        aria-labelledby="settings-tab-agent"
+        hidden={tab !== "agent"}
+        className={styles.panel}
+      >
+        {draft && (
+          <AgentSection
+            key={`agent-${resetKey}`}
+            servers={draft.mcp_servers}
+            status={mcpStatus ?? []}
+            onChange={(value) => {
+              setAgentValid(value !== null);
+              if (value !== null) {
+                setDraft((prev) => (prev ? { ...prev, mcp_servers: value } : prev));
+              }
+            }}
+          />
+        )}
       </div>
 
       <div

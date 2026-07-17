@@ -23,6 +23,7 @@ for package in (
     "tokenizers",
     "ebooklib",
     "lxml",
+    "mcp",
 ):
     pkg_datas, pkg_binaries, pkg_hidden = collect_all(package)
     datas += pkg_datas

@@ -114,3 +114,53 @@ def test_fake_provider_dry_run_converges(tmp_path: Path) -> None:
     translation = ctx.artifacts.read_json(3, "translation.json")
     assert translation["segments"][0]["target"] == "[T] hello"
     assert len(result.artifacts) == 2
+
+
+def test_proofread_agent_calls_mounted_mcp_tool(tmp_path: Path) -> None:
+    """v2-04 acceptance: an external MCP server's tool, namespaced
+    server.tool, is callable from the proofread agent."""
+    from test_mcphub import ECHO_TOOL, FakeSession, make_connector, run_manager, text_result
+    from traduko import mcphub
+    from traduko.config import McpServerConfig
+    from traduko.mcphub import MCPManager
+
+    session = FakeSession([ECHO_TOOL], {"echo": text_result("echo:hi")})
+    manager = MCPManager(
+        {"demo": McpServerConfig(command="demo-cmd", enabled=True)},
+        connector=make_connector({"demo-cmd": session}),
+    )
+    shutdown = run_manager(manager)
+    mcphub.set_active(manager)
+    try:
+        import time
+
+        deadline = time.monotonic() + 5
+        while manager.status()[0]["state"] != "connected":
+            assert time.monotonic() < deadline
+            time.sleep(0.02)
+
+        script = [
+            '{"tool": "demo.echo", "arguments": {"text": "hi"}}',
+            '{"done": true, "summary": "used the external tool"}',
+        ]
+        save_config(
+            tmp_path,
+            CoreConfig(llm_providers={"agent": {"type": "scripted", "responses": script}}),
+        )
+        ctx, _, task_dir = make_ctx(
+            tmp_path, {"provider": "agent", "intensity": "deep", "max_rounds": 2}
+        )
+        registry.create("proofread").run(ctx)
+
+        runs = list((task_dir / "agent-runs").glob("03-proofread-*.jsonl"))
+        assert len(runs) == 1
+        records = [json.loads(line) for line in runs[0].read_text().splitlines()]
+        start = next(r for r in records if r["kind"] == "start")
+        assert "demo.echo" in start["tools"]
+        turn = next(r for r in records if r["kind"] == "turn")
+        assert turn["tool"] == "demo.echo"
+        assert turn["result"] == "echo:hi"
+        assert session.calls == [("echo", {"text": "hi"})]
+    finally:
+        mcphub.set_active(None)
+        shutdown()

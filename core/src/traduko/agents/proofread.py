@@ -7,7 +7,7 @@ workspace so each edit carries a reason and lands in the run record.
 from __future__ import annotations
 
 import json
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 
 from ..budget import BudgetMeter
@@ -229,6 +229,7 @@ def run_proofread(
     recorder: AgentRunRecorder,
     emit_progress: Callable[[int, int], None],
     on_round: Callable[[int], None] | None = None,
+    extra_tools: Iterable[AgentTool] = (),
 ) -> ProofreadResult:
     workspace = ProofreadWorkspace(segments)
     total = len(segments)
@@ -272,6 +273,8 @@ def run_proofread(
     registry = build_proofread_tools(
         workspace, glossary_entries, retranslate, on_tool_progress
     )
+    for tool in extra_tools:
+        registry.register(tool)
 
     def handle_round(round_number: int) -> None:
         workspace.start_round(round_number)

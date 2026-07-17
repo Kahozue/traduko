@@ -5,6 +5,7 @@ import type {
   BudgetInfo,
   ChannelConfigDoc,
   CoreConfigDoc,
+  McpServerStatus,
   NotifyTestResult,
   PersistedEvent,
   PreflightReport,
@@ -163,6 +164,14 @@ export class ApiClient {
       method: "POST",
       body: JSON.stringify({ model }),
     });
+  }
+
+  getMcpStatus(): Promise<McpServerStatus[]> {
+    return this.request("/mcp/status");
+  }
+
+  reloadMcp(): Promise<McpServerStatus[]> {
+    return this.request("/mcp/reload", { method: "POST" });
   }
 
   listArtifacts(project: string, taskId: string): Promise<ArtifactListItem[]> {

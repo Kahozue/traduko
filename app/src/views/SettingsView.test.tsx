@@ -30,10 +30,12 @@ const DEFAULT_CONFIG: CoreConfigDoc = {
     webdav_password: "",
     auto_interval_minutes: 0,
   },
+  mcp_servers: {},
 };
 
 function setup(overrides: Partial<ApiClient> = {}) {
   const saveConfig = vi.fn().mockImplementation((body) => Promise.resolve(body));
+  const reloadMcp = vi.fn().mockResolvedValue([]);
   const api: Partial<ApiClient> = {
     getConfig: vi.fn().mockResolvedValue(DEFAULT_CONFIG),
     getSyncStatus: vi.fn().mockResolvedValue({
@@ -45,11 +47,13 @@ function setup(overrides: Partial<ApiClient> = {}) {
       conflicts: [],
       peers: [],
     }),
+    getMcpStatus: vi.fn().mockResolvedValue([]),
+    reloadMcp,
     saveConfig,
     ...overrides,
   };
   renderWithConnection(<SettingsView />, { api });
-  return { saveConfig };
+  return { saveConfig, reloadMcp };
 }
 
 test("no save bar until draft differs from server config", async () => {
@@ -62,7 +66,13 @@ test("tabs render in order and default to the general tab", async () => {
   setup();
   await screen.findByLabelText("預設專案");
   const tabs = screen.getAllByRole("tab");
-  expect(tabs.map((el) => el.textContent)).toEqual(["一般", "影片", "整合", "關於"]);
+  expect(tabs.map((el) => el.textContent)).toEqual([
+    "一般",
+    "影片",
+    "Agent",
+    "整合",
+    "關於",
+  ]);
   expect(screen.getByRole("tab", { name: "一般" })).toHaveAttribute(
     "aria-selected",
     "true",
@@ -106,6 +116,38 @@ test("editing default project shows save bar and saves full document", async () 
   await waitFor(() => expect(saveConfig).toHaveBeenCalledTimes(1));
   expect(saveConfig.mock.calls[0][0].default_project).toBe("default-x");
   await screen.findByText("已儲存");
+});
+
+test("saving reconnects mcp servers", async () => {
+  const { reloadMcp } = setup();
+  const input = await screen.findByLabelText("預設專案");
+  await userEvent.type(input, "-x");
+  await userEvent.click(screen.getByRole("button", { name: "儲存" }));
+  await waitFor(() => expect(reloadMcp).toHaveBeenCalledTimes(1));
+});
+
+test("agent tab lists mcp servers with status", async () => {
+  setup({
+    getConfig: vi.fn().mockResolvedValue({
+      ...DEFAULT_CONFIG,
+      mcp_servers: {
+        files: {
+          transport: "stdio", command: "uvx", args: [], env: {},
+          url: "", auth_token: "", enabled: true,
+        },
+      },
+    }),
+    getMcpStatus: vi.fn().mockResolvedValue([
+      {
+        name: "files", transport: "stdio", enabled: true,
+        state: "connected", error: "", tools: ["read"],
+      },
+    ]),
+  });
+  await screen.findByLabelText("預設專案");
+  await userEvent.click(screen.getByRole("tab", { name: "Agent" }));
+  expect(await screen.findByDisplayValue("files")).toBeVisible();
+  expect(screen.getByText("已連線 · 1 個工具")).toBeVisible();
 });
 
 test("empty default project blocks save", async () => {

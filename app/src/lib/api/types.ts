@@ -237,6 +237,28 @@ export interface SyncConfigDoc {
   [key: string]: unknown;
 }
 
+export interface McpServerConfigDoc {
+  transport: "stdio" | "http";
+  command: string;
+  args: string[];
+  env: Record<string, string>;
+  url: string;
+  auth_token: string;
+  enabled: boolean;
+  [key: string]: unknown;
+}
+
+export type McpServerState = "connected" | "connecting" | "error" | "disabled";
+
+export interface McpServerStatus {
+  name: string;
+  transport: "stdio" | "http";
+  enabled: boolean;
+  state: McpServerState;
+  error: string;
+  tools: string[];
+}
+
 export interface CoreConfigDoc {
   schema_version: number;
   default_project: string;
@@ -245,6 +267,7 @@ export interface CoreConfigDoc {
   notifications: NotificationsConfigDoc;
   discord_bot: DiscordBotConfigDoc;
   sync: SyncConfigDoc;
+  mcp_servers: Record<string, McpServerConfigDoc>;
   [key: string]: unknown;
 }
 

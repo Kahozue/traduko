@@ -127,6 +127,7 @@ test("config endpoints round trip", async () => {
       webdav_password: "",
       auto_interval_minutes: 0,
     },
+    mcp_servers: {},
   } as CoreConfigDoc;
   const fetchFn = vi.fn().mockResolvedValue(jsonResponse(200, doc));
   const client = new ApiClient("http://127.0.0.1:8686", "tok", fetchFn);
