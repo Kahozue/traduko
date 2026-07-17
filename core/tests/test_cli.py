@@ -1,4 +1,5 @@
 import json
+import re
 from pathlib import Path
 
 from typer.testing import CliRunner
@@ -96,8 +97,9 @@ def test_run_gates_on_preflight_failure(tmp_path: Path) -> None:
 def test_serve_command_exists() -> None:
     result = runner.invoke(app, ["serve", "--help"])
     assert result.exit_code == 0
-    assert "--port" in result.output
-    assert "--parent-pid" in result.output
+    plain = re.sub(r"\x1b\[[0-9;]*m", "", result.output)
+    assert "--port" in plain
+    assert "--parent-pid" in plain
 
 
 class _FakeWatchdog:
