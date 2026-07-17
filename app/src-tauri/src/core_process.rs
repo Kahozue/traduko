@@ -36,6 +36,11 @@ fn core_command() -> Command {
         None => Command::new("traduko"),
     };
     command.env("PATH", augmented_path());
+    // Passed as an env var rather than a CLI flag so an older PATH-installed
+    // `traduko` simply ignores it instead of failing on an unknown option.
+    // A core that knows the variable exits itself when this app dies, which
+    // covers force-quits and crashes where kill_managed never runs.
+    command.env("TRADUKO_PARENT_PID", std::process::id().to_string());
     command
 }
 
