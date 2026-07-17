@@ -1,30 +1,41 @@
-"""Built-in assistant: read-only diagnostic tools (v2-06, task 1).
+"""Built-in assistant: read-only diagnostics, proposals, and the message loop.
 
 The assistant is an AgentRunner application, like proofread, but its job
 is answering questions about the running system rather than editing task
-content. Every tool here only reads state through the same code paths the
-service already uses (index, store, BudgetMeter, run_preflight) so the
-assistant never sees a different answer than the UI does. Nothing here
-mutates anything; `propose_config_change` (the one tool that changes
-state, gated behind human approval) and the system prompt/message loop
-that wire this list into a running agent belong to a later task.
+content. Every read-only tool here only reads state through the same code
+paths the service already uses (index, store, BudgetMeter, run_preflight)
+so the assistant never sees a different answer than the UI does. The one
+tool that changes anything, `propose_config_change`, never writes to
+config directly: it files a pending proposal through `proposals.py` that a
+human must approve in the UI, same as the config panel's own gated writes.
 
 `build_assistant_tools` intentionally returns a plain list rather than a
-ToolRegistry: the next task appends the proposal tool (and, likely,
-mcphub.active_tools()/skillhub.active_tools()) before registering
-everything, and a list is the simplest thing to concatenate.
+ToolRegistry, and deliberately excludes `propose_config_change`: it stays
+the fixed set of read-only diagnostics so Task 1's tests keep asserting
+exactly that. `run_assistant_message` assembles the full registry (these
+six, plus the proposal tool, plus mcphub/skillhub active tools) itself.
 """
 from __future__ import annotations
 
 import json
 from collections.abc import Callable
 from dataclasses import asdict
+from datetime import datetime, timezone
 from pathlib import Path
 
+from pydantic import ValidationError
+
+from .. import mcphub, skillhub
 from ..budget import BudgetMeter
+from ..config import CoreConfig
+from ..fsutil import atomic_write_text
+from ..llm import LLMError, create_llm
 from ..preflight import run_preflight as compute_preflight
+from ..proposals import propose_config
 from ..workspace import Workspace
-from .tools import AgentTool, ToolError
+from .recorder import AgentRunRecorder
+from .runner import AgentLimits, AgentRunner
+from .tools import AgentTool, ToolError, ToolRegistry
 
 DEFAULT_LOG_LINES = 50
 MAX_LOG_LINES = 500
@@ -33,7 +44,34 @@ MAX_LOG_LINES = 500
 # service's full-history endpoint default.
 TASK_DETAIL_EVENTS_LIMIT = 20
 
+# How many of the most recent history messages go into the goal transcript;
+# the on-disk history file itself is never trimmed.
+HISTORY_TRANSCRIPT_LIMIT = 40
+ASSISTANT_PROJECT = "assistant"
+ASSISTANT_LIMITS = AgentLimits(max_rounds=1, max_turns=12)
+
+SYSTEM_PROMPT = """\
+You are Traduko's built-in operations assistant. You help the operator \
+understand and adjust their local Traduko installation: task status, \
+budget usage, configuration, logs, and preflight diagnostics.
+
+Hard rule: you can NEVER change the configuration yourself. The only way \
+to change anything is to call the propose_config_change tool, which files \
+a pending proposal that the operator must review and approve from the \
+app's panel before it takes effect. Never say or imply that you have \
+already applied, saved, or changed a setting; at most say you have \
+submitted a proposal that is awaiting approval.
+
+Use the read-only tools (list_tasks, task_detail, budget_status, \
+read_config, read_logs, run_preflight) to gather facts before answering \
+instead of guessing about the state of the system. Reply in the same \
+language the operator wrote in."""
+
 _SECRET_MARKERS = ("key", "token", "password")
+
+
+class AssistantUnavailable(Exception):
+    """No usable LLM provider is configured for the assistant to run on."""
 
 
 def _is_secret_key(name: str) -> bool:
@@ -236,3 +274,192 @@ def build_assistant_tools(ws: Workspace) -> list[AgentTool]:
             handler=_safe(run_preflight_tool),
         ),
     ]
+
+
+def _build_propose_tool(ws: Workspace, proposal_ids: list[str]) -> AgentTool:
+    """The one write tool: files a pending proposal, never touches config.
+
+    `proposal_ids` is a per-run accumulator owned by the caller
+    (`run_assistant_message`); every proposal created during this run gets
+    appended so the caller can report and persist which ids this message
+    produced.
+    """
+
+    def propose_config_change(args: dict) -> str:
+        patch = args.get("patch")
+        if not isinstance(patch, dict):
+            raise ToolError("patch must be an object (a partial config tree)")
+        reason = str(args.get("reason", ""))
+        try:
+            proposal = propose_config(ws.root, patch, reason)
+        except ValidationError as error:
+            raise ToolError(str(error)) from None
+        proposal_ids.append(proposal["id"])
+        return json.dumps(
+            {"proposal_id": proposal["id"], "diff": proposal["diff"]},
+            ensure_ascii=False,
+        )
+
+    return AgentTool(
+        name="propose_config_change",
+        description=(
+            "File a pending proposal to change the live config. This never "
+            "applies the change: a human must approve it in the app's panel "
+            "before it takes effect. `patch` uses the same nested shape as "
+            "the config, e.g. {\"budget\": {\"monthly_usd_limit\": 50}}."
+        ),
+        parameters={
+            "patch": {
+                "type": "object",
+                "required": True,
+                "description": "partial config tree to merge, same shape as the live config",
+            },
+            "reason": {
+                "type": "string",
+                "required": True,
+                "description": "why this change is being proposed",
+            },
+        },
+        handler=propose_config_change,
+    )
+
+
+def _build_registry(ws: Workspace, proposal_ids: list[str]) -> ToolRegistry:
+    registry = ToolRegistry()
+    for tool in build_assistant_tools(ws):
+        registry.register(tool)
+    registry.register(_build_propose_tool(ws, proposal_ids))
+    for tool in mcphub.active_tools():
+        registry.register(tool)
+    for tool in skillhub.active_tools():
+        registry.register(tool)
+    return registry
+
+
+def _resolve_default_llm(config: CoreConfig):
+    """Pick the assistant's LLM provider from `config.llm_providers`.
+
+    Rule (no explicit default field exists in config): the "default" key if
+    present, else the sole entry if there is exactly one, else the first
+    key in sorted order. Mirrors `stages/common.py:resolve_llm`'s handling
+    of an entry dict (pop "model" before handing the rest to `create_llm`).
+    """
+    providers = config.llm_providers
+    if not providers:
+        raise AssistantUnavailable(
+            "no llm_providers configured; add one under config/core.yaml "
+            "before using the assistant"
+        )
+    if "default" in providers:
+        key = "default"
+    elif len(providers) == 1:
+        key = next(iter(providers))
+    else:
+        key = sorted(providers)[0]
+    entry = dict(providers[key])
+    model = entry.pop("model", None) or "fake-model"
+    try:
+        provider = create_llm(entry)
+    except LLMError as error:
+        raise AssistantUnavailable(str(error)) from error
+    return provider, model
+
+
+def _history_path(ws: Workspace) -> Path:
+    return ws.root / "assistant" / "history.json"
+
+
+def _load_history(ws: Workspace) -> list[dict]:
+    path = _history_path(ws)
+    if not path.exists():
+        return []
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return []
+    messages = data.get("messages") if isinstance(data, dict) else None
+    return messages if isinstance(messages, list) else []
+
+
+def _save_history(ws: Workspace, messages: list[dict]) -> None:
+    atomic_write_text(
+        _history_path(ws), json.dumps({"messages": messages}, ensure_ascii=False, indent=2)
+    )
+
+
+def _build_goal(history: list[dict], text: str) -> str:
+    block = skillhub.active_prompt_block()
+    transcript = ["Conversation so far:"]
+    for message in history[-HISTORY_TRANSCRIPT_LIMIT:]:
+        role = "USER" if message.get("role") == "user" else "ASSISTANT"
+        transcript.append(f"{role}: {message.get('text', '')}")
+    transcript.append(f"USER: {text}")
+    parts = [SYSTEM_PROMPT]
+    if block:
+        parts.append(block)
+    parts.append("\n".join(transcript))
+    return "\n\n".join(parts)
+
+
+def _not_converged_reply(reason: str) -> str:
+    return (
+        f"I could not finish processing this message (reason: {reason}). "
+        "Nothing was changed without your approval; please try again or "
+        "rephrase your request."
+    )
+
+
+def run_assistant_message(ws: Workspace, text: str) -> dict:
+    """Run one assistant turn: load history, run the agent, persist history.
+
+    Never mutates config itself; any write the model wants goes through
+    `propose_config_change` and stays pending until a human approves it.
+    Returns `{"reply", "proposal_ids", "converged", "reason"}`.
+    """
+    provider, model = _resolve_default_llm(ws.config)
+    history = _load_history(ws)
+    goal = _build_goal(history, text)
+
+    proposal_ids: list[str] = []
+    registry = _build_registry(ws, proposal_ids)
+    meter = BudgetMeter(ws.root, ws.bus, ws.config)
+    task_id = "assistant-" + datetime.now().strftime("%Y%m")
+    run_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%f")
+    recorder = AgentRunRecorder(ws.root / "assistant" / "runs", run_id=run_id)
+
+    runner = AgentRunner(
+        provider=provider,
+        meter=meter,
+        model=model,
+        project=ASSISTANT_PROJECT,
+        task_id=task_id,
+        registry=registry,
+        recorder=recorder,
+        limits=ASSISTANT_LIMITS,
+    )
+    result = runner.run(goal)
+    reply = result.summary if result.converged else _not_converged_reply(result.reason)
+
+    history.append(
+        {
+            "role": "user",
+            "text": text,
+            "ts": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        }
+    )
+    history.append(
+        {
+            "role": "assistant",
+            "text": reply,
+            "ts": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "proposal_ids": proposal_ids,
+        }
+    )
+    _save_history(ws, history)
+
+    return {
+        "reply": reply,
+        "proposal_ids": proposal_ids,
+        "converged": result.converged,
+        "reason": result.reason,
+    }

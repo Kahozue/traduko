@@ -3,10 +3,17 @@ from pathlib import Path
 
 import pytest
 
-from traduko.agents.assistant import build_assistant_tools
+from traduko import skillhub
+from traduko.agents.assistant import (
+    AssistantUnavailable,
+    build_assistant_tools,
+    run_assistant_message,
+)
 from traduko.agents.tools import AgentTool, ToolError
-from traduko.config import BudgetConfig, CoreConfig, save_config
+from traduko.config import BudgetConfig, CoreConfig, SkillConfig, load_config, save_config
 from traduko.models import StageRecord
+from traduko.proposals import approve, list_proposals
+from traduko.skillhub import SkillsManager
 from traduko.workspace import Workspace
 
 
@@ -270,3 +277,177 @@ def test_unexpected_exception_is_converted_to_tool_error(
     tools = tool_map(ws)
     with pytest.raises(ToolError):
         tools["task_detail"].handler({"project": "p", "task_id": record.id})
+
+
+# --- run_assistant_message ------------------------------------------------
+
+
+def scripted_ws(tmp_path: Path, responses: list[str], **config_kwargs) -> Workspace:
+    config = CoreConfig(
+        llm_providers={"default": {"type": "scripted", "responses": responses}},
+        **config_kwargs,
+    )
+    save_config(tmp_path, config)
+    return Workspace.open(tmp_path)
+
+
+def history_path(ws: Workspace) -> Path:
+    return ws.root / "assistant" / "history.json"
+
+
+def run_files(ws: Workspace) -> list[Path]:
+    return sorted((ws.root / "assistant" / "runs").glob("*.jsonl"))
+
+
+def start_record_goal(path: Path) -> str:
+    lines = path.read_text(encoding="utf-8").splitlines()
+    first = json.loads(lines[0])
+    assert first["kind"] == "start"
+    return first["goal"]
+
+
+def test_run_assistant_message_raises_when_no_llm_providers_configured(
+    tmp_path: Path,
+) -> None:
+    ws = make_ws(tmp_path)
+    assert ws.config.llm_providers == {}
+    with pytest.raises(AssistantUnavailable):
+        run_assistant_message(ws, "hello")
+
+
+def test_default_llm_provider_falls_back_to_sole_entry(tmp_path: Path) -> None:
+    config = CoreConfig(
+        llm_providers={
+            "openai": {
+                "type": "scripted",
+                "responses": ['{"done": true, "summary": "ok"}'],
+            }
+        }
+    )
+    save_config(tmp_path, config)
+    ws = Workspace.open(tmp_path)
+    result = run_assistant_message(ws, "hi")
+    assert result == {
+        "reply": "ok",
+        "proposal_ids": [],
+        "converged": True,
+        "reason": "done",
+    }
+
+
+def test_propose_config_change_acceptance_chain_propose_approve_load_config(
+    tmp_path: Path,
+) -> None:
+    ws = scripted_ws(
+        tmp_path,
+        [
+            '{"tool": "read_config", "arguments": {}}',
+            (
+                '{"tool": "propose_config_change", "arguments": '
+                '{"patch": {"budget": {"monthly_usd_limit": 250}}, '
+                '"reason": "user asked to raise the monthly ceiling"}}'
+            ),
+            '{"done": true, "summary": "Proposed raising the monthly budget limit; awaiting your approval."}',
+        ],
+    )
+
+    result = run_assistant_message(ws, "please raise the monthly budget limit to 250")
+
+    assert result["converged"] is True
+    assert result["reason"] == "done"
+    assert result["reply"] == (
+        "Proposed raising the monthly budget limit; awaiting your approval."
+    )
+    assert len(result["proposal_ids"]) == 1
+    proposal_id = result["proposal_ids"][0]
+
+    pending = list_proposals(tmp_path, status="pending")
+    assert len(pending) == 1
+    proposal = pending[0]
+    assert proposal["id"] == proposal_id
+    assert "monthly_usd_limit: null" in proposal["diff"]
+    assert "monthly_usd_limit: 250" in proposal["diff"]
+
+    data = json.loads(history_path(ws).read_text(encoding="utf-8"))
+    messages = data["messages"]
+    assert len(messages) == 2
+    assert messages[0]["role"] == "user"
+    assert messages[0]["text"] == "please raise the monthly budget limit to 250"
+    assert "proposal_ids" not in messages[0]
+    assert messages[1]["role"] == "assistant"
+    assert messages[1]["text"] == result["reply"]
+    assert messages[1]["proposal_ids"] == [proposal_id]
+
+    approve(tmp_path, proposal_id)
+    assert load_config(tmp_path).budget.monthly_usd_limit == 250
+
+
+def test_history_transcript_in_goal_is_truncated_to_last_40_messages(
+    tmp_path: Path,
+) -> None:
+    ws = scripted_ws(tmp_path, ['{"done": true, "summary": "ok"}'])
+    messages = [
+        {
+            "role": "user" if i % 2 == 0 else "assistant",
+            "text": f"msg-{i:03d}",
+            "ts": "2026-01-01T00:00:00+00:00",
+            **({"proposal_ids": []} if i % 2 else {}),
+        }
+        for i in range(45)
+    ]
+    history_path(ws).write_text(
+        json.dumps({"messages": messages}), encoding="utf-8"
+    )
+
+    run_assistant_message(ws, "new message")
+
+    files = run_files(ws)
+    assert len(files) == 1
+    goal = start_record_goal(files[0])
+    assert "msg-004" not in goal
+    assert "msg-005" in goal
+    assert "msg-044" in goal
+
+
+def test_non_converged_reply_states_reason_and_history_records_it(
+    tmp_path: Path,
+) -> None:
+    ws = scripted_ws(tmp_path, ["not json", "still not json"])
+
+    result = run_assistant_message(ws, "do something ambiguous")
+
+    assert result["converged"] is False
+    assert result["reason"] == "protocol_error"
+    assert "protocol_error" in result["reply"]
+    assert result["proposal_ids"] == []
+
+    data = json.loads(history_path(ws).read_text(encoding="utf-8"))
+    messages = data["messages"]
+    assert messages[1]["text"] == result["reply"]
+    assert messages[1]["proposal_ids"] == []
+
+
+def test_skills_prompt_block_is_injected_into_goal(tmp_path: Path) -> None:
+    ws = scripted_ws(tmp_path, ['{"done": true, "summary": "ok"}'])
+    skill_dir = tmp_path / "skills" / "ops-helper"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text(
+        "---\n"
+        "name: ops-helper\n"
+        "description: Helps operate the translation pipeline.\n"
+        "---\n"
+        "Body instructions.\n",
+        encoding="utf-8",
+    )
+    manager = SkillsManager(
+        tmp_path, {"ops-helper": SkillConfig(enabled=True, confirmed=True)}
+    )
+    skillhub.set_active(manager)
+    try:
+        run_assistant_message(ws, "what skills do you have?")
+        files = run_files(ws)
+        goal = start_record_goal(files[0])
+        assert "ops-helper" in goal
+        assert "Helps operate the translation pipeline." in goal
+    finally:
+        skillhub.set_active(None)
