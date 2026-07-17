@@ -1,8 +1,18 @@
+<div align="center">
+
+<img src="docs/icon.png" width="128" height="128" alt="Traduko" />
+
 # Traduko
 
-[English](README.md) | 繁體中文
+桌面端的自動字幕與文件翻譯工具 — 抽取音軌、語音辨識、LLM 翻譯、agent 校對、輸出，一條管線完成。
 
-Traduko 是一個自動字幕翻譯的桌面應用程式。它對影片、音訊或字幕檔執行可設定的管線：抽取音軌、語音辨識、斷句、LLM 翻譯、可選的 agent 校對，最後輸出字幕。名稱取自世界語的「翻譯」。
+[文件](README.zh-TW.md) · [English](README.md) · [架構](#架構) · [安裝](#安裝)
+
+</div>
+
+---
+
+Traduko 對影片、音訊或字幕檔執行可設定的管線：抽取音軌、語音辨識、斷句、LLM 翻譯、可選的 agent 校對，最後輸出字幕。名稱取自世界語的「翻譯」。
 
 專案是既有工具之上的編排層，不是新引擎：媒體處理用 ffmpeg，語音辨識用 faster-whisper，翻譯接任何 OpenAI 相容端點。
 
@@ -115,8 +125,6 @@ cd app/src-tauri && cargo test      # Rust 殼測試
 
 ## 路線圖
 
-- 文件翻譯管線（長篇文本：Markdown/TXT/EPUB/HTML）
 - TTS 配音
-- 內建設定與診斷助理
 - Anthropic 與 Gemini 原生 adapter
 - 漫畫翻譯管線

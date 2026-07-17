@@ -1,8 +1,18 @@
+<div align="center">
+
+<img src="docs/icon.png" width="128" height="128" alt="Traduko" />
+
 # Traduko
 
-English | [繁體中文](README.zh-TW.md)
+Automated subtitle and document translation for the desktop — audio extraction, speech recognition, LLM translation, agent proofreading, and export in one pipeline.
 
-Traduko is a desktop application for automated subtitle translation. It runs a configurable pipeline over video, audio, or subtitle files: audio extraction, speech recognition, segmentation, LLM translation, optional agent-based proofreading, and subtitle export. The name is the Esperanto word for "translation".
+[Documentation](README.md) · [繁體中文](README.zh-TW.md) · [Architecture](#architecture) · [Installation](#installation)
+
+</div>
+
+---
+
+Traduko runs a configurable pipeline over video, audio, or subtitle files: audio extraction, speech recognition, segmentation, LLM translation, optional agent-based proofreading, and subtitle export. The name is the Esperanto word for "translation".
 
 The project is an orchestration layer over existing tools rather than a new engine: ffmpeg for media handling, faster-whisper for speech recognition, and any OpenAI-compatible endpoint for translation.
 
@@ -115,8 +125,6 @@ cd app/src-tauri && cargo test      # Rust shell tests
 
 ## Roadmap
 
-- Document translation pipeline (novel-length text: Markdown/TXT/EPUB/HTML)
 - TTS dubbing
-- Built-in configuration and diagnostics assistant
 - Native Anthropic and Gemini adapters
 - Comic translation pipeline
