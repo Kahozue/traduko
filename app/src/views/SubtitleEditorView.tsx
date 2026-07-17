@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { t } from "../i18n";
 import type { ProofreadFlag, TranslationArtifact, TranslationSegment } from "../lib/api/types";
@@ -35,6 +35,14 @@ export function SubtitleEditorView({
   const [segments, setSegments] = useState<TranslationSegment[]>([]);
   const [dirty, setDirty] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [activeId, setActiveId] = useState<number | null>(null);
+  const [query, setQuery] = useState("");
+  const [replaceText, setReplaceText] = useState("");
+  const [flaggedOnly, setFlaggedOnly] = useState(false);
+  const [confirmLeave, setConfirmLeave] = useState(false);
+
+  const gridRef = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (data) setSegments(data.segments);
@@ -45,6 +53,17 @@ export function SubtitleEditorView({
     for (const flag of report?.flags ?? []) map.set(flag.id, flag.note);
     return map;
   }, [report]);
+
+  const visible = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    return segments.filter((seg) => {
+      if (flaggedOnly && !flagById.has(seg.id)) return false;
+      if (!needle) return true;
+      return (
+        seg.source.toLowerCase().includes(needle) || seg.target.toLowerCase().includes(needle)
+      );
+    });
+  }, [segments, query, flaggedOnly, flagById]);
 
   const save = useMutation({
     mutationFn: () =>
@@ -58,10 +77,80 @@ export function SubtitleEditorView({
     },
   });
 
+  const saveRef = useRef({ dirty, pending: save.isPending, mutate: save.mutate });
+  saveRef.current = { dirty, pending: save.isPending, mutate: save.mutate };
+
   function editTarget(id: number, value: string) {
     setSegments((prev) => prev.map((s) => (s.id === id ? { ...s, target: value } : s)));
     setDirty(true);
     setSaved(false);
+  }
+
+  function activate(id: number) {
+    setActiveId(id);
+    const row = gridRef.current?.querySelector(`[data-seg-id="${id}"]`);
+    row?.scrollIntoView?.({ block: "nearest" });
+  }
+
+  function moveActive(offset: number) {
+    if (activeId === null) return;
+    const idx = visible.findIndex((s) => s.id === activeId);
+    const next = visible[idx + offset];
+    if (next) activate(next.id);
+    else setActiveId(null);
+  }
+
+  function jumpFlag(direction: 1 | -1) {
+    const flagged = visible.filter((s) => flagById.has(s.id));
+    if (flagged.length === 0) return;
+    const idx = activeId === null ? -1 : flagged.findIndex((s) => s.id === activeId);
+    const next =
+      direction === 1
+        ? flagged[idx + 1] ?? flagged[0]
+        : flagged[idx - 1 < 0 ? flagged.length - 1 : idx - 1];
+    activate(next.id);
+  }
+
+  const jumpFlagRef = useRef(jumpFlag);
+  jumpFlagRef.current = jumpFlag;
+
+  function replaceAll() {
+    const needle = query.trim();
+    if (!needle) return;
+    const ids = new Set(visible.map((s) => s.id));
+    let changed = false;
+    const next = segments.map((s) => {
+      if (!ids.has(s.id) || !s.target.includes(needle)) return s;
+      changed = true;
+      return { ...s, target: s.target.split(needle).join(replaceText) };
+    });
+    if (!changed) return;
+    setSegments(next);
+    setDirty(true);
+    setSaved(false);
+  }
+
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.key === "s") {
+        e.preventDefault();
+        const { dirty: isDirty, pending, mutate } = saveRef.current;
+        if (isDirty && !pending) mutate();
+      } else if ((e.metaKey || e.ctrlKey) && e.key === "f") {
+        e.preventDefault();
+        searchRef.current?.focus();
+      } else if (e.altKey && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
+        e.preventDefault();
+        jumpFlagRef.current(e.key === "ArrowDown" ? 1 : -1);
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+
+  function handleBack() {
+    if (dirty) setConfirmLeave(true);
+    else onBack();
   }
 
   if (isLoading) return <p className={styles.state}>{t("editor.loading")}</p>;
@@ -69,7 +158,7 @@ export function SubtitleEditorView({
 
   return (
     <div>
-      <button type="button" className={styles.back} onClick={onBack}>
+      <button type="button" className={styles.back} onClick={handleBack}>
         {t("editor.back")}
       </button>
       <header className={styles.header}>
@@ -88,44 +177,157 @@ export function SubtitleEditorView({
         </div>
       </header>
 
-      <table className={styles.table}>
-        <thead>
-          <tr>
-            <th>{t("editor.col.index")}</th>
-            <th>{t("editor.col.time")}</th>
-            <th>{t("editor.col.source")}</th>
-            <th>{t("editor.col.target")}</th>
-            <th>{t("editor.col.flag")}</th>
-          </tr>
-        </thead>
-        <tbody>
-          {segments.map((seg) => {
-            const flag = flagById.get(seg.id);
-            return (
-              <tr key={seg.id} className={flag ? styles.flagged : undefined}>
-                <td className={styles.num}>{seg.id}</td>
-                <td className={styles.time}>{formatRange(seg.start, seg.end)}</td>
-                <td className={styles.source}>{seg.source}</td>
-                <td>
+      <div className={styles.toolbar}>
+        <input
+          ref={searchRef}
+          type="search"
+          className={styles.search}
+          aria-label={t("editor.search.label")}
+          placeholder={t("editor.search.placeholder")}
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
+        <input
+          type="text"
+          className={styles.replace}
+          aria-label={t("editor.replace.label")}
+          placeholder={t("editor.replace.label")}
+          value={replaceText}
+          onChange={(e) => setReplaceText(e.target.value)}
+        />
+        <button
+          type="button"
+          className={styles.toolButton}
+          disabled={!query.trim()}
+          onClick={replaceAll}
+        >
+          {t("editor.replace.apply")}
+        </button>
+        <label className={styles.flaggedToggle}>
+          <input
+            type="checkbox"
+            checked={flaggedOnly}
+            onChange={(e) => setFlaggedOnly(e.target.checked)}
+          />
+          {t("editor.filter.flagged")}
+        </label>
+        <span className={styles.rowCount}>
+          {visible.length === segments.length
+            ? `${segments.length} ${t("editor.rows.unit")}`
+            : `${visible.length} / ${segments.length} ${t("editor.rows.unit")}`}
+        </span>
+        <span className={styles.spacer} />
+        <button type="button" className={styles.toolButton} onClick={() => jumpFlag(-1)}>
+          {t("editor.flag.prev")}
+        </button>
+        <button type="button" className={styles.toolButton} onClick={() => jumpFlag(1)}>
+          {t("editor.flag.next")}
+        </button>
+      </div>
+
+      <div ref={gridRef} className={styles.grid} role="table" aria-label={t("editor.subtitle.title")}>
+        <div className={`${styles.row} ${styles.headRow}`} role="row">
+          <span role="columnheader" className={styles.headCell}>{t("editor.col.index")}</span>
+          <span role="columnheader" className={styles.headCell}>{t("editor.col.time")}</span>
+          <span role="columnheader" className={styles.headCell}>{t("editor.col.source")}</span>
+          <span role="columnheader" className={styles.headCell}>{t("editor.col.target")}</span>
+          <span role="columnheader" className={styles.headCell}>{t("editor.col.flag")}</span>
+        </div>
+        {visible.map((seg) => {
+          const flag = flagById.get(seg.id);
+          const active = activeId === seg.id;
+          const rowClass = [
+            styles.row,
+            styles.bodyRow,
+            flag ? styles.flagged : "",
+            active ? styles.active : "",
+          ]
+            .filter(Boolean)
+            .join(" ");
+          return (
+            <div
+              key={seg.id}
+              role="row"
+              data-seg-id={seg.id}
+              className={rowClass}
+              onClick={() => activate(seg.id)}
+            >
+              <span role="cell" className={styles.num}>{seg.id}</span>
+              <span role="cell" className={styles.time}>{formatRange(seg.start, seg.end)}</span>
+              <span role="cell" className={styles.source}>{seg.source}</span>
+              <span role="cell" className={styles.targetCell}>
+                {active ? (
                   <textarea
+                    autoFocus
                     className={styles.target}
+                    aria-label={t("editor.col.target")}
                     value={seg.target}
                     onChange={(e) => editTarget(seg.id, e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !e.shiftKey) {
+                        e.preventDefault();
+                        moveActive(1);
+                      } else if (e.key === "Tab") {
+                        e.preventDefault();
+                        moveActive(e.shiftKey ? -1 : 1);
+                      } else if (e.key === "Escape") {
+                        setActiveId(null);
+                      }
+                    }}
                   />
-                </td>
-                <td className={styles.flag}>
-                  {flag && (
-                    <span className={styles.flagBadge} title={flag}>
-                      {t("editor.flag.badge")}
-                    </span>
-                  )}
-                  {flag}
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
+                ) : (
+                  <span className={styles.targetText}>{seg.target}</span>
+                )}
+              </span>
+              <span role="cell" className={styles.flag}>
+                {flag && (
+                  <span className={styles.flagBadge} title={flag}>
+                    {t("editor.flag.badge")}
+                  </span>
+                )}
+                {flag}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+      <p className={styles.shortcuts}>{t("editor.shortcuts")}</p>
+
+      {confirmLeave && (
+        <div className={styles.scrim}>
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label={t("editor.leave.title")}
+            className={styles.confirm}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") setConfirmLeave(false);
+            }}
+          >
+            <p className={styles.confirmMessage}>{t("editor.leave.message")}</p>
+            <div className={styles.confirmActions}>
+              <button
+                type="button"
+                autoFocus
+                className={styles.toolButton}
+                onClick={() => setConfirmLeave(false)}
+              >
+                {t("editor.leave.stay")}
+              </button>
+              <button
+                type="button"
+                className={styles.discard}
+                onClick={() => {
+                  setConfirmLeave(false);
+                  onBack();
+                }}
+              >
+                {t("editor.leave.discard")}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
