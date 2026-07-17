@@ -33,6 +33,8 @@ from pydantic import BaseModel, ValidationError
 
 import yaml
 
+from .. import asrsetup
+from ..asrsetup import AsrManager
 from ..artifacts import (
     ArtifactStore,
     ArtifactValidationError,
@@ -378,6 +380,39 @@ def pause_task(request: Request, project: str, task_id: str) -> dict:
     return {"pausing": True}
 
 
+class AsrModelRequest(BaseModel):
+    model: str = "small"
+
+
+@router.get("/asr/status")
+def asr_status(request: Request, model: str = "small") -> dict:
+    manager: AsrManager = request.app.state.asr
+    return manager.status(model)
+
+
+@router.post("/asr/download", status_code=202)
+def asr_download(request: Request, body: AsrModelRequest | None = None) -> dict:
+    manager: AsrManager = request.app.state.asr
+    model = (body or AsrModelRequest()).model
+    if not asrsetup.package_available():
+        raise HTTPException(status_code=409, detail="asr engine is not available")
+    if not manager.start_download(model):
+        raise HTTPException(status_code=409, detail="a download is already running")
+    return {"downloading": True, "model": model}
+
+
+@router.post("/asr/test")
+def asr_test(request: Request, body: AsrModelRequest | None = None) -> dict:
+    manager: AsrManager = request.app.state.asr
+    model = (body or AsrModelRequest()).model
+    status = manager.status(model)
+    if not status["package"]:
+        raise HTTPException(status_code=409, detail="asr engine is not available")
+    if not status["cached"]:
+        raise HTTPException(status_code=409, detail="model is not downloaded")
+    return manager.test(model)
+
+
 @router.get("/profiles")
 def list_profiles(request: Request) -> list[str]:
     ws: Workspace = request.app.state.workspace
@@ -626,6 +661,7 @@ def create_app(data_root: Path | None = None) -> FastAPI:
     app.state.worker = worker
     app.state.token = load_or_create_token(workspace.root)
     app.state.sync_lock = threading.Lock()
+    app.state.asr = AsrManager()
 
     broadcaster = WsBroadcaster()
     broadcaster.attach(workspace.bus)

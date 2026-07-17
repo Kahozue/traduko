@@ -89,15 +89,30 @@ def test_ffmpeg_present_is_ok(tmp_path: Path, monkeypatch) -> None:
 
 
 def test_asr_missing_package_fails(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setattr(preflight, "find_spec", lambda name: None)
+    monkeypatch.setattr(preflight.asrsetup, "package_available", lambda: False)
     record = make_record(tmp_path, [StageRecord(type="asr")])
     report = run_preflight(record, tmp_path)
     failures = report.failures()
     assert len(failures) == 1 and "uv sync --extra asr" in failures[0].message
 
 
+def test_asr_model_not_downloaded_fails(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(preflight.asrsetup, "package_available", lambda: True)
+    monkeypatch.setattr(preflight.asrsetup, "model_cached", lambda size: False)
+    record = make_record(
+        tmp_path,
+        [StageRecord(type="asr", params={"options": {"model_size": "medium"}})],
+    )
+    report = run_preflight(record, tmp_path)
+    failures = report.failures()
+    assert len(failures) == 1
+    assert "medium" in failures[0].message
+    assert "not downloaded" in failures[0].message
+
+
 def test_asr_installed_notes_model_size(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setattr(preflight, "find_spec", lambda name: object())
+    monkeypatch.setattr(preflight.asrsetup, "package_available", lambda: True)
+    monkeypatch.setattr(preflight.asrsetup, "model_cached", lambda size: True)
     record = make_record(
         tmp_path,
         [StageRecord(type="asr", params={"options": {"model_size": "medium"}})],

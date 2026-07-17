@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from importlib.util import find_spec
 from pathlib import Path
 
+from . import asrsetup
 from .budget import BudgetMeter
 from .config import CoreConfig, load_config
 from .events import EventBus
@@ -104,7 +105,7 @@ def _check_asr(
     provider = stage.params.get("provider", "faster_whisper")
     if provider != "faster_whisper":
         return []
-    if find_spec("faster_whisper") is None:
+    if not asrsetup.package_available():
         return [
             PreflightCheck(
                 "asr model", FAIL,
@@ -113,11 +114,17 @@ def _check_asr(
             )
         ]
     model_size = stage.params.get("options", {}).get("model_size", "small")
+    if not asrsetup.model_cached(model_size):
+        return [
+            PreflightCheck(
+                "asr model", FAIL,
+                f"model '{model_size}' is not downloaded yet",
+            )
+        ]
     return [
         PreflightCheck(
             "asr model", OK,
-            f"faster-whisper installed; model '{model_size}' downloads "
-            "on first use if not cached",
+            f"faster-whisper installed; model '{model_size}' is cached",
         )
     ]
 

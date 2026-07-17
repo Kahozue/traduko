@@ -740,3 +740,51 @@ def test_patch_task_requires_a_field(tmp_path: Path) -> None:
             ).status_code
             == 422
         )
+
+
+def test_asr_status_download_and_test_flow(tmp_path: Path, monkeypatch) -> None:
+    from traduko import asrsetup
+    from traduko.asrsetup import AsrManager
+
+    cache = tmp_path / "hf-cache"
+
+    def fake_download(model_size: str) -> None:
+        snap = asrsetup.model_dir(model_size, cache) / "snapshots" / "abc"
+        snap.mkdir(parents=True, exist_ok=True)
+        (snap / "model.bin").write_bytes(b"x" * (2 * 1024 * 1024))
+
+    monkeypatch.setattr(asrsetup, "package_available", lambda: True)
+    with service(tmp_path) as (client, headers, token):
+        client.app.state.asr = AsrManager(
+            download=fake_download,
+            probe=lambda model: {"ok": True, "load_seconds": 0.1},
+            cache_dir=cache,
+        )
+        status = client.get("/asr/status?model=small", headers=headers).json()
+        assert status["package"] is True
+        assert status["cached"] is False
+
+        blocked = client.post("/asr/test", json={"model": "small"}, headers=headers)
+        assert blocked.status_code == 409
+
+        started = client.post("/asr/download", json={"model": "small"}, headers=headers)
+        assert started.status_code == 202
+
+        deadline = time.monotonic() + 5
+        status = client.get("/asr/status?model=small", headers=headers).json()
+        while time.monotonic() < deadline and status["state"] != "done":
+            status = client.get("/asr/status?model=small", headers=headers).json()
+        assert status["cached"] is True
+        assert status["downloaded_mb"] > 0
+
+        result = client.post("/asr/test", json={"model": "small"}, headers=headers).json()
+        assert result == {"ok": True, "load_seconds": 0.1}
+
+
+def test_asr_download_without_package_is_409(tmp_path: Path, monkeypatch) -> None:
+    from traduko import asrsetup
+
+    monkeypatch.setattr(asrsetup, "package_available", lambda: False)
+    with service(tmp_path) as (client, headers, token):
+        response = client.post("/asr/download", json={"model": "small"}, headers=headers)
+        assert response.status_code == 409

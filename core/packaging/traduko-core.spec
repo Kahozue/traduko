@@ -1,9 +1,10 @@
 # PyInstaller spec for the Tauri sidecar build of the core.
 # uvicorn and websockets import their implementations dynamically, so both
-# are collected wholesale. The optional `asr` extra (faster-whisper) is
-# intentionally not bundled; preflight reports ASR unavailable in the
-# packaged app.
-from PyInstaller.utils.hooks import collect_submodules
+# are collected wholesale. faster-whisper and its native dependencies
+# (ctranslate2, onnxruntime, av, tokenizers) are bundled so the packaged
+# app can transcribe locally; model weights still download at runtime into
+# the Hugging Face cache via the /asr endpoints.
+from PyInstaller.utils.hooks import collect_all, collect_submodules
 
 hiddenimports = (
     collect_submodules("uvicorn")
@@ -12,13 +13,21 @@ hiddenimports = (
     + collect_submodules("traduko")
 )
 
+binaries = []
+datas = []
+for package in ("faster_whisper", "ctranslate2", "onnxruntime", "av", "tokenizers"):
+    pkg_datas, pkg_binaries, pkg_hidden = collect_all(package)
+    datas += pkg_datas
+    binaries += pkg_binaries
+    hiddenimports += pkg_hidden
+
 a = Analysis(
     ["sidecar_entry.py"],
     pathex=["../src"],
-    binaries=[],
-    datas=[],
+    binaries=binaries,
+    datas=datas,
     hiddenimports=hiddenimports,
-    excludes=["faster_whisper", "pytest"],
+    excludes=["pytest"],
 )
 pyz = PYZ(a.pure)
 exe = EXE(
