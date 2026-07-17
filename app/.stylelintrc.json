@@ -1,0 +1,25 @@
+{
+  "plugins": ["stylelint-declaration-strict-value"],
+  "ignoreFiles": [
+    "src/App.module.css",
+    "src/components/CreateTaskDialog.module.css",
+    "src/components/ProgressBar.module.css",
+    "src/components/ErrorBoundary.module.css",
+    "src/components/StatusBadge.module.css",
+    "src/views/TasksView.module.css",
+    "src/views/BudgetView.module.css",
+    "src/views/TaskDetailView.module.css",
+    "src/views/SubtitleEditorView.module.css",
+    "src/views/StyleEditorView.module.css",
+    "src/styles/tokens.css"
+  ],
+  "rules": {
+    "scale-unlimited/declaration-strict-value": [
+      ["/color$/", "background", "font-size", "border-radius", "font-family"],
+      {
+        "ignoreValues": ["transparent", "inherit", "currentColor", "none", "0", "50%"],
+        "message": "Use design tokens (var(--…)); see internal/design-language.md"
+      }
+    ]
+  }
+}

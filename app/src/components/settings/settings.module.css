@@ -1,63 +1,57 @@
-/* Settings page — grouped cards with an identity-tinted header band.
-   The visual system: app background sits below, each section is a bordered
-   surface with a subtle shadow, and a colored icon chip gives every section
-   its own identity so the page reads as distinct zones rather than a stack
-   of identical blocks. */
+/* Settings page — governed by internal/design-language.md.
+   Sections are heading + hairline + body: hierarchy comes from the type
+   scale and whitespace, not from boxes. Cards appear only for repeatable
+   items (providers, channels). The accent shows up exactly where the
+   design language allows it: the primary save action and focus states. */
 
 .page {
-  max-width: 860px;
+  max-width: 760px;
+  margin-inline: auto;
 }
 
 .title {
-  margin: 0 0 4px;
-  font-size: 24px;
+  margin: 0 0 20px;
+  font-size: var(--fs-page);
   font-weight: 700;
   letter-spacing: -0.01em;
+  line-height: 1.3;
 }
 
-.subtitle {
-  margin: 0 0 24px;
-  color: var(--text-secondary);
-  font-size: 13.5px;
-}
-
-/* Connection status — a compact header card, denser than the settings
-   sections and topped with a live status pill. */
+/* Connection status — a quiet inset strip under the page title. */
 .statusCard {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 12px 32px;
-  padding: 16px 20px;
-  border-radius: var(--radius-l);
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 16px;
+  border-radius: var(--radius-m);
   border: 1px solid var(--border);
-  background: var(--bg-surface);
-  box-shadow: var(--shadow-1);
+  background: var(--bg-subtle);
 }
 
 .statusItem {
   display: flex;
-  flex-direction: column;
-  gap: 3px;
+  align-items: baseline;
+  gap: 12px;
   min-width: 0;
 }
 
 .statusKey {
+  flex-shrink: 0;
+  width: 96px;
   color: var(--text-secondary);
-  font-size: 11.5px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
+  font-size: var(--fs-meta);
+  font-weight: 500;
+  letter-spacing: 0.04em;
 }
 
 .statusValue {
-  font-size: 13px;
+  font-size: var(--fs-note);
   word-break: break-all;
 }
 
 .statusMono {
   font-family: var(--font-mono);
-  font-size: 12.5px;
+  font-size: var(--fs-meta);
 }
 
 .statusPillRow {
@@ -70,10 +64,10 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 3px 10px 3px 8px;
-  border-radius: 999px;
-  font-size: 12.5px;
-  font-weight: 600;
+  padding: 2px 10px 2px 8px;
+  border-radius: var(--radius-full);
+  font-size: var(--fs-note);
+  font-weight: 500;
 }
 
 .pill[data-status="ready"] {
@@ -94,73 +88,22 @@
 .pillDot {
   width: 7px;
   height: 7px;
-  border-radius: 50%;
+  border-radius: var(--radius-full);
   background: currentColor;
 }
 
-.retry {
-  padding: 5px 12px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-s);
-  background: var(--bg-surface);
-  color: var(--text-primary);
-  font-size: 12.5px;
-  cursor: pointer;
-  transition: background var(--transition), border-color var(--transition);
-}
-
-.retry:hover {
-  background: var(--bg-inset);
-  border-color: var(--text-secondary);
-}
-
-/* Section card anatomy */
+/* Section anatomy: hairline, heading row, body. */
 .section {
-  margin-top: 16px;
-  border-radius: var(--radius-l);
-  border: 1px solid var(--border);
-  background: var(--bg-surface);
-  box-shadow: var(--shadow-1);
-  overflow: hidden;
+  margin-top: 28px;
+  padding-top: 24px;
+  border-top: 1px solid var(--border);
 }
 
 .sectionHead {
   display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 15px 20px;
-  border-bottom: 1px solid var(--border);
-}
-
-.iconChip {
-  display: grid;
-  place-items: center;
-  width: 34px;
-  height: 34px;
-  flex-shrink: 0;
-  border-radius: 10px;
-  color: var(--accent);
-  background: var(--accent-soft);
-}
-
-.iconChip[data-tint="info"] {
-  color: var(--info);
-  background: var(--info-soft);
-}
-
-.iconChip[data-tint="ok"] {
-  color: var(--ok);
-  background: var(--ok-soft);
-}
-
-.iconChip[data-tint="warn"] {
-  color: var(--warn);
-  background: var(--warn-soft);
-}
-
-.iconChip[data-tint="neutral"] {
-  color: var(--text-secondary);
-  background: var(--neutral-soft);
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 16px;
 }
 
 .sectionHeadText {
@@ -170,23 +113,62 @@
 
 .sectionTitle {
   margin: 0;
-  font-size: 15px;
-  font-weight: 650;
+  font-size: var(--fs-section);
+  font-weight: 700;
   letter-spacing: -0.005em;
+  line-height: 1.4;
 }
 
-.sectionDesc {
-  margin: 2px 0 0;
+.sectionHint {
+  margin: 4px 0 0;
   color: var(--text-secondary);
-  font-size: 12.5px;
-  line-height: 1.45;
+  font-size: var(--fs-note);
+  line-height: 1.6;
 }
 
 .sectionBody {
-  padding: 18px 20px 20px;
+  min-width: 0;
 }
 
-/* Fields */
+/* Setting row: label/description column, control on the right. */
+.settingRow {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  padding: 10px 0;
+}
+
+.settingRow + .settingRow {
+  border-top: 1px solid var(--border);
+}
+
+.rowText {
+  flex: 1;
+  min-width: 0;
+}
+
+.rowLabel {
+  display: block;
+  font-size: var(--fs-body);
+  font-weight: 500;
+}
+
+.rowDesc {
+  margin: 2px 0 0;
+  color: var(--text-secondary);
+  font-size: var(--fs-note);
+  line-height: 1.6;
+}
+
+.rowControl {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+/* Fields inside repeatable cards */
 .field {
   display: flex;
   flex-direction: column;
@@ -211,20 +193,30 @@
 
 .label {
   color: var(--text-secondary);
-  font-size: 12.5px;
+  font-size: var(--fs-note);
   font-weight: 500;
 }
 
 .input {
   width: 100%;
-  padding: 8px 11px;
+  height: 34px;
+  padding: 0 11px;
   border: 1px solid var(--border);
   border-radius: var(--radius-s);
   background: var(--bg-surface);
   color: var(--text-primary);
-  font-size: 13px;
+  font-size: var(--fs-body);
   font-family: inherit;
   transition: border-color var(--transition), box-shadow var(--transition);
+}
+
+.rowControl .input {
+  width: 260px;
+}
+
+.rowControl .inputNarrow {
+  width: 140px;
+  font-variant-numeric: tabular-nums;
 }
 
 .input::placeholder {
@@ -258,23 +250,24 @@ select.input {
 
 .error {
   color: var(--danger);
-  font-size: 12px;
+  font-size: var(--fs-note);
 }
 
 .empty {
   margin: 0;
   color: var(--text-secondary);
-  font-size: 13px;
-  line-height: 1.5;
+  font-size: var(--fs-note);
+  line-height: 1.6;
 }
 
-/* Repeatable item sub-card (providers, channels) */
+/* Repeatable item card (providers, channels, conflicts) — the only
+   sanctioned card use: items that are added/removed as a unit. */
 .card {
-  margin-top: 14px;
+  margin-top: 12px;
   padding: 16px;
   border: 1px solid var(--border);
   border-radius: var(--radius-m);
-  background: var(--bg-subtle);
+  background: var(--bg-surface);
 }
 
 .card:first-of-type {
@@ -293,12 +286,13 @@ select.input {
 
 /* Buttons */
 .secondary {
-  padding: 6px 13px;
+  height: 32px;
+  padding: 0 13px;
   border: 1px solid var(--border);
   border-radius: var(--radius-s);
   background: var(--bg-surface);
   color: var(--text-primary);
-  font-size: 12.5px;
+  font-size: var(--fs-note);
   font-weight: 500;
   cursor: pointer;
   white-space: nowrap;
@@ -320,13 +314,16 @@ select.input {
 }
 
 .typeTag {
-  padding: 5px 11px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 11px;
   border-radius: var(--radius-s);
-  background: var(--bg-surface);
+  background: var(--bg-subtle);
   border: 1px solid var(--border);
   color: var(--text-secondary);
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: var(--fs-meta);
   white-space: nowrap;
 }
 
@@ -335,7 +332,7 @@ select.input {
   display: flex;
   align-items: center;
   gap: 7px;
-  font-size: 12.5px;
+  font-size: var(--fs-body);
   cursor: pointer;
 }
 
@@ -357,18 +354,18 @@ select.input {
   margin-top: 12px;
   padding: 12px 14px;
   border-radius: var(--radius-s);
-  background: var(--bg-surface);
+  background: var(--bg-subtle);
   border: 1px solid var(--border);
 }
 
-/* Test / status feedback */
+/* Test / status feedback — semantic color always paired with text. */
 .testResult {
   margin-top: 10px;
   padding: 7px 11px;
   border-radius: var(--radius-s);
   background: var(--ok-soft);
   color: var(--ok);
-  font-size: 12.5px;
+  font-size: var(--fs-note);
 }
 
 .testError {
@@ -377,7 +374,7 @@ select.input {
   border-radius: var(--radius-s);
   background: var(--danger-soft);
   color: var(--danger);
-  font-size: 12.5px;
+  font-size: var(--fs-note);
   word-break: break-all;
 }
 
@@ -392,63 +389,19 @@ select.input {
 
 .conflictValue {
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: var(--fs-meta);
 }
 
 .peerMachine {
   margin-top: 10px;
-  font-weight: 600;
-  font-size: 13px;
+  font-weight: 700;
+  font-size: var(--fs-body);
 }
 
 .peerTask {
   margin-top: 4px;
   color: var(--text-secondary);
-  font-size: 12.5px;
-}
-
-/* Setting row: label/description column, control on the right */
-.settingRow {
-  display: flex;
-  align-items: center;
-  gap: 20px;
-  padding: 14px 0;
-  border-top: 1px solid var(--border);
-}
-
-.settingRow:first-child {
-  padding-top: 0;
-  border-top: none;
-}
-
-.settingRow:last-child {
-  padding-bottom: 0;
-}
-
-.rowText {
-  flex: 1;
-  min-width: 0;
-}
-
-.rowLabel {
-  display: block;
-  font-size: 13.5px;
-  font-weight: 550;
-}
-
-.rowDesc {
-  margin: 3px 0 0;
-  color: var(--text-secondary);
-  font-size: 12.5px;
-  line-height: 1.45;
-}
-
-.rowControl {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  width: min(320px, 48%);
-  flex-shrink: 0;
+  font-size: var(--fs-note);
 }
 
 /* Segmented control (theme switcher) — sliding raised thumb on an inset
@@ -457,9 +410,10 @@ select.input {
   position: relative;
   display: grid;
   grid-template-columns: repeat(3, 1fr);
+  width: 320px;
   padding: 3px;
   border: 1px solid var(--border);
-  border-radius: 9px;
+  border-radius: var(--radius-s);
   background: var(--bg-inset);
 }
 
@@ -469,11 +423,10 @@ select.input {
   bottom: 3px;
   left: 3px;
   width: calc((100% - 6px) / 3);
-  border-radius: 7px;
+  border-radius: var(--radius-s);
   background: var(--bg-surface-raised);
-  border: 1px solid var(--border);
   box-shadow: var(--shadow-1);
-  transition: transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  transition: transform 180ms var(--motion-curve);
 }
 
 .segItem {
@@ -483,13 +436,14 @@ select.input {
   align-items: center;
   justify-content: center;
   gap: 6px;
-  padding: 6px 8px;
+  height: 28px;
+  padding: 0 8px;
   border: none;
-  border-radius: 7px;
+  border-radius: var(--radius-s);
   background: transparent;
   color: var(--text-secondary);
-  font-size: 12.5px;
-  font-weight: 550;
+  font-size: var(--fs-note);
+  font-weight: 500;
   cursor: pointer;
   transition: color var(--transition);
 }
@@ -516,12 +470,12 @@ select.input {
 /* Empty state for repeatable lists */
 .emptyBox {
   margin: 0;
-  padding: 22px 16px;
+  padding: 20px 16px;
   border: 1px dashed var(--border);
   border-radius: var(--radius-m);
   background: var(--bg-subtle);
   color: var(--text-secondary);
-  font-size: 12.5px;
+  font-size: var(--fs-note);
   text-align: center;
 }
 
@@ -533,16 +487,14 @@ select.input {
   align-items: center;
   justify-content: flex-end;
   gap: 12px;
-  margin-top: 20px;
-  padding: 12px 16px;
+  margin-top: 28px;
+  padding: 10px 12px;
   border-radius: var(--radius-m);
   border: 1px solid var(--border);
-  background: color-mix(in srgb, var(--bg-surface-raised) 88%, transparent);
-  -webkit-backdrop-filter: blur(12px) saturate(1.3);
-  backdrop-filter: blur(12px) saturate(1.3);
+  background: var(--bg-surface-raised);
   box-shadow: var(--shadow-2);
-  font-size: 13px;
-  animation: rise-in 200ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  font-size: var(--fs-note);
+  animation: rise-in 200ms var(--motion-curve);
 }
 
 @keyframes rise-in {
@@ -568,13 +520,14 @@ select.input {
 }
 
 .primaryButton {
-  padding: 8px 18px;
+  height: 34px;
+  padding: 0 18px;
   border: none;
   border-radius: var(--radius-s);
   background: var(--accent);
-  color: #fff;
-  font-size: 13px;
-  font-weight: 600;
+  color: var(--text-on-dark);
+  font-size: var(--fs-body);
+  font-weight: 500;
   cursor: pointer;
   transition: background var(--transition);
 }
@@ -589,12 +542,13 @@ select.input {
 }
 
 .secondaryButton {
-  padding: 8px 15px;
+  height: 34px;
+  padding: 0 15px;
   border: 1px solid var(--border);
   border-radius: var(--radius-s);
   background: var(--bg-surface);
   color: var(--text-primary);
-  font-size: 13px;
+  font-size: var(--fs-body);
   cursor: pointer;
   transition: background var(--transition), border-color var(--transition);
 }

@@ -187,10 +187,7 @@ export function ChannelsSection({
 
   return (
     <Section
-      icon="bell"
-      tint="info"
       title={t("settings.channels")}
-      description={t("settings.channels.desc")}
       action={
         <button
           type="button"

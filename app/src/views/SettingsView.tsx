@@ -138,7 +138,6 @@ export function SettingsView() {
   return (
     <div className={styles.page}>
       <h1 className={styles.title}>{t("settings.title")}</h1>
-      <p className={styles.subtitle}>{t("settings.subtitle")}</p>
 
       <div className={styles.statusCard}>
         <div className={styles.statusPillRow}>

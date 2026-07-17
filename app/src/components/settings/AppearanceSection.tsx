@@ -29,13 +29,8 @@ export function AppearanceSection() {
   }
 
   return (
-    <Section
-      icon="sun-moon"
-      tint="accent"
-      title={t("settings.appearance")}
-      description={t("settings.appearance.desc")}
-    >
-      <SettingRow label={t("settings.theme")} description={t("settings.theme.desc")}>
+    <Section title={t("settings.appearance")}>
+      <SettingRow label={t("settings.theme")}>
         <div
           role="radiogroup"
           aria-label={t("settings.theme")}

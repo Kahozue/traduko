@@ -84,10 +84,7 @@ export function ProvidersSection({
 
   return (
     <Section
-      icon="cpu"
-      tint="accent"
       title={t("settings.providers")}
-      description={t("settings.providers.desc")}
       action={
         <button
           type="button"

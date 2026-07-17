@@ -1,36 +1,28 @@
 import type { ReactNode } from "react";
-import { Icon, type IconName } from "../icons";
 import styles from "./settings.module.css";
 
-export type SectionTint = "accent" | "info" | "ok" | "warn" | "neutral";
-
-// Shared card anatomy for every settings section: tinted icon chip, title
-// with a one-line description, an optional action slot, then the body
-// below a hairline divider.
+// Section anatomy per the design language: a heading row (title, optional
+// action) above the body, separated from the previous section by a hairline.
+// No cards, no icon chips — hierarchy comes from type and whitespace.
+// `hint` is reserved for genuinely non-obvious section-level behavior
+// (e.g. "requires a core restart"); most sections must not have one.
 export function Section({
-  icon,
-  tint = "accent",
   title,
-  description,
+  hint,
   action,
   children,
 }: {
-  icon: IconName;
-  tint?: SectionTint;
   title: string;
-  description?: string;
+  hint?: string;
   action?: ReactNode;
   children: ReactNode;
 }) {
   return (
     <section className={styles.section}>
       <header className={styles.sectionHead}>
-        <span className={styles.iconChip} data-tint={tint} aria-hidden="true">
-          <Icon name={icon} />
-        </span>
         <div className={styles.sectionHeadText}>
           <h2 className={styles.sectionTitle}>{title}</h2>
-          {description && <p className={styles.sectionDesc}>{description}</p>}
+          {hint && <p className={styles.sectionHint}>{hint}</p>}
         </div>
         {action}
       </header>

@@ -1,59 +1,90 @@
+/* Design tokens — the single source of truth for color, type, radius and
+   motion. Governed by internal/design-language.md: every value here exists
+   in a light and a dark variant, the accent is a desaturated pine green
+   reserved for primary actions / selection / active nav, and component CSS
+   must reference these tokens instead of raw values. */
+
 :root {
-  --font-sans: "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", system-ui, sans-serif;
+  --font-sans: "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", system-ui, sans-serif;
   --font-mono: "SF Mono", "JetBrains Mono", ui-monospace, monospace;
+
+  /* Type scale — the only font sizes allowed in component CSS. */
+  --fs-page: 26px;
+  --fs-hero: 20px;
+  --fs-section: 16px;
+  --fs-body: 14px;
+  --fs-note: 13px;
+  --fs-meta: 12px;
 
   color-scheme: light;
 
-  --bg-sidebar: #1b1d29;
-  --bg-app: #f2f3f7;
+  --bg-sidebar: #1c221d;
+  --bg-app: #f3f4f2;
   --bg-surface: #ffffff;
   --bg-surface-raised: #ffffff;
-  --bg-subtle: #f6f7fb;
-  --bg-inset: #e9eaf1;
-  --text-primary: #16181f;
-  --text-secondary: #4a4e5e;
-  --text-on-dark: #f0f1f6;
-  --text-on-dark-dim: #b4b7c8;
-  --border: #dcdee8;
-  --accent: #5b5bd6;
-  --accent-strong: #4a4ac2;
-  --accent-soft: #ecebfb;
-  --ok: #2f9e63;
-  --ok-soft: #e0f3e9;
-  --warn: #c07f1f;
-  --warn-soft: #f9efdb;
-  --danger: #d64550;
-  --danger-soft: #fbe6e8;
-  --info: #3675c9;
-  --info-soft: #e3edfa;
-  --neutral-soft: #eceef4;
+  --bg-subtle: #f6f7f5;
+  --bg-inset: #e9ebe7;
+  --text-primary: #191b18;
+  --text-secondary: #545750;
+  --text-on-dark: #eef1ec;
+  --text-on-dark-dim: #a6ada5;
+  --border: #dde0da;
+  --hover-on-dark: rgba(255, 255, 255, 0.07);
+  --border-on-dark: rgba(255, 255, 255, 0.1);
 
-  --shadow-1: 0 1px 2px rgba(20, 22, 40, 0.06), 0 1px 4px rgba(20, 22, 40, 0.08);
-  --shadow-2: 0 4px 12px rgba(20, 22, 40, 0.12), 0 2px 4px rgba(20, 22, 40, 0.08);
+  --accent: #2f6b52;
+  --accent-strong: #265a44;
+  --accent-soft: #e4efe9;
+
+  --ok: #3d8043;
+  --ok-soft: #e1f0e4;
+  --warn: #b07818;
+  --warn-soft: #f7eeda;
+  --danger: #c4414d;
+  --danger-soft: #fbe5e7;
+  --info: #33689e;
+  --info-soft: #e4edf7;
+  --neutral-soft: #eceeea;
+
+  --shadow-1: 0 1px 2px rgba(24, 28, 24, 0.06), 0 1px 4px rgba(24, 28, 24, 0.08);
+  --shadow-2: 0 4px 12px rgba(24, 28, 24, 0.12), 0 2px 4px rgba(24, 28, 24, 0.08);
   --radius-s: 6px;
   --radius-m: 10px;
-  --radius-l: 14px;
+  /* Deprecated alias kept for not-yet-migrated views; equals --radius-m. */
+  --radius-l: 10px;
+  /* Functional pills (status badges) only, never decorative. */
+  --radius-full: 999px;
   --transition: 150ms ease;
+  --motion-curve: cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
 :root[data-theme="dark"] {
   color-scheme: dark;
 
-  --bg-sidebar: #13141d;
-  --bg-app: #1c1e2a;
-  --bg-surface: #252838;
-  --bg-surface-raised: #2b2e40;
-  --bg-subtle: #20232f;
-  --bg-inset: #171923;
-  --text-primary: #f0f1f6;
-  --text-secondary: #b4b7c8;
-  --border: #363a4e;
-  --accent-soft: #32345c;
-  --ok-soft: #1d3a2c;
-  --warn-soft: #3d321f;
-  --danger-soft: #46262b;
-  --info-soft: #223550;
-  --neutral-soft: #2e3145;
+  --bg-sidebar: #151a16;
+  --bg-app: #191b19;
+  --bg-surface: #212421;
+  --bg-surface-raised: #262a26;
+  --bg-subtle: #1e211e;
+  --bg-inset: #151715;
+  --text-primary: #ecefe9;
+  --text-secondary: #a9ada5;
+  --border: #343833;
+
+  --accent: #40795d;
+  --accent-strong: #4e8e6f;
+  --accent-soft: #23382e;
+
+  --ok: #6fbf87;
+  --ok-soft: #22392a;
+  --warn: #d9a44a;
+  --warn-soft: #3b301b;
+  --danger: #e77681;
+  --danger-soft: #442528;
+  --info: #7aa7dc;
+  --info-soft: #223349;
+  --neutral-soft: #2c302b;
+
   --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4), 0 1px 4px rgba(0, 0, 0, 0.3);
   --shadow-2: 0 4px 14px rgba(0, 0, 0, 0.5), 0 2px 4px rgba(0, 0, 0, 0.35);
 }

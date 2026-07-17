@@ -12,7 +12,8 @@ export type IconName =
   | "sun-moon"
   | "sun"
   | "moon"
-  | "monitor";
+  | "monitor"
+  | "list";
 
 const GLYPHS: Record<IconName, ReactNode> = {
   sliders: (
@@ -65,6 +66,12 @@ const GLYPHS: Record<IconName, ReactNode> = {
     <>
       <rect x="2" y="3" width="20" height="14" rx="2" />
       <path d="M8 21h8M12 17v4" />
+    </>
+  ),
+  list: (
+    <>
+      <path d="M3 6h.01M3 12h.01M3 18h.01" />
+      <path d="M8 6h13M8 12h13M8 18h13" />
     </>
   ),
 };

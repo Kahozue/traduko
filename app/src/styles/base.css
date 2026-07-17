@@ -11,8 +11,9 @@ body,
 
 body {
   font-family: var(--font-sans);
-  font-size: 14px;
-  font-weight: 450;
+  font-size: var(--fs-body);
+  font-weight: 400;
+  line-height: 1.6;
   color: var(--text-primary);
   background: var(--bg-app);
   text-rendering: optimizeLegibility;

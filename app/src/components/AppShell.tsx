@@ -1,14 +1,15 @@
 import type { ReactNode } from "react";
 import { t } from "../i18n";
 import { useConnection } from "../lib/connection";
+import { Icon, type IconName } from "./icons";
 import styles from "./AppShell.module.css";
 
 export type NavKey = "tasks" | "budget" | "settings";
 
-const NAV_ITEMS: { key: NavKey; label: string }[] = [
-  { key: "tasks", label: t("nav.tasks") },
-  { key: "budget", label: t("nav.budget") },
-  { key: "settings", label: t("nav.settings") },
+const NAV_ITEMS: { key: NavKey; icon: IconName; label: string }[] = [
+  { key: "tasks", icon: "list", label: t("nav.tasks") },
+  { key: "budget", icon: "wallet", label: t("nav.budget") },
+  { key: "settings", icon: "sliders", label: t("nav.settings") },
 ];
 
 export function AppShell({
@@ -33,6 +34,9 @@ export function AppShell({
               className={item.key === active ? styles.navItemActive : styles.navItem}
               onClick={() => onNavigate(item.key)}
             >
+              <span className={styles.navIcon} aria-hidden="true">
+                <Icon name={item.icon} size={16} />
+              </span>
               {item.label}
             </button>
           ))}

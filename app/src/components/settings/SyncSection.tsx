@@ -67,10 +67,8 @@ export function SyncSection({
 
   return (
     <Section
-      icon="cloud"
-      tint="ok"
       title={t("settings.sync")}
-      description={t("settings.sync.restartHint")}
+      hint={t("settings.sync.restartHint")}
       action={
         <button
           type="button"

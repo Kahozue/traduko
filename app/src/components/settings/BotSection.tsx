@@ -56,12 +56,7 @@ export function BotSection({
     .some((item) => !isDigits(item));
 
   return (
-    <Section
-      icon="bot"
-      tint="accent"
-      title={t("settings.bot")}
-      description={t("settings.bot.restartHint")}
-    >
+    <Section title={t("settings.bot")} hint={t("settings.bot.restartHint")}>
       <label className={`${styles.checkItem} ${styles.toggleField}`}>
         <input
           type="checkbox"
