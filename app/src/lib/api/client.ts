@@ -2,6 +2,8 @@ import type {
   ArtifactListItem,
   AsrStatus,
   AsrTestResult,
+  AssistantMessageDoc,
+  AssistantReply,
   BudgetInfo,
   ChannelConfigDoc,
   CoreConfigDoc,
@@ -217,6 +219,21 @@ export class ApiClient {
     return this.request(`/proposals/${encodeURIComponent(id)}/reject`, {
       method: "POST",
     });
+  }
+
+  sendAssistantMessage(text: string): Promise<AssistantReply> {
+    return this.request("/assistant/message", {
+      method: "POST",
+      body: JSON.stringify({ text }),
+    });
+  }
+
+  getAssistantHistory(): Promise<AssistantMessageDoc[]> {
+    return this.request("/assistant/history");
+  }
+
+  clearAssistant(): Promise<{ cleared: boolean }> {
+    return this.request("/assistant/clear", { method: "POST" });
   }
 
   listArtifacts(project: string, taskId: string): Promise<ArtifactListItem[]> {

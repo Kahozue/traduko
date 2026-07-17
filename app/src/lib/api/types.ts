@@ -375,3 +375,21 @@ export interface AsrTestResult {
   load_seconds?: number;
   error?: string;
 }
+
+export type AssistantRole = "user" | "assistant";
+
+export interface AssistantMessageDoc {
+  role: AssistantRole;
+  text: string;
+  ts: string;
+  // Only present on assistant messages that filed a config proposal.
+  proposal_ids?: string[];
+}
+
+export interface AssistantReply {
+  reply: string;
+  proposal_ids: string[];
+  converged: boolean;
+  reason: string;
+  history: AssistantMessageDoc[];
+}
