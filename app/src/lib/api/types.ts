@@ -409,6 +409,7 @@ export interface AssistantSessionRow {
 export interface AssistantReply {
   reply: string;
   proposal_ids: string[];
+  created_task_ids?: string[];
   converged: boolean;
   reason: string;
   history: AssistantMessageDoc[];

@@ -124,6 +124,11 @@ export function AssistantPanel({ onClose }: { onClose: () => void }) {
       if (data.proposal_ids.length > 0) {
         void queryClient.invalidateQueries({ queryKey: PROPOSALS_KEY });
       }
+      // A reply that created tasks changed the task list; refresh it so the
+      // new pending task appears without a manual reload.
+      if (data.created_task_ids && data.created_task_ids.length > 0) {
+        void queryClient.invalidateQueries({ queryKey: ["tasks"] });
+      }
       void queryClient.invalidateQueries({ queryKey: SESSIONS_KEY });
       setDraft("");
       setAttachments([]);

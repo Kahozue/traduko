@@ -365,6 +365,7 @@ def test_default_llm_provider_falls_back_to_sole_entry(tmp_path: Path) -> None:
     assert result == {
         "reply": "ok",
         "proposal_ids": [],
+        "created_task_ids": [],
         "converged": True,
         "reason": "done",
     }
@@ -643,3 +644,53 @@ def test_run_assistant_message_wraps_provider_failure_as_llm_error(
         run_assistant_message(ws, "hello")
     # A failed turn is not persisted: no assistant reply exists to record.
     assert read_active_messages(ws) == []
+
+
+def test_assistant_can_create_task_left_pending(tmp_path: Path) -> None:
+    # Seed a profile and an input file, then drive the agent to call
+    # list_profiles and create_task. The created task must land PENDING.
+    from traduko import seeds
+
+    seeds.ensure_defaults(tmp_path)
+    input_file = tmp_path / "in.srt"
+    input_file.write_text("1\n00:00:00,000 --> 00:00:01,000\nhi\n", encoding="utf-8")
+    ws = scripted_ws(
+        tmp_path,
+        [
+            '{"tool": "list_profiles", "arguments": {}}',
+            (
+                '{"tool": "create_task", "arguments": {"input_path": "'
+                + str(input_file)
+                + '", "profile": "subtitle-translate", "name": "from-assistant"}}'
+            ),
+            '{"done": true, "summary": "Created task from-assistant; run it when ready."}',
+        ],
+    )
+
+    result = run_assistant_message(ws, "set up a subtitle translate task for in.srt")
+
+    assert result["converged"] is True
+    assert len(result["created_task_ids"]) == 1
+    task_id = result["created_task_ids"][0]
+    record = ws.store.load("default", task_id)
+    assert record.name == "from-assistant"
+    assert record.status.value == "pending"
+
+
+def test_assistant_create_task_missing_input_reports_tool_error(tmp_path: Path) -> None:
+    from traduko import seeds
+
+    seeds.ensure_defaults(tmp_path)
+    ws = scripted_ws(
+        tmp_path,
+        [
+            (
+                '{"tool": "create_task", "arguments": {"input_path": "'
+                + str(tmp_path / "nope.srt")
+                + '", "profile": "subtitle-translate"}}'
+            ),
+            '{"done": true, "summary": "The input file was not found."}',
+        ],
+    )
+    result = run_assistant_message(ws, "make a task for nope.srt")
+    assert result["created_task_ids"] == []

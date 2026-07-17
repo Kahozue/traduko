@@ -65,8 +65,14 @@ submitted a proposal that is awaiting approval.
 
 Use the read-only tools (list_tasks, task_detail, budget_status, \
 read_config, read_logs, run_preflight) to gather facts before answering \
-instead of guessing about the state of the system. Reply in the same \
-language the operator wrote in."""
+instead of guessing about the state of the system. You can also set up \
+work the operator asks for: list_profiles shows the available pipelines, \
+and create_task creates a new task from one. A task you create is left \
+PENDING for the operator to review and run — you never start it yourself, \
+so confirm the input file, profile, and target settings before creating \
+it. When the operator attaches a file, its path appears in their message \
+as "[attached files: ...]"; use that path as create_task's input_path. \
+Reply in the same language the operator wrote in."""
 
 _SECRET_MARKERS = ("key", "token", "password", "secret", "webhook")
 
@@ -345,11 +351,96 @@ def _build_propose_tool(ws: Workspace, proposal_ids: list[str]) -> AgentTool:
     )
 
 
-def _build_registry(ws: Workspace, proposal_ids: list[str]) -> ToolRegistry:
+def _build_action_tools(ws: Workspace, created_task_ids: list[str]) -> list[AgentTool]:
+    """Tools that change task state (not config). These create work the user
+    asked for — a pending task — but never run it: the task lands in the
+    normal PENDING state for the operator to review and start, so nothing
+    irreversible happens without a human. Config still only moves through the
+    proposal channel."""
+    from ..profiles import load_profile, stage_records_from
+
+    def list_profiles(args: dict) -> str:
+        names = sorted(path.stem for path in (ws.root / "profiles").glob("*.yaml"))
+        return json.dumps(names, ensure_ascii=False)
+
+    def create_task(args: dict) -> str:
+        input_path = Path(str(args.get("input_path", "")))
+        profile_name = str(args.get("profile", ""))
+        if not input_path.exists():
+            raise ToolError(f"input not found: {input_path}")
+        try:
+            profile = load_profile(ws.root, profile_name)
+        except FileNotFoundError:
+            raise ToolError(f"profile not found: {profile_name}") from None
+        record = ws.store.create(
+            project=str(args.get("project") or ws.config.default_project),
+            input_path=str(input_path.resolve()),
+            profile_name=profile_name,
+            stages=stage_records_from(profile),
+            name=(str(args["name"]) if args.get("name") else None),
+        )
+        created_task_ids.append(record.id)
+        return json.dumps(
+            {
+                "task_id": record.id,
+                "project": record.project,
+                "status": record.status.value,
+                "note": "task created in pending state; the operator must run it",
+            },
+            ensure_ascii=False,
+        )
+
+    return [
+        AgentTool(
+            name="list_profiles",
+            description="List the pipeline profile names available for new tasks.",
+            parameters={},
+            handler=_safe(list_profiles),
+        ),
+        AgentTool(
+            name="create_task",
+            description=(
+                "Create a new task from a pipeline profile. The task is left "
+                "PENDING for the operator to review and run; it is never "
+                "started automatically. Use an attached file path as "
+                "input_path when the operator gave one."
+            ),
+            parameters={
+                "input_path": {
+                    "type": "string",
+                    "required": True,
+                    "description": "absolute path to the input file",
+                },
+                "profile": {
+                    "type": "string",
+                    "required": True,
+                    "description": "pipeline profile name (see list_profiles)",
+                },
+                "project": {
+                    "type": "string",
+                    "required": False,
+                    "description": "project to file the task under (default project if omitted)",
+                },
+                "name": {
+                    "type": "string",
+                    "required": False,
+                    "description": "human-friendly task name",
+                },
+            },
+            handler=_safe(create_task),
+        ),
+    ]
+
+
+def _build_registry(
+    ws: Workspace, proposal_ids: list[str], created_task_ids: list[str]
+) -> ToolRegistry:
     registry = ToolRegistry()
     for tool in build_assistant_tools(ws):
         registry.register(tool)
     registry.register(_build_propose_tool(ws, proposal_ids))
+    for tool in _build_action_tools(ws, created_task_ids):
+        registry.register(tool)
     for tool in mcphub.active_tools():
         registry.register(tool)
     for tool in skillhub.active_tools():
@@ -471,7 +562,8 @@ def run_assistant_message(
     goal = _build_goal(history, text, images=images)
 
     proposal_ids: list[str] = []
-    registry = _build_registry(ws, proposal_ids)
+    created_task_ids: list[str] = []
+    registry = _build_registry(ws, proposal_ids, created_task_ids)
     meter = BudgetMeter(ws.root, ws.bus, ws.config)
     task_id = "assistant-" + datetime.now().strftime("%Y%m")
     run_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%f")
@@ -521,6 +613,7 @@ def run_assistant_message(
     return {
         "reply": reply,
         "proposal_ids": proposal_ids,
+        "created_task_ids": created_task_ids,
         "converged": result.converged,
         "reason": result.reason,
     }
