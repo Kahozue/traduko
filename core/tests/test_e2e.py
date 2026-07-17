@@ -358,7 +358,7 @@ def test_service_api_full_pipeline_with_ws_events(tmp_path: Path) -> None:
 MD_NOVEL = "# Chapter\n\nHello paragraph.\n\nSecond paragraph.\n"
 
 
-def test_novel_pipeline_end_to_end_without_translation(tmp_path: Path) -> None:
+def test_novel_pipeline_end_to_end_with_fake_translation(tmp_path: Path) -> None:
     env = {"TRADUKO_DATA_ROOT": str(tmp_path)}
     src = tmp_path / "novel.md"
     src.write_text(MD_NOVEL, encoding="utf-8")
@@ -378,8 +378,95 @@ def test_novel_pipeline_end_to_end_without_translation(tmp_path: Path) -> None:
     assert document["schema_version"] == 1
     chunks = json.loads((artifacts / "02-chunks.json").read_text(encoding="utf-8"))
     assert len(chunks["chunks"]) >= 1
-    out = (artifacts / "03-translated.md").read_text(encoding="utf-8")
-    assert out == MD_NOVEL
+    translation = json.loads(
+        (artifacts / "03-translation.json").read_text(encoding="utf-8")
+    )
+    assert all(c["status"] == "translated" for c in translation["chunks"])
+    qc_first = json.loads((artifacts / "04-qc.json").read_text(encoding="utf-8"))
+    assert qc_first["flags"] == []
+    # Second translate pass is a no-op when qc is clean.
+    assert not (artifacts / "05-translation.json").exists()
+    qc_final = json.loads((artifacts / "06-qc.json").read_text(encoding="utf-8"))
+    assert qc_final["flags"] == []
+    out = (artifacts / "07-translated.md").read_text(encoding="utf-8")
+    assert out == "[T] # Chapter\n\n[T] Hello paragraph.\n\n[T] Second paragraph.\n"
+
+
+def test_novel_pipeline_requeues_flagged_chunks(tmp_path: Path) -> None:
+    env = {"TRADUKO_DATA_ROOT": str(tmp_path)}
+    src = tmp_path / "novel.md"
+    src.write_text(MD_NOVEL, encoding="utf-8")
+    echo_round = json.dumps(
+        [
+            {"id": "b-00001", "text": "# Chapter\n"},
+            {"id": "b-00003", "text": "Hello paragraph.\n"},
+            {"id": "b-00005", "text": "Second paragraph.\n"},
+        ]
+    )
+    good_round = json.dumps(
+        [
+            {"id": "b-00001", "text": "# Ĉapitro\n"},
+            {"id": "b-00003", "text": "Saluton alineo.\n"},
+            {"id": "b-00005", "text": "Dua alineo.\n"},
+        ]
+    )
+    # Each stage builds its own provider instance, so script the two
+    # translate passes through separate provider entries.
+    save_config(
+        tmp_path,
+        CoreConfig(
+            llm_providers={
+                "novel-first": {"type": "scripted", "responses": [echo_round]},
+                "novel-retry": {"type": "scripted", "responses": [good_round]},
+            }
+        ),
+    )
+    (tmp_path / "profiles").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "profiles" / "novel-scripted.yaml").write_text(
+        """schema_version: 1
+name: novel-scripted
+stages:
+  - type: ingest_document
+  - type: chunk
+  - type: translate_chunks
+    params:
+      provider: novel-first
+      target_language: eo
+  - type: qc_scan
+    params:
+      target_language: eo
+  - type: translate_chunks
+    params:
+      provider: novel-retry
+      target_language: eo
+      only_flagged: true
+  - type: qc_scan
+    params:
+      target_language: eo
+  - type: export_document
+""",
+        encoding="utf-8",
+    )
+
+    created = runner.invoke(
+        app, ["task", "create", str(src), "--profile", "novel-scripted"], env=env
+    )
+    assert created.exit_code == 0, created.output
+    task_id = created.output.strip().splitlines()[-1]
+
+    ran = runner.invoke(app, ["task", "run", task_id], env=env)
+    assert ran.exit_code == 0, ran.output
+    assert "completed" in ran.output
+
+    artifacts = tmp_path / "projects" / "default" / "tasks" / task_id / "artifacts"
+    qc_first = json.loads((artifacts / "04-qc.json").read_text(encoding="utf-8"))
+    assert [f["type"] for f in qc_first["flags"]] == ["echo"]
+    retry = json.loads((artifacts / "05-translation.json").read_text(encoding="utf-8"))
+    assert retry["chunks"][0]["blocks"][0]["text"] == "# Ĉapitro\n"
+    qc_final = json.loads((artifacts / "06-qc.json").read_text(encoding="utf-8"))
+    assert qc_final["flags"] == []
+    out = (artifacts / "07-translated.md").read_text(encoding="utf-8")
+    assert out == "# Ĉapitro\n\nSaluton alineo.\n\nDua alineo.\n"
 
 
 def test_novel_pipeline_epub_end_to_end(tmp_path: Path) -> None:
@@ -401,6 +488,7 @@ def test_novel_pipeline_epub_end_to_end(tmp_path: Path) -> None:
     assert "completed" in ran.output
 
     artifacts = tmp_path / "projects" / "default" / "tasks" / task_id / "artifacts"
-    out_doc = parse_epub(artifacts / "03-translated.epub")
+    out_doc = parse_epub(artifacts / "07-translated.epub")
     texts = [b.text for ch in out_doc.chapters for b in ch.blocks]
-    assert "First paragraph." in texts and "Another paragraph." in texts
+    assert "[T] First paragraph." in texts
+    assert "First paragraph." not in texts

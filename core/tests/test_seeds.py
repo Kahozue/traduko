@@ -10,6 +10,8 @@ SEED_FILES = [
     "profiles/novel-translate.yaml",
     "prompts/translate.txt",
     "prompts/proofread.txt",
+    "prompts/doc-translate.txt",
+    "prompts/doc-summary.txt",
     "config/pricing.yaml",
     "config/styles.yaml",
 ]
@@ -35,9 +37,12 @@ def test_seeded_profiles_are_loadable(tmp_path: Path) -> None:
     assert sub.stages[1].params["provider"] == "fake"
     novel = load_profile(tmp_path, "novel-translate")
     assert [s.type for s in novel.stages] == [
-        "ingest_document", "chunk", "export_document",
+        "ingest_document", "chunk", "translate_chunks", "qc_scan",
+        "translate_chunks", "qc_scan", "export_document",
     ]
     assert novel.stages[1].params["base_chars"] == 2600
+    assert novel.stages[2].params["provider"] == "fake"
+    assert novel.stages[4].params["only_flagged"] is True
 
 
 def test_ensure_defaults_never_overwrites(tmp_path: Path) -> None:

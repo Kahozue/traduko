@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 
 BlockKind = Literal["heading", "paragraph", "code", "blank", "other"]
 ChunkStatus = Literal["translated", "failed", "pending"]
+QcFlagType = Literal["untranslated", "echo", "glossary"]
 
 DocumentFormat = Literal["markdown", "txt", "html", "epub"]
 
@@ -63,3 +64,15 @@ class TranslatedChunk(BaseModel):
 class DocTranslationDoc(BaseModel):
     schema_version: int = 1
     chunks: list[TranslatedChunk] = Field(default_factory=list)
+
+
+class QcFlag(BaseModel):
+    chunk_id: str
+    block_id: str = ""
+    type: QcFlagType
+    evidence: str = ""
+
+
+class QcDoc(BaseModel):
+    schema_version: int = 1
+    flags: list[QcFlag] = Field(default_factory=list)

@@ -9,7 +9,12 @@ from __future__ import annotations
 from pathlib import Path
 
 from .budget import BUILTIN_PRICES
-from .prompts import DEFAULT_PROOFREAD_TEMPLATE, DEFAULT_TRANSLATE_TEMPLATE
+from .prompts import (
+    DEFAULT_DOC_SUMMARY_TEMPLATE,
+    DEFAULT_DOC_TRANSLATE_TEMPLATE,
+    DEFAULT_PROOFREAD_TEMPLATE,
+    DEFAULT_TRANSLATE_TEMPLATE,
+)
 
 _PROFILE_AV_DEFAULT = """\
 # Default audiovisual pipeline: video or audio file in, subtitle file out.
@@ -57,8 +62,11 @@ stages:
 
 _PROFILE_NOVEL_TRANSLATE = """\
 # Novel/document pipeline: markdown, txt, epub, or html in, same format
-# out. v2-01 ships the parse/repack shell; the translate_chunks stage
-# (v2-02) will slot in between chunk and export_document.
+# out. The second translate_chunks pass re-translates only the chunks the
+# first qc_scan flagged (plus failed ones); chunks still flagged in the
+# final qc.json are left for proofreading and the editor.
+# Before real use: set target_language, and point provider at an entry
+# under llm_providers in config/core.yaml ("fake" is an offline dry run).
 schema_version: 1
 name: novel-translate
 stages:
@@ -69,6 +77,21 @@ stages:
       base_chars: 2600
       max_blocks: 80
       max_chars: 5200
+  - type: translate_chunks
+    params:
+      provider: fake
+      target_language: en
+  - type: qc_scan
+    params:
+      target_language: en
+  - type: translate_chunks
+    params:
+      provider: fake
+      target_language: en
+      only_flagged: true
+  - type: qc_scan
+    params:
+      target_language: en
   - type: export_document
 """
 
@@ -103,6 +126,8 @@ def ensure_defaults(root: Path) -> None:
         "profiles/novel-translate.yaml": _PROFILE_NOVEL_TRANSLATE,
         "prompts/translate.txt": DEFAULT_TRANSLATE_TEMPLATE,
         "prompts/proofread.txt": DEFAULT_PROOFREAD_TEMPLATE,
+        "prompts/doc-translate.txt": DEFAULT_DOC_TRANSLATE_TEMPLATE,
+        "prompts/doc-summary.txt": DEFAULT_DOC_SUMMARY_TEMPLATE,
         "config/pricing.yaml": _pricing_yaml(),
         "config/styles.yaml": _STYLES_DEFAULT,
     }

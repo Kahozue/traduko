@@ -41,6 +41,34 @@ def test_missing_variable_raises() -> None:
         render(DEFAULT_TEMPLATES["translate"], {"target_language": "en"})
 
 
+def test_doc_translate_template_renders() -> None:
+    template = load_template(Path("/nonexistent"), "doc-translate")
+    out = render(
+        template,
+        {
+            "source_language": "en", "target_language": "zh-TW",
+            "glossary": "(none)", "summary": "(none)", "context": "(none)",
+            "blocks_json": '[{"id": "b-00001", "text": "hello"}]',
+        },
+    )
+    assert "BLOCKS:" in out
+    assert '"b-00001"' in out
+
+
+def test_doc_summary_template_renders() -> None:
+    template = load_template(Path("/nonexistent"), "doc-summary")
+    out = render(
+        template,
+        {
+            "target_language": "zh-TW",
+            "summary": "(none)",
+            "recent_text": "some translated text",
+        },
+    )
+    assert "some translated text" in out
+    assert "BLOCKS:" not in out
+
+
 def test_proofread_template_renders() -> None:
     template = load_template(Path("/nonexistent"), "proofread")
     text = render(

@@ -5,6 +5,7 @@ import pytest
 
 from traduko.artifacts import ArtifactStore
 from traduko.documents.epubdoc import parse_epub
+from traduko.documents.model import ChunksDoc
 from traduko.events import EventBus
 from traduko.models import StageRecord, TaskRecord, utc_now_iso
 from traduko.stages import base, registry
@@ -146,6 +147,156 @@ def test_chunk_char_limit_closes_before_overflow(tmp_path: Path) -> None:
     data = ctx.artifacts.read_latest_json("chunks.json")
     groups = [c["block_ids"] for c in data["chunks"]]
     assert groups == [["b-00001"], ["b-00002", "b-00003"]]
+
+
+def _ingest_and_chunk(tmp_path: Path, src: Path) -> None:
+    ingest_ctx, _ = make_ctx(tmp_path, src, stage_index=0)
+    registry.create("ingest_document").run(ingest_ctx)
+    chunk_ctx, _ = make_ctx(tmp_path, src, stage_index=1)
+    registry.create("chunk").run(chunk_ctx)
+
+
+def test_translate_chunks_with_fake_provider(tmp_path: Path) -> None:
+    src = tmp_path / "book.md"
+    src.write_text(MD, encoding="utf-8")
+    _ingest_and_chunk(tmp_path, src)
+    ctx, progress = make_ctx(
+        tmp_path, src, stage_index=2, params={"target_language": "en"}
+    )
+    result = registry.create("translate_chunks").run(ctx)
+    assert "03-translation.json" in result.artifacts
+    assert "03-translation.partial.json" in result.artifacts
+    data = ctx.artifacts.read_latest_json("translation.json")
+    assert data["schema_version"] == 1
+    texts = [b["text"] for c in data["chunks"] for b in c["blocks"]]
+    assert texts and all(t.startswith("[T] ") for t in texts)
+    assert all(c["status"] == "translated" for c in data["chunks"])
+    assert progress[-1][0] == progress[-1][1]
+
+
+def test_translate_chunks_requires_target_language(tmp_path: Path) -> None:
+    src = tmp_path / "book.md"
+    src.write_text(MD, encoding="utf-8")
+    _ingest_and_chunk(tmp_path, src)
+    ctx, _ = make_ctx(tmp_path, src, stage_index=2)
+    with pytest.raises(base.StageError):
+        registry.create("translate_chunks").run(ctx)
+
+
+def test_translate_chunks_only_flagged_requires_prior_artifacts(tmp_path: Path) -> None:
+    src = tmp_path / "book.md"
+    src.write_text(MD, encoding="utf-8")
+    _ingest_and_chunk(tmp_path, src)
+    ctx, _ = make_ctx(
+        tmp_path,
+        src,
+        stage_index=2,
+        params={"target_language": "en", "only_flagged": True},
+    )
+    with pytest.raises(base.StageError):
+        registry.create("translate_chunks").run(ctx)
+
+
+def test_translate_chunks_only_flagged_noop_when_clean(tmp_path: Path) -> None:
+    src = tmp_path / "book.md"
+    src.write_text(MD, encoding="utf-8")
+    _ingest_and_chunk(tmp_path, src)
+    first_ctx, _ = make_ctx(
+        tmp_path, src, stage_index=2, params={"target_language": "en"}
+    )
+    registry.create("translate_chunks").run(first_ctx)
+    qc_ctx, _ = make_ctx(
+        tmp_path, src, stage_index=3, params={"target_language": "en"}
+    )
+    registry.create("qc_scan").run(qc_ctx)
+    retry_ctx, _ = make_ctx(
+        tmp_path,
+        src,
+        stage_index=4,
+        params={"target_language": "en", "only_flagged": True},
+    )
+    result = registry.create("translate_chunks").run(retry_ctx)
+    assert result.artifacts == []
+    # Latest translation is still the first round's artifact.
+    latest = retry_ctx.artifacts.latest_path("translation.json")
+    assert latest.name == "03-translation.json"
+
+
+def test_translate_chunks_only_flagged_retranslates_failed_chunks(tmp_path: Path) -> None:
+    src = tmp_path / "book.md"
+    src.write_text(MD, encoding="utf-8")
+    _ingest_and_chunk(tmp_path, src)
+    chunks = ChunksDoc.model_validate(
+        make_ctx(tmp_path, src)[0].artifacts.read_latest_json("chunks.json")
+    )
+    setup_ctx, _ = make_ctx(tmp_path, src, stage_index=2)
+    setup_ctx.artifacts.write_json(
+        3,
+        "translation.json",
+        {
+            "chunks": [
+                {"id": chunk.id, "status": "failed", "blocks": []}
+                for chunk in chunks.chunks
+            ]
+        },
+    )
+    setup_ctx.artifacts.write_json(4, "qc.json", {"flags": []})
+    retry_ctx, _ = make_ctx(
+        tmp_path,
+        src,
+        stage_index=4,
+        params={"target_language": "en", "only_flagged": True},
+    )
+    result = registry.create("translate_chunks").run(retry_ctx)
+    assert "05-translation.json" in result.artifacts
+    data = retry_ctx.artifacts.read_latest_json("translation.json")
+    assert all(c["status"] == "translated" for c in data["chunks"])
+
+
+def test_qc_scan_requires_translation(tmp_path: Path) -> None:
+    src = tmp_path / "book.md"
+    src.write_text(MD, encoding="utf-8")
+    _ingest_and_chunk(tmp_path, src)
+    ctx, _ = make_ctx(tmp_path, src, stage_index=3)
+    with pytest.raises(base.StageError):
+        registry.create("qc_scan").run(ctx)
+
+
+def test_qc_scan_flags_echoed_translation(tmp_path: Path) -> None:
+    src = tmp_path / "book.md"
+    src.write_text(MD, encoding="utf-8")
+    _ingest_and_chunk(tmp_path, src)
+    ctx, _ = make_ctx(
+        tmp_path, src, stage_index=3, params={"target_language": "en"}
+    )
+    document = ctx.artifacts.read_latest_json("document.json")
+    sources = {
+        b["id"]: b["text"]
+        for c in document["chapters"]
+        for b in c["blocks"]
+    }
+    chunks = ctx.artifacts.read_latest_json("chunks.json")
+    ctx.artifacts.write_json(
+        3,
+        "translation.json",
+        {
+            "chunks": [
+                {
+                    "id": chunk["id"],
+                    "status": "translated",
+                    "blocks": [
+                        {"id": i, "text": sources[i]} for i in chunk["block_ids"]
+                    ],
+                }
+                for chunk in chunks["chunks"]
+            ]
+        },
+    )
+    result = registry.create("qc_scan").run(ctx)
+    assert result.artifacts == ["04-qc.json"]
+    qc = ctx.artifacts.read_latest_json("qc.json")
+    assert qc["flags"]
+    assert all(f["type"] in ("echo", "untranslated") for f in qc["flags"])
 
 
 def test_export_without_translation_reproduces_source(tmp_path: Path) -> None:

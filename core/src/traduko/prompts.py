@@ -43,9 +43,41 @@ Glossary (source -> target):
 ${glossary}
 """
 
+DEFAULT_DOC_TRANSLATE_TEMPLATE = """You are a professional literary translator. Translate each block from ${source_language} to ${target_language}.
+
+Rules:
+- Follow the glossary exactly when a term appears.
+- Preserve the block role: headings stay headings, keep inline markup as-is.
+- Return ONLY a JSON array, one object per input block, in the same order: [{"id": "b-00001", "text": "translated"}]
+- Keep the same ids. Do not merge, split, or drop blocks.
+
+Glossary (source -> target):
+${glossary}
+
+Story so far:
+${summary}
+
+Previous context:
+${context}
+
+BLOCKS:
+${blocks_json}
+"""
+
+DEFAULT_DOC_SUMMARY_TEMPLATE = """You maintain a running summary of a book being translated into ${target_language}. Update it with the new text below: keep characters, places, terminology, and open plot threads; drop details that no longer matter. Answer in ${target_language} with the updated summary only, at most 300 words.
+
+Current summary:
+${summary}
+
+New translated text:
+${recent_text}
+"""
+
 DEFAULT_TEMPLATES: dict[str, str] = {
     "translate": DEFAULT_TRANSLATE_TEMPLATE,
     "proofread": DEFAULT_PROOFREAD_TEMPLATE,
+    "doc-translate": DEFAULT_DOC_TRANSLATE_TEMPLATE,
+    "doc-summary": DEFAULT_DOC_SUMMARY_TEMPLATE,
 }
 
 

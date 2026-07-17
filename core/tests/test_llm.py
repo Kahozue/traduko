@@ -36,6 +36,13 @@ def test_fake_translates_segments_array_aligned_by_id() -> None:
     ]
 
 
+def test_fake_translates_blocks_marker_with_string_ids() -> None:
+    provider = create_llm({"type": "fake"})
+    prompt = 'Sample [{"id": 0, "text": "rule example"}] in rules.\n\nBLOCKS:\n[{"id": "b-00001", "text": "hello"}]\n'
+    response = provider.chat(make_request(prompt))
+    assert json.loads(response.content) == [{"id": "b-00001", "text": "[T] hello"}]
+
+
 def test_fake_echoes_without_segments_marker() -> None:
     provider = create_llm({"type": "fake"})
     assert provider.chat(make_request("just a question")).content == "just a question"

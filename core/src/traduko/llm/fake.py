@@ -7,6 +7,7 @@ import re
 from .base import ChatRequest, ChatResponse, Usage, register_llm
 
 _ARRAY_RE = re.compile(r"\[.*\]", re.DOTALL)
+_BATCH_MARKER_RE = re.compile(r"SEGMENTS:|BLOCKS:")
 
 
 @register_llm("fake")
@@ -30,8 +31,8 @@ class FakeLLMProvider:
                 ),
             )
         content = prompt
-        if "SEGMENTS:" in prompt:
-            tail = prompt.rsplit("SEGMENTS:", 1)[-1]
+        if _BATCH_MARKER_RE.search(prompt):
+            tail = _BATCH_MARKER_RE.split(prompt)[-1]
             match = _ARRAY_RE.search(tail)
             if match:
                 try:

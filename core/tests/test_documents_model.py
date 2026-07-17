@@ -7,6 +7,8 @@ from traduko.documents.model import (
     ChunksDoc,
     DocumentDoc,
     DocTranslationDoc,
+    QcDoc,
+    QcFlag,
     TranslatedChunk,
 )
 
@@ -72,3 +74,21 @@ def test_translation_doc_status_literal() -> None:
     assert doc.chunks[0].blocks[0].text == "translated text"
     with pytest.raises(ValidationError):
         TranslatedChunk(id="c-0002", status="skipped", blocks=[])
+
+
+def test_qc_doc_roundtrip() -> None:
+    doc = QcDoc(
+        flags=[
+            QcFlag(chunk_id="c-0001", block_id="b-0001", type="untranslated"),
+            QcFlag(chunk_id="c-0002", type="echo", evidence="ratio 0.99"),
+        ]
+    )
+    data = doc.model_dump()
+    assert data["schema_version"] == 1
+    assert data["flags"][1]["block_id"] == ""
+    assert QcDoc.model_validate(data) == doc
+
+
+def test_qc_flag_rejects_unknown_type() -> None:
+    with pytest.raises(ValidationError):
+        QcFlag(chunk_id="c-0001", type="spelling")
