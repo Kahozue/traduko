@@ -18,8 +18,9 @@ from .prompts import (
 
 _PROFILE_AV_DEFAULT = """\
 # Default audiovisual pipeline: video or audio file in, subtitle file out.
-# Before real use: set target_language, and point provider at an entry
-# under llm_providers in config/core.yaml ("fake" is an offline dry run).
+# Set target_language before real use. "fake" provider means: use the
+# default provider configured in settings (config default_provider, or the
+# sole llm_providers entry); with none configured it is an offline dry run.
 schema_version: 1
 name: av-default
 stages:
@@ -65,8 +66,9 @@ _PROFILE_NOVEL_TRANSLATE = """\
 # out. The second translate_chunks pass re-translates only the chunks the
 # first qc_scan flagged (plus failed ones); chunks still flagged in the
 # final qc.json are left for proofreading and the editor.
-# Before real use: set target_language, and point provider at an entry
-# under llm_providers in config/core.yaml ("fake" is an offline dry run).
+# Set target_language before real use. "fake" provider means: use the
+# default provider configured in settings (config default_provider, or the
+# sole llm_providers entry); with none configured it is an offline dry run.
 schema_version: 1
 name: novel-translate
 stages:
@@ -100,8 +102,9 @@ _PROFILE_AV_DUB = """\
 # installed from the settings video tab, plus a Hugging Face token there
 # for the diarization model. The pipeline pauses after diarize so you
 # can review speaker assignments before synthesis.
-# Before real use: set target_language, and point provider at an entry
-# under llm_providers in config/core.yaml ("fake" is an offline dry run).
+# Set target_language before real use. "fake" provider means: use the
+# default provider configured in settings (config default_provider, or the
+# sole llm_providers entry); with none configured it is an offline dry run.
 schema_version: 1
 name: av-dub
 stages:

@@ -37,7 +37,7 @@ const KIND_LABEL: Record<TaskKind, string> = {
 };
 
 function formatTime(iso: string): string {
-  return new Date(iso).toLocaleString();
+  return new Date(iso).toLocaleString("zh-TW");
 }
 
 function rowKey(row: TaskIndexRow): string {

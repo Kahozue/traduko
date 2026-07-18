@@ -1,13 +1,13 @@
 """Helpers shared by LLM-driven stages."""
 from __future__ import annotations
 
-from ..config import CoreConfig
+from ..config import CoreConfig, resolve_provider_name
 from ..llm import LLMError, LLMProvider, create_llm
 from .base import StageError
 
 
 def resolve_llm(params: dict, config: CoreConfig) -> tuple[LLMProvider, str]:
-    provider_name = params.get("provider", "fake")
+    provider_name = resolve_provider_name(config, params.get("provider"))
     provider_config = config.llm_providers.get(provider_name)
     if provider_config is None:
         if provider_name == "fake":

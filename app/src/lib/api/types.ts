@@ -304,6 +304,7 @@ export interface ProposalDoc {
 export interface CoreConfigDoc {
   schema_version: number;
   default_project: string;
+  default_provider?: string;
   budget: BudgetConfigDoc;
   llm_providers: Record<string, ProviderConfigDoc>;
   notifications: NotificationsConfigDoc;

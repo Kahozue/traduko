@@ -275,3 +275,23 @@ def test_dubbing_config_round_trip(tmp_path: Path) -> None:
     loaded = load_config(tmp_path)
     assert loaded.dubbing.hf_token == "hf_abc"
     assert loaded.dubbing.python == "/opt/py311/bin/python"
+
+
+def test_resolve_provider_name_fallbacks(tmp_path: Path) -> None:
+    from traduko.config import CoreConfig, resolve_provider_name
+
+    real = {"type": "openai_compat", "base_url": "https://x/v1"}
+    # Explicit non-fake provider always wins.
+    config = CoreConfig(llm_providers={"a": real})
+    assert resolve_provider_name(config, "b") == "b"
+    # fake/unset falls back to the sole real provider.
+    assert resolve_provider_name(config, "fake") == "a"
+    assert resolve_provider_name(config, None) == "a"
+    # Test doubles never qualify as an implicit default.
+    config = CoreConfig(llm_providers={"agent": {"type": "scripted"}})
+    assert resolve_provider_name(config, "fake") == "fake"
+    # Several real providers need an explicit default.
+    config = CoreConfig(llm_providers={"a": real, "b": dict(real)})
+    assert resolve_provider_name(config, None) == "fake"
+    config.default_provider = "b"
+    assert resolve_provider_name(config, "fake") == "b"

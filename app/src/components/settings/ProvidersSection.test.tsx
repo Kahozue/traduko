@@ -130,3 +130,22 @@ test("test button reports the probe outcome", async () => {
   expect(onTest).toHaveBeenCalledWith({ type: "openai_compat", base_url: "https://x/v1" });
   expect(await screen.findByText(/連線失敗.*http 401/)).toBeInTheDocument();
 });
+
+test("default provider selector lists rows and reports the choice", async () => {
+  const onChange = vi.fn();
+  const onDefaultProvider = vi.fn();
+  render(
+    <ProvidersSection
+      providers={{
+        a: { type: "openai_compat", base_url: "https://a/v1" },
+        b: { type: "openai_compat", base_url: "https://b/v1" },
+      }}
+      defaultProvider=""
+      onChange={onChange}
+      onDefaultProvider={onDefaultProvider}
+    />,
+  );
+  const select = screen.getByLabelText("預設供應商");
+  await userEvent.selectOptions(select, "b");
+  expect(onDefaultProvider).toHaveBeenLastCalledWith("b");
+});

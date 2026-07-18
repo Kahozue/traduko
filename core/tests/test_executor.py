@@ -1,6 +1,5 @@
 from pathlib import Path
 
-import pytest
 
 from traduko.events import Event, EventBus
 from traduko.executor import (

@@ -137,6 +137,8 @@ export const zhTW = {
   "create.submit": "建立",
   "create.cancel": "取消",
   "create.error": "建立失敗",
+  "create.noProvider":
+    "尚未設定 LLM 供應商，翻譯階段只會產生占位文字；請先到設定的一般分頁新增供應商。",
   "budget.title": "預算",
   "budget.month": "本月用量（USD）",
   "budget.taskLimit": "單任務上限",
@@ -229,8 +231,14 @@ export const zhTW = {
   "settings.baseUrl": "API 位址（base_url）",
   "settings.baseUrlRequired": "API 位址不可空白",
   "settings.apiKey": "API key",
+  "settings.apiKeyPlainHint":
+    "API key 以明文儲存在本機設定檔；較安全的做法是留空此欄，改填環境變數名稱。",
   "settings.apiKeyEnv": "API key 環境變數",
   "settings.defaultModel": "預設模型",
+  "settings.defaultProvider": "預設供應商",
+  "settings.defaultProvider.auto": "自動（僅設定一個供應商時直接使用）",
+  "settings.defaultProvider.hint":
+    "管線未指定供應商時使用這裡的選擇；設定多個供應商而未選擇時，任務預檢將不通過。",
   "settings.providerPreset": "供應商",
   "settings.provider.custom": "自訂",
   "settings.provider.test": "測試連線",
@@ -381,6 +389,7 @@ export const zhTW = {
   "task.openSubtitleEditor": "開啟字幕編輯器",
   "task.openTextEditor": "開啟文本編輯器",
   "task.textEditor": "文本編輯器",
+  "task.editorDisabledHint": "尚未產生譯文，完成翻譯階段後可開啟",
   "task.checkpoint.hint.document": "可開啟文本編輯器修改譯稿，存回後按執行自品質檢測續跑。",
   "task.checkpoint.hint.speakers": "可檢查說話人指派並改名或合併，存回後按執行開始語音合成。",
   "task.speakerReview": "說話人檢查",
@@ -446,7 +455,17 @@ export const zhTW = {
   "assistant.attachFailed": "剪貼板圖片附加失敗，請再試一次",
   "assistant.empty": "尚無對話，輸入訊息開始",
   "assistant.loading": "載入中",
-  "assistant.inputPlaceholder": "輸入訊息，Enter 送出、Shift+Enter 換行",
+  "assistant.inputPlaceholder": "輸入訊息，Enter 送出",
+  "assistant.fail.generic":
+    "這則訊息未能處理完成，未經你核准的變更都不會發生；請重試或換個說法。",
+  "assistant.fail.protocol_error":
+    "助理回覆格式異常，這則訊息未能處理完成；請重試或換個說法。",
+  "assistant.fail.max_rounds":
+    "已達單次處理的輪次上限，這則訊息未能處理完成；請把需求拆小後再試。",
+  "assistant.fail.max_turns":
+    "已達單次處理的回合上限，這則訊息未能處理完成；請把需求拆小後再試。",
+  "assistant.fail.budget":
+    "預算已觸頂，這則訊息未能處理完成；請到設定提高上限後再試。",
   "assistant.send": "傳送",
   "assistant.busy": "助理處理中",
   "assistant.providerUnavailable": "尚未設定可用的 LLM 供應商，請至設定新增供應商後再試一次。",

@@ -10,12 +10,16 @@ from __future__ import annotations
 import os
 from collections.abc import Callable
 from dataclasses import dataclass
-from importlib.util import find_spec
 from pathlib import Path
 
 from . import asrsetup
 from .budget import BudgetMeter
-from .config import CoreConfig, load_config
+from .config import (
+    CoreConfig,
+    load_config,
+    real_provider_candidates,
+    resolve_provider_name,
+)
 from .events import EventBus
 from .media import ffmpeg_available
 from .models import StageRecord, StageStatus, TaskRecord
@@ -131,13 +135,28 @@ def _check_asr(
 
 @register_check("translate")
 @register_check("proofread")
+@register_check("translate_chunks")
 def _check_llm(
     stage: StageRecord, root: Path, config: CoreConfig
 ) -> list[PreflightCheck]:
-    provider_name = stage.params.get("provider", "fake")
+    provider_name = resolve_provider_name(config, stage.params.get("provider"))
     if provider_name == "fake":
+        if real_provider_candidates(config):
+            # Real providers exist but none is selectable (several entries,
+            # no default): the run would silently produce placeholder text.
+            return [
+                PreflightCheck(
+                    "llm provider", FAIL,
+                    "multiple llm providers configured but no default selected; "
+                    "pick one in settings (default_provider)",
+                )
+            ]
         return [
-            PreflightCheck("llm provider", OK, "fake provider (offline dry run)")
+            PreflightCheck(
+                "llm provider", WARN,
+                "no llm provider configured; the fake provider only produces "
+                "placeholder text (add one in settings for real translation)",
+            )
         ]
     provider_config = config.llm_providers.get(provider_name)
     if provider_config is None:

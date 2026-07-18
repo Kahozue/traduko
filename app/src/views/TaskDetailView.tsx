@@ -18,7 +18,7 @@ const CANCELABLE = new Set(["pending", "running", "waiting_review", "paused"]);
 const PAUSABLE = new Set(["running"]);
 
 function formatTime(iso: string): string {
-  return new Date(iso).toLocaleString();
+  return new Date(iso).toLocaleString("zh-TW");
 }
 
 // One-line human summary for an event's payload; the raw JSON stays in the
@@ -35,13 +35,18 @@ function summarizeEventData(data: Record<string, unknown>): string {
   return parts.join(" · ");
 }
 
-function StageError({ raw }: { raw: string }) {
+function StageError({ raw, defaultOpen = false }: { raw: string; defaultOpen?: boolean }) {
   const human = humanizeError(raw);
+  const [showRaw, setShowRaw] = useState(defaultOpen);
   return (
     <div className={styles.stageError}>
       <p className={styles.stageErrorSummary}>{human.summary}</p>
       {human.hint && <p className={styles.stageErrorHint}>{human.hint}</p>}
-      <details className={styles.rawError}>
+      <details
+        className={styles.rawError}
+        open={showRaw}
+        onToggle={(event) => setShowRaw(event.currentTarget.open)}
+      >
         <summary>{t("error.raw")}</summary>
         <pre>{raw}</pre>
       </details>
@@ -276,6 +281,7 @@ export function TaskDetailView({
             type="button"
             className={styles.secondary}
             disabled={!hasTranslation}
+            title={hasTranslation ? undefined : t("task.editorDisabledHint")}
             onClick={() => onOpenEditor(editorKind)}
           >
             {editorLabel}
@@ -345,7 +351,7 @@ export function TaskDetailView({
       {task.status === "failed" && lastStageError && (
         <section className={styles.noticeFailed}>
           <h2 className={styles.sectionTitle}>{t("task.failed.title")}</h2>
-          <StageError raw={lastStageError} />
+          <StageError raw={lastStageError} defaultOpen />
         </section>
       )}
 

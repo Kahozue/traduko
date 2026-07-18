@@ -129,6 +129,7 @@ class CoreConfig(BaseModel):
 
     schema_version: int = 1
     default_project: str = "default"
+    default_provider: str = ""
     budget: BudgetConfig = Field(default_factory=BudgetConfig)
     llm_providers: dict[str, dict] = Field(default_factory=dict)
     notifications: NotificationsConfig = Field(default_factory=NotificationsConfig)
@@ -158,6 +159,37 @@ def _migrate_confirmed(data: dict) -> None:
                 and "confirmed" not in entry
             ):
                 entry["confirmed"] = True
+
+
+_REAL_PROVIDER_TYPES = {"openai_compat", "anthropic", "gemini"}
+
+
+def real_provider_candidates(config: CoreConfig) -> list[str]:
+    """Names of llm_providers entries that are real chat endpoints (the only
+    kinds the GUI creates). Test doubles like scripted/fake never qualify as
+    an implicit default."""
+    return [
+        name
+        for name, entry in config.llm_providers.items()
+        if isinstance(entry, dict) and entry.get("type") in _REAL_PROVIDER_TYPES
+    ]
+
+
+def resolve_provider_name(config: CoreConfig, requested: str | None) -> str:
+    """Effective llm provider for a pipeline stage. An explicit provider other
+    than "fake" wins; "fake" or unset falls back to default_provider, then to
+    the sole real configured provider, so profiles seeded with provider: fake
+    pick up whatever the user configured in settings without editing YAML."""
+    if requested and requested != "fake":
+        return requested
+    default = config.default_provider
+    if default and default in config.llm_providers:
+        return default
+    if not default:
+        candidates = real_provider_candidates(config)
+        if len(candidates) == 1:
+            return candidates[0]
+    return "fake"
 
 
 def load_config(root: Path) -> CoreConfig:

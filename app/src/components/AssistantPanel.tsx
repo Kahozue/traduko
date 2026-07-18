@@ -40,12 +40,31 @@ function diffLines(diff: string): string[] {
 // Full timestamp for the hover tooltip; the bubbles themselves stay clean.
 function formatFullTime(iso: string): string {
   const date = new Date(iso);
-  return Number.isNaN(date.getTime()) ? iso : date.toLocaleString();
+  return Number.isNaN(date.getTime()) ? iso : date.toLocaleString("zh-TW");
 }
 
 function baseName(path: string): string {
   const parts = path.split(/[\\/]/);
   return parts[parts.length - 1] || path;
+}
+
+// The core stores a canned English reply when the agent loop does not
+// converge; the reason code maps to zh-TW wording here so the stored
+// history stays raw while the UI reads naturally.
+const FAIL_REASON_KEYS: Record<string, MessageKey> = {
+  protocol_error: "assistant.fail.protocol_error",
+  max_rounds: "assistant.fail.max_rounds",
+  max_turns: "assistant.fail.max_turns",
+  budget: "assistant.fail.budget",
+};
+
+const NOT_CONVERGED_RE =
+  /^I could not finish processing this message \(reason: ([a-z_]*)\)\./;
+
+function localizeAssistantText(text: string): string {
+  const match = NOT_CONVERGED_RE.exec(text);
+  if (!match) return text;
+  return t(FAIL_REASON_KEYS[match[1]] ?? "assistant.fail.generic");
 }
 
 // Right-docked assistant panel: message flow + input row, with a history
@@ -572,7 +591,9 @@ function MessageBubble({
           {isUser ? (
             message.text
           ) : (
-            <div className={styles.markdown}>{renderMarkdown(message.text)}</div>
+            <div className={styles.markdown}>
+              {renderMarkdown(localizeAssistantText(message.text))}
+            </div>
           )}
           {images.length > 0 && (
             <div className={styles.bubbleAttachments}>

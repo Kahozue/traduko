@@ -9,7 +9,7 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
-from ..config import CoreConfig, load_config
+from ..config import CoreConfig, load_config, resolve_provider_name
 from ..pdfengine.runner import build_translate_cmd
 from ..pdfengine.setup import PdfManager, venv_python
 from . import registry
@@ -68,8 +68,8 @@ class TranslatePdfStage:
         source_lang = ctx.params.get("source_lang") or "auto"
 
         base_url = api_key = model = ""
-        provider_name = ctx.params.get("provider")
-        if provider_name and provider_name != "fake":
+        provider_name = resolve_provider_name(config, ctx.params.get("provider"))
+        if provider_name != "fake":
             entry = config.llm_providers.get(provider_name)
             if entry is None:
                 raise StageError(

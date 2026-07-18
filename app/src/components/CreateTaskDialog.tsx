@@ -18,12 +18,18 @@ const TASK_TYPES: { kind: TaskKind; label: MessageKey; icon: IconName }[] = [
   { kind: "comic", label: "create.kind.comic", icon: "monitor" },
 ];
 
-const FILE_EXTENSIONS = [
-  "srt", "vtt", "ass", "txt", "md", "epub", "html",
-  "mp4", "mkv", "mov", "webm", "avi", "flv", "m4v",
-  "mp3", "wav", "m4a", "aac", "flac", "ogg",
-  "png", "jpg", "jpeg", "webp", "cbz", "zip", "pdf",
-];
+// File-picker extensions per task type, matching what each kind's pipelines
+// actually ingest; picking a comic/PDF file under the wrong type would only
+// build a task that fails at ingest.
+const KIND_EXTENSIONS: Record<TaskKind, string[]> = {
+  video: [
+    "srt", "vtt", "ass", "txt",
+    "mp4", "mkv", "mov", "webm", "avi", "flv", "m4v",
+    "mp3", "wav", "m4a", "aac", "flac", "ogg",
+  ],
+  document: ["txt", "md", "markdown", "epub", "html", "htm", "pdf"],
+  comic: ["png", "jpg", "jpeg", "webp", "cbz", "zip"],
+};
 
 export function CreateTaskDialog({
   onClose,
@@ -46,6 +52,12 @@ export function CreateTaskDialog({
     queryKey: ["profiles-detailed"],
     queryFn: () => api.profilesDetailed(),
   });
+  const { data: config } = useQuery({
+    queryKey: ["config"],
+    queryFn: () => api.getConfig(),
+  });
+  const noProvider =
+    config !== undefined && Object.keys(config.llm_providers ?? {}).length === 0;
 
   // Which kinds actually have profiles, and the profiles under the chosen one.
   const byKind = useMemo(() => {
@@ -66,17 +78,28 @@ export function CreateTaskDialog({
   }, [profiles, byKind, kind]);
 
   const kindProfiles = kind ? (byKind.get(kind) ?? []) : [];
+  const extension = inputPath.split(".").pop()?.toLowerCase() ?? "";
 
-  // Keep the selected profile valid for the chosen kind.
+  // Keep the selected profile valid for the chosen kind, and route by input
+  // extension where the pipelines differ: a .pdf only runs through
+  // translate-pdf, everything else in the document kind does not.
   useEffect(() => {
     if (kindProfiles.length === 0) {
       if (profile !== "") setProfile("");
       return;
     }
-    if (!kindProfiles.some((info) => info.name === profile)) {
-      setProfile(kindProfiles[0].name);
+    const isPdfProfile = (name: string) => name.includes("pdf");
+    let candidates = kindProfiles;
+    if (kind === "document" && extension !== "") {
+      const matching = kindProfiles.filter(
+        (info) => isPdfProfile(info.name) === (extension === "pdf"),
+      );
+      if (matching.length > 0) candidates = matching;
     }
-  }, [kindProfiles, profile]);
+    if (!candidates.some((info) => info.name === profile)) {
+      setProfile(candidates[0].name);
+    }
+  }, [kindProfiles, profile, kind, extension]);
 
   useEffect(() => {
     dialogRef.current?.focus();
@@ -119,9 +142,10 @@ export function CreateTaskDialog({
   });
 
   async function pickFile(): Promise<void> {
+    const extensions = kind ? KIND_EXTENSIONS[kind] : Object.values(KIND_EXTENSIONS).flat();
     const chosen = await open({
       multiple: false,
-      filters: [{ name: t("create.fileFilter"), extensions: FILE_EXTENSIONS }],
+      filters: [{ name: t("create.fileFilter"), extensions }],
     });
     if (typeof chosen === "string") setInputPath(chosen);
   }
@@ -178,7 +202,7 @@ export function CreateTaskDialog({
           </div>
         </label>
 
-        {kindProfiles.length > 1 && (
+        {kindProfiles.length > 0 && (
           <label className={styles.label}>
             {t("create.profile")}
             <select
@@ -212,6 +236,7 @@ export function CreateTaskDialog({
             onChange={(event) => setProject(event.target.value)}
           />
         </label>
+        {noProvider && <p className={styles.warning}>{t("create.noProvider")}</p>}
         {errorText && (
           <p className={styles.error}>
             {t("create.error")}: {errorText}

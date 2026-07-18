@@ -46,7 +46,13 @@ def stage_records_from(profile: Profile) -> list[StageRecord]:
 # Stage types that identify a profile's task domain. Classification is
 # best-effort and used only to group the new-task buttons by kind; a profile
 # with no recognized marker falls back to "video" (the v1 default domain).
-_DOCUMENT_STAGES = {"ingest_document", "chunk", "translate_chunks", "export_document"}
+_DOCUMENT_STAGES = {
+    "ingest_document",
+    "chunk",
+    "translate_chunks",
+    "export_document",
+    "translate_pdf",
+}
 _COMIC_STAGES = {"ingest_comic", "bubble_detect", "ocr", "inpaint", "typeset"}
 
 

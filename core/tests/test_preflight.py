@@ -131,12 +131,74 @@ def test_asr_custom_provider_produces_no_check(tmp_path: Path) -> None:
     assert [c.name for c in report.checks] == ["input", "budget"]
 
 
-def test_llm_fake_provider_is_ok(tmp_path: Path) -> None:
+def test_llm_fake_provider_warns_without_config(tmp_path: Path) -> None:
     record = make_record(tmp_path, [StageRecord(type="translate")])
     report = run_preflight(record, tmp_path)
     assert report.ok is True
     check = next(c for c in report.checks if "llm provider" in c.name)
-    assert check.level == OK
+    assert check.level == WARN
+
+
+def test_llm_fake_resolves_to_sole_real_provider(tmp_path: Path) -> None:
+    save_config(
+        tmp_path,
+        CoreConfig(
+            llm_providers={
+                "cloud": {
+                    "type": "openai_compat",
+                    "base_url": "https://api.example.com/v1",
+                    "api_key": "sk-test",
+                }
+            }
+        ),
+    )
+    record = make_record(
+        tmp_path, [StageRecord(type="translate", params={"provider": "fake"})]
+    )
+    report = run_preflight(record, tmp_path)
+    assert report.ok is True
+    check = next(c for c in report.checks if "llm provider" in c.name)
+    assert check.level == OK and "cloud" in check.message
+
+
+def test_llm_fake_with_multiple_providers_and_no_default_fails(
+    tmp_path: Path,
+) -> None:
+    save_config(
+        tmp_path,
+        CoreConfig(
+            llm_providers={
+                "a": {"type": "openai_compat", "base_url": "https://a/v1"},
+                "b": {"type": "openai_compat", "base_url": "https://b/v1"},
+            }
+        ),
+    )
+    record = make_record(tmp_path, [StageRecord(type="translate")])
+    report = run_preflight(record, tmp_path)
+    assert report.ok is False
+    assert "default" in report.failures()[0].message
+
+
+def test_llm_default_provider_selected_from_config(tmp_path: Path) -> None:
+    save_config(
+        tmp_path,
+        CoreConfig(
+            default_provider="b",
+            llm_providers={
+                "a": {"type": "openai_compat", "base_url": "https://a/v1"},
+                "b": {
+                    "type": "openai_compat",
+                    "base_url": "https://b/v1",
+                    "api_key": "sk-test",
+                },
+            },
+        ),
+    )
+    record = make_record(tmp_path, [StageRecord(type="translate_chunks")])
+    report = run_preflight(record, tmp_path)
+    assert report.ok is True
+    check = next(c for c in report.checks if "llm provider" in c.name)
+    assert check.level == OK and "b" in check.message
 
 
 def test_llm_unknown_provider_fails(tmp_path: Path) -> None:

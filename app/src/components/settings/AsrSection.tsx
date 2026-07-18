@@ -9,7 +9,7 @@ import styles from "./settings.module.css";
 const MODEL_SIZES = [
   { value: "tiny", label: "tiny（約 75 MB）" },
   { value: "base", label: "base（約 145 MB）" },
-  { value: "small", label: "small（約 500 MB）" },
+  { value: "small", label: "small（約 930 MB）" },
   { value: "medium", label: "medium（約 1.5 GB）" },
   { value: "large-v3", label: "large-v3（約 3.1 GB）" },
 ];

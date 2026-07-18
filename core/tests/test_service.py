@@ -1410,6 +1410,7 @@ def test_profiles_detailed_classifies_kinds(tmp_path: Path) -> None:
         assert by_name["subtitle-translate"] == "video"
         assert by_name["av-default"] == "video"
         assert by_name["novel-translate"] == "document"
+        assert by_name["translate-pdf"] == "document"
 
 
 def test_dubbing_status_install_and_test_flow(tmp_path: Path) -> None:

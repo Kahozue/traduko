@@ -115,11 +115,15 @@ function normalize(rows: Row[]): Record<string, ProviderConfigDoc> | null {
 
 export function ProvidersSection({
   providers,
+  defaultProvider,
   onChange,
+  onDefaultProvider,
   onTest,
 }: {
   providers: Record<string, ProviderConfigDoc>;
+  defaultProvider?: string;
   onChange: (providers: Record<string, ProviderConfigDoc> | null) => void;
+  onDefaultProvider?: (name: string) => void;
   // Injected by SettingsView (api.testProvider); optional so the section can
   // render without a live connection, and the test row hides when absent.
   onTest?: (config: ProviderConfigDoc) => Promise<ProviderTestResult>;
@@ -225,6 +229,29 @@ export function ProvidersSection({
       }
     >
       {rows.length === 0 && <p className={styles.emptyBox}>{t("settings.providersEmpty")}</p>}
+      {rows.length > 0 && onDefaultProvider && (
+        <div className={styles.card}>
+          <label className={styles.field}>
+            <span className={styles.label}>{t("settings.defaultProvider")}</span>
+            <select
+              className={styles.input}
+              aria-label={t("settings.defaultProvider")}
+              value={defaultProvider ?? ""}
+              onChange={(event) => onDefaultProvider(event.target.value)}
+            >
+              <option value="">{t("settings.defaultProvider.auto")}</option>
+              {trimmedNames
+                .filter((name) => name !== "")
+                .map((name) => (
+                  <option key={name} value={name}>
+                    {name}
+                  </option>
+                ))}
+            </select>
+            <span className={styles.hintNote}>{t("settings.defaultProvider.hint")}</span>
+          </label>
+        </div>
+      )}
       {rows.map((row) => {
         const name = row.name.trim();
         const nameInvalid =
@@ -332,6 +359,9 @@ export function ProvidersSection({
                   )}
                 </label>
               </div>
+            )}
+            {showBaseUrl && (
+              <span className={styles.hintNote}>{t("settings.apiKeyPlainHint")}</span>
             )}
             <ProviderTestRow config={row.config} onTest={onTest} />
           </div>

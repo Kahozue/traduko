@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { t } from "../i18n";
 import { alignmentToFlex, assStyleToCss } from "../lib/ass/preview";
@@ -22,6 +22,12 @@ export function StyleEditorPanel({
   const api = useApi();
   const [sample, setSample] = useState("範例字幕 Sample");
   const [frameUrl, setFrameUrl] = useState<string | null>(null);
+  const frameRef = useRef<HTMLImageElement>(null);
+  // The rendered frame lands below the fold; bring it into view so the
+  // result of "produce exact frame" is visible without hunting for it.
+  useEffect(() => {
+    if (frameUrl) frameRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }, [frameUrl]);
 
   const css = useMemo(() => assStyleToCss(style), [style]);
   const flex = useMemo(() => alignmentToFlex(style.alignment), [style.alignment]);
@@ -118,7 +124,7 @@ export function StyleEditorPanel({
           </div>
           {render.isError && <p className={styles.error}>{t("editor.style.noFfmpeg")}</p>}
           {frameUrl && (
-            <img data-testid="exact-frame" className={styles.frame} src={frameUrl} alt="" />
+            <img ref={frameRef} data-testid="exact-frame" className={styles.frame} src={frameUrl} alt="" />
           )}
         </section>
       </div>

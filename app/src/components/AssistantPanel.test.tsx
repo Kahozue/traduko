@@ -99,7 +99,7 @@ test("sending a message renders the reply and clears the draft", async () => {
   const sendAssistantMessage = vi.fn().mockResolvedValue(reply);
   const { api } = setup({ api: { sendAssistantMessage } });
   await screen.findByText("尚無對話，輸入訊息開始");
-  const textarea = screen.getByPlaceholderText("輸入訊息，Enter 送出、Shift+Enter 換行");
+  const textarea = screen.getByPlaceholderText("輸入訊息，Enter 送出");
   await userEvent.type(textarea, "任務 xyz 呢？");
   await userEvent.click(screen.getByRole("button", { name: "傳送" }));
   expect(api.sendAssistantMessage).toHaveBeenCalledWith("任務 xyz 呢？");
@@ -120,7 +120,7 @@ test("Enter sends the message; Shift+Enter inserts a newline instead", async () 
   };
   const sendAssistantMessage = vi.fn().mockResolvedValue(reply);
   setup({ api: { sendAssistantMessage } });
-  const textarea = screen.getByPlaceholderText("輸入訊息，Enter 送出、Shift+Enter 換行");
+  const textarea = screen.getByPlaceholderText("輸入訊息，Enter 送出");
   await userEvent.type(textarea, "第一行");
   await userEvent.type(textarea, "{Shift>}{Enter}{/Shift}");
   expect(sendAssistantMessage).not.toHaveBeenCalled();
@@ -138,7 +138,7 @@ test("busy state disables input and shows the processing indicator", async () =>
     }),
   );
   setup({ api: { sendAssistantMessage } });
-  const textarea = screen.getByPlaceholderText("輸入訊息，Enter 送出、Shift+Enter 換行");
+  const textarea = screen.getByPlaceholderText("輸入訊息，Enter 送出");
   await userEvent.type(textarea, "hello");
   await userEvent.click(screen.getByRole("button", { name: "傳送" }));
   expect(screen.getByText("助理處理中")).toBeInTheDocument();
@@ -200,7 +200,7 @@ test("editing a user message prefills the draft and resends with edit_index", as
   setup({ history: HISTORY, api: { sendAssistantMessage } });
   await screen.findByText("任務 abc 進度如何？");
   await userEvent.click(screen.getByRole("button", { name: "編輯" }));
-  const textarea = screen.getByPlaceholderText("輸入訊息，Enter 送出、Shift+Enter 換行");
+  const textarea = screen.getByPlaceholderText("輸入訊息，Enter 送出");
   expect(textarea).toHaveValue("任務 abc 進度如何？");
   await userEvent.clear(textarea);
   await userEvent.type(textarea, "改後的問題");
@@ -237,7 +237,7 @@ test("409 (no provider) shows the settings guidance text, not the raw error", as
     .fn()
     .mockRejectedValue(new ApiError(409, "no usable llm provider configured"));
   setup({ api: { sendAssistantMessage } });
-  const textarea = screen.getByPlaceholderText("輸入訊息，Enter 送出、Shift+Enter 換行");
+  const textarea = screen.getByPlaceholderText("輸入訊息，Enter 送出");
   await userEvent.type(textarea, "hello");
   await userEvent.click(screen.getByRole("button", { name: "傳送" }));
   expect(
@@ -249,7 +249,7 @@ test("409 (no provider) shows the settings guidance text, not the raw error", as
 test("a generic send failure shows a generic error message", async () => {
   const sendAssistantMessage = vi.fn().mockRejectedValue(new ApiError(500, "boom"));
   setup({ api: { sendAssistantMessage } });
-  const textarea = screen.getByPlaceholderText("輸入訊息，Enter 送出、Shift+Enter 換行");
+  const textarea = screen.getByPlaceholderText("輸入訊息，Enter 送出");
   await userEvent.type(textarea, "hello");
   await userEvent.click(screen.getByRole("button", { name: "傳送" }));
   expect(await screen.findByText("傳送失敗，請稍後再試。")).toBeInTheDocument();
@@ -307,7 +307,7 @@ test("a proposal created by the just-sent message renders its card without remou
   const sendAssistantMessage = vi.fn().mockResolvedValue(reply);
   setup({ api: { listProposals, sendAssistantMessage } });
   await screen.findByText("尚無對話，輸入訊息開始");
-  const textarea = screen.getByPlaceholderText("輸入訊息，Enter 送出、Shift+Enter 換行");
+  const textarea = screen.getByPlaceholderText("輸入訊息，Enter 送出");
   await userEvent.type(textarea, "把預設專案改成 anime");
   await userEvent.click(screen.getByRole("button", { name: "傳送" }));
   expect(await screen.findByText("調高單任務預算上限以配合本月大量任務。")).toBeInTheDocument();
@@ -387,7 +387,7 @@ test("pasting a clipboard image uploads it and adds an attachment chip", async (
     .fn()
     .mockResolvedValue({ path: "/data/assistant/attachments/20260718.png" });
   setup({ api: { uploadAssistantAttachment } });
-  const textarea = screen.getByPlaceholderText("輸入訊息，Enter 送出、Shift+Enter 換行");
+  const textarea = screen.getByPlaceholderText("輸入訊息，Enter 送出");
   pasteImage(textarea, new File([new Uint8Array([1, 2, 3])], "clip.png", { type: "image/png" }));
   await waitFor(() =>
     expect(uploadAssistantAttachment).toHaveBeenCalledWith("image/png", expect.any(String)),
@@ -398,7 +398,26 @@ test("pasting a clipboard image uploads it and adds an attachment chip", async (
 test("a failed clipboard upload shows the attach error hint", async () => {
   const uploadAssistantAttachment = vi.fn().mockRejectedValue(new ApiError(500, "disk full"));
   setup({ api: { uploadAssistantAttachment } });
-  const textarea = screen.getByPlaceholderText("輸入訊息，Enter 送出、Shift+Enter 換行");
+  const textarea = screen.getByPlaceholderText("輸入訊息，Enter 送出");
   pasteImage(textarea, new File([new Uint8Array([1])], "clip.png", { type: "image/png" }));
   expect(await screen.findByText("剪貼板圖片附加失敗，請再試一次")).toBeInTheDocument();
+});
+
+test("core 的英文未收斂訊息以 zh-TW 對應文案呈現", async () => {
+  setup({
+    history: [
+      { role: "user", text: "hi", ts: "2026-07-18T01:00:00+00:00" },
+      {
+        role: "assistant",
+        text:
+          "I could not finish processing this message (reason: protocol_error). " +
+          "Nothing was changed without your approval; please try again or " +
+          "rephrase your request.",
+        ts: "2026-07-18T01:00:01+00:00",
+      },
+    ],
+  });
+  expect(
+    await screen.findByText(/助理回覆格式異常，這則訊息未能處理完成/),
+  ).toBeInTheDocument();
 });

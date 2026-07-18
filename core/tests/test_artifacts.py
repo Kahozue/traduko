@@ -95,3 +95,26 @@ def test_validate_translation_payload_rejects_missing_target():
 def test_validate_translation_payload_rejects_non_list_segments():
     with pytest.raises(ArtifactValidationError):
         validate_translation_payload({"segments": "nope"})
+
+
+def test_list_artifacts_tolerates_list_top_level_json(tmp_path: Path) -> None:
+    # Document-pipeline artifacts (qc/chunks) are top-level lists; listing
+    # must not crash on them (they simply carry no schema_version).
+    store = ArtifactStore(tmp_path)
+    store.write_json(1, "translation.json", {"segments": []})
+    store.dir.joinpath("02-qc.json").write_text(
+        json.dumps([{"chunk": 1, "flag": "echo"}]), encoding="utf-8"
+    )
+    items = {item["file"]: item for item in store.list_artifacts()}
+    assert items["02-qc.json"]["schema_version"] is None
+    assert items["01-translation.json"]["schema_version"] == 1
+
+
+def test_read_latest_json_accepts_list_top_level(tmp_path: Path) -> None:
+    store = ArtifactStore(tmp_path)
+    store.dir.mkdir(parents=True)
+    store.dir.joinpath("01-chunks.json").write_text(
+        json.dumps([{"id": 1}]), encoding="utf-8"
+    )
+    assert store.read_latest_json("chunks.json") == [{"id": 1}]
+    assert store.read_named_json("01-chunks.json") == [{"id": 1}]

@@ -45,6 +45,7 @@ function normalize(config: CoreConfigDoc): CoreConfigDoc {
   const next = clone(config);
   if (!next.budget) next.budget = { task_usd_limit: null, monthly_usd_limit: null };
   if (!next.llm_providers) next.llm_providers = {};
+  if (next.default_provider === undefined) next.default_provider = "";
   if (!next.notifications) next.notifications = { channels: [] };
   if (!next.notifications.channels) next.notifications.channels = [];
   if (!next.discord_bot) {
@@ -283,12 +284,16 @@ export function SettingsView({
             <ProvidersSection
               key={`providers-${resetKey}`}
               providers={draft.llm_providers}
+              defaultProvider={draft.default_provider}
               onChange={(value) => {
                 setProvidersValid(value !== null);
                 if (value !== null) {
                   setDraft((prev) => (prev ? { ...prev, llm_providers: value } : prev));
                 }
               }}
+              onDefaultProvider={(value) =>
+                setDraft((prev) => (prev ? { ...prev, default_provider: value } : prev))
+              }
               onTest={(config) => api.testProvider(config, String(config.model ?? "") || undefined)}
             />
           </>

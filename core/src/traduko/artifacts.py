@@ -62,10 +62,10 @@ class ArtifactStore:
             raise FileNotFoundError(f"no artifact matching *-{name} in {self.dir}")
         return matches[-1]
 
-    def read_latest_json(self, name: str) -> dict:
+    def read_latest_json(self, name: str) -> dict | list:
         path = self.latest_path(name)
         data = json.loads(path.read_text(encoding="utf-8"))
-        if "schema_version" not in data:
+        if isinstance(data, dict) and "schema_version" not in data:
             raise ValueError(f"artifact missing schema_version: {path}")
         return data
 
@@ -85,11 +85,13 @@ class ArtifactStore:
             schema_version: int | None = None
             if path.suffix == ".json":
                 try:
-                    schema_version = json.loads(path.read_text(encoding="utf-8")).get(
-                        "schema_version"
-                    )
+                    data = json.loads(path.read_text(encoding="utf-8"))
                 except (ValueError, OSError):
-                    schema_version = None
+                    data = None
+                # Some document-pipeline artifacts (qc/chunks) are top-level
+                # lists; they simply have no schema_version.
+                if isinstance(data, dict):
+                    schema_version = data.get("schema_version")
             stat = path.stat()
             items.append(
                 {
@@ -114,9 +116,9 @@ class ArtifactStore:
     ) -> Path:
         return self.write_json(self.next_index_for(name), name, payload, schema_version)
 
-    def read_named_json(self, file: str) -> dict:
+    def read_named_json(self, file: str) -> dict | list:
         path = self.dir / file
         data = json.loads(path.read_text(encoding="utf-8"))
-        if "schema_version" not in data:
+        if isinstance(data, dict) and "schema_version" not in data:
             raise ValueError(f"artifact missing schema_version: {path}")
         return data

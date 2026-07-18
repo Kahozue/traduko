@@ -13,6 +13,17 @@ const STAGE_TYPE_KEYS: Record<string, MessageKey> = {
   hardburn: "stage.hardburn",
   proofread: "stage.proofread",
   noop: "stage.noop",
+  ingest_document: "stage.ingest_document",
+  chunk: "stage.chunk",
+  translate_chunks: "stage.translate_chunks",
+  qc_scan: "stage.qc_scan",
+  export_document: "stage.export_document",
+  diarize: "stage.diarize",
+  tts_synthesize: "stage.tts_synthesize",
+  align_duration: "stage.align_duration",
+  mix_audio: "stage.mix_audio",
+  mux: "stage.mux",
+  translate_pdf: "stage.translate_pdf",
 };
 
 const STAGE_STATUS_KEYS: Record<string, MessageKey> = {

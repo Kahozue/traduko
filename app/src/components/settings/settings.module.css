@@ -305,6 +305,12 @@ select.input {
   font-size: var(--fs-note);
 }
 
+.hintNote {
+  color: var(--text-secondary);
+  font-size: var(--fs-note);
+  line-height: 1.5;
+}
+
 .empty {
   margin: 0;
   color: var(--text-secondary);
