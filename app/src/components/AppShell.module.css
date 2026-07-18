@@ -197,19 +197,24 @@
 }
 
 /* WKWebView never shows native title tooltips, so the hover text is a CSS
-   bubble fed by data-label; right-anchored to stay inside the sidebar. */
+   bubble fed by data-label; right-anchored and width-capped so even the
+   long connecting label wraps inside the sidebar instead of running past
+   the left screen edge. */
 .connDot::after {
   content: attr(data-label);
   position: absolute;
   right: -6px;
   bottom: calc(100% + 8px);
+  width: max-content;
+  max-width: 170px;
   padding: 5px 10px;
   border: 1px solid var(--border);
   border-radius: var(--radius-s);
   background: var(--bg-surface);
   color: var(--text-primary);
   font-size: var(--fs-meta);
-  white-space: nowrap;
+  line-height: 1.5;
+  text-align: left;
   box-shadow: var(--shadow-2);
   opacity: 0;
   pointer-events: none;
