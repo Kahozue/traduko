@@ -33,6 +33,7 @@ const DEFAULT_CONFIG: CoreConfigDoc = {
   },
   mcp_servers: {},
   skills: {},
+  dubbing: { hf_token: "", python: "" },
 };
 
 function setup(

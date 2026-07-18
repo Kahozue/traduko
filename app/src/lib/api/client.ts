@@ -2,6 +2,8 @@ import type {
   ArtifactListItem,
   AsrStatus,
   AsrTestResult,
+  DubbingStatus,
+  DubbingTestResult,
   AssistantMessageDoc,
   AssistantReply,
   AssistantSessionRow,
@@ -183,6 +185,18 @@ export class ApiClient {
       method: "POST",
       body: JSON.stringify({ model }),
     });
+  }
+
+  getDubbingStatus(): Promise<DubbingStatus> {
+    return this.request("/dubbing/status");
+  }
+
+  installDubbingEngine(): Promise<{ installing: boolean }> {
+    return this.request("/dubbing/install", { method: "POST" });
+  }
+
+  testDubbingEngine(): Promise<DubbingTestResult> {
+    return this.request("/dubbing/test", { method: "POST" });
   }
 
   getMcpStatus(): Promise<McpServerStatus[]> {

@@ -8,6 +8,7 @@ import { AgentSection } from "../components/settings/AgentSection";
 import { AppearanceSection } from "../components/settings/AppearanceSection";
 import { BasicsSection } from "../components/settings/BasicsSection";
 import { AsrSection } from "../components/settings/AsrSection";
+import { DubbingSection } from "../components/settings/DubbingSection";
 import { ProvidersSection } from "../components/settings/ProvidersSection";
 import { ChannelsSection } from "../components/settings/ChannelsSection";
 import { BotSection } from "../components/settings/BotSection";
@@ -74,6 +75,7 @@ function normalize(config: CoreConfigDoc): CoreConfigDoc {
     if (server.confirmed === undefined) server.confirmed = server.enabled;
   }
   if (!next.skills) next.skills = {};
+  if (!next.dubbing) next.dubbing = { hf_token: "", python: "" };
   return next;
 }
 
@@ -298,6 +300,14 @@ export function SettingsView({
         className={styles.panel}
       >
         <AsrSection />
+        {draft && (
+          <DubbingSection
+            dubbing={draft.dubbing}
+            onChange={(value) =>
+              setDraft((prev) => (prev ? { ...prev, dubbing: value } : prev))
+            }
+          />
+        )}
       </div>
 
       <div

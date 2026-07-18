@@ -311,6 +311,7 @@ export interface CoreConfigDoc {
   sync: SyncConfigDoc;
   mcp_servers: Record<string, McpServerConfigDoc>;
   skills: Record<string, SkillConfigDoc>;
+  dubbing: DubbingConfigDoc;
   [key: string]: unknown;
 }
 
@@ -386,6 +387,51 @@ export interface AsrTestResult {
   ok: boolean;
   load_seconds?: number;
   error?: string;
+}
+
+export interface DubbingConfigDoc {
+  hf_token: string;
+  python: string;
+  [key: string]: unknown;
+}
+
+export interface DubbingStatus {
+  python: string;
+  venv: boolean;
+  installed: boolean;
+  state: "idle" | "installing" | "done" | "error";
+  installing: boolean;
+  error: string | null;
+  installed_mb: number;
+}
+
+export interface DubbingTestResult {
+  ok: boolean;
+  python?: string;
+  torch?: string | null;
+  voxcpm?: string | null;
+  pyannote?: string | null;
+  mps?: boolean;
+  error?: string;
+}
+
+export interface SpeakerDoc {
+  id: string;
+  label: string;
+  ref_start: number;
+  ref_end: number;
+  ref_text: string;
+}
+
+export interface SpeakerAssignmentDoc {
+  id: number;
+  speaker: string;
+}
+
+export interface SpeakersDoc {
+  schema_version: number;
+  speakers: SpeakerDoc[];
+  segments: SpeakerAssignmentDoc[];
 }
 
 export type AssistantRole = "user" | "assistant";
