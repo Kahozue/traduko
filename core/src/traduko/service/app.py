@@ -54,6 +54,7 @@ from ..budget import BudgetMeter
 from ..config import CoreConfig, load_config, save_config
 from ..documents.model import DocTranslationDoc
 from ..dubbing.models import SpeakersDoc
+from ..dubbing.setup import DubbingManager
 from ..eventlog import EventLogger
 from ..executor import reset_stages_after_artifact
 from ..events import Event
@@ -475,6 +476,35 @@ def asr_test(request: Request, body: AsrModelRequest | None = None) -> dict:
     if not status["cached"]:
         raise HTTPException(status_code=409, detail="model is not downloaded")
     return manager.test(model)
+
+
+@router.get("/dubbing/status")
+def dubbing_status(request: Request) -> dict:
+    manager: DubbingManager = request.app.state.dubbing
+    return manager.status()
+
+
+@router.post("/dubbing/install", status_code=202)
+def dubbing_install(request: Request) -> dict:
+    manager: DubbingManager = request.app.state.dubbing
+    if not manager.start_install():
+        status = manager.status()
+        if status["installing"]:
+            raise HTTPException(
+                status_code=409, detail="an install is already running"
+            )
+        raise HTTPException(
+            status_code=409, detail=status["error"] or "cannot install engine"
+        )
+    return {"installing": True}
+
+
+@router.post("/dubbing/test")
+def dubbing_test(request: Request) -> dict:
+    manager: DubbingManager = request.app.state.dubbing
+    if not manager.status()["installed"]:
+        raise HTTPException(status_code=409, detail="dubbing engine is not installed")
+    return manager.test()
 
 
 @router.get("/mcp/status")
@@ -1095,6 +1125,9 @@ def create_app(data_root: Path | None = None) -> FastAPI:
     app.state.token = load_or_create_token(workspace.root)
     app.state.sync_lock = threading.Lock()
     app.state.asr = AsrManager()
+    app.state.dubbing = DubbingManager(
+        workspace.root, python_override=workspace.config.dubbing.python
+    )
 
     broadcaster = WsBroadcaster()
     broadcaster.attach(workspace.bus)

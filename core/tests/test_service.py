@@ -1410,3 +1410,52 @@ def test_profiles_detailed_classifies_kinds(tmp_path: Path) -> None:
         assert by_name["subtitle-translate"] == "video"
         assert by_name["av-default"] == "video"
         assert by_name["novel-translate"] == "document"
+
+
+def test_dubbing_status_install_and_test_flow(tmp_path: Path) -> None:
+    from traduko.dubbing.setup import DubbingManager
+
+    def fake_install(target_dir: Path, python: str) -> None:
+        bin_dir = target_dir / "venv" / "bin"
+        bin_dir.mkdir(parents=True, exist_ok=True)
+        (bin_dir / "python").write_bytes(b"x" * (2 * 1024 * 1024))
+        (target_dir / ".installed").write_text("{}", encoding="utf-8")
+
+    with service(tmp_path) as (client, headers, token):
+        client.app.state.dubbing = DubbingManager(
+            tmp_path,
+            installer=fake_install,
+            probe=lambda candidate: {"python3.11": (3, 11, 5)}.get(candidate),
+            engine_probe=lambda target: {"ok": True, "torch": "2.5.0", "mps": True},
+        )
+        status = client.get("/dubbing/status", headers=headers).json()
+        assert status["python"] == "python3.11"
+        assert status["installed"] is False
+
+        blocked = client.post("/dubbing/test", headers=headers)
+        assert blocked.status_code == 409
+
+        started = client.post("/dubbing/install", headers=headers)
+        assert started.status_code == 202
+
+        deadline = time.monotonic() + 5
+        status = client.get("/dubbing/status", headers=headers).json()
+        while time.monotonic() < deadline and status["state"] != "done":
+            status = client.get("/dubbing/status", headers=headers).json()
+        assert status["installed"] is True
+        assert status["installed_mb"] > 0
+
+        result = client.post("/dubbing/test", headers=headers).json()
+        assert result == {"ok": True, "torch": "2.5.0", "mps": True}
+
+
+def test_dubbing_install_without_python_is_409(tmp_path: Path) -> None:
+    from traduko.dubbing.setup import DubbingManager
+
+    with service(tmp_path) as (client, headers, token):
+        client.app.state.dubbing = DubbingManager(
+            tmp_path, installer=lambda t, p: None, probe=lambda candidate: None
+        )
+        response = client.post("/dubbing/install", headers=headers)
+        assert response.status_code == 409
+        assert "python" in response.json()["detail"].lower()
