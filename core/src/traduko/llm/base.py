@@ -1,7 +1,7 @@
 """LLM provider abstraction. Runtime calls must go through BudgetMeter."""
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Protocol, runtime_checkable
 
 
@@ -13,6 +13,10 @@ class LLMError(Exception):
 class ChatMessage:
     role: str
     content: str
+    # Absolute paths to local image files attached to this message. Providers
+    # that support vision send the pixels alongside the text; the rest ignore
+    # this field, so text-only behavior is unchanged when it is empty.
+    images: list[str] = field(default_factory=list)
 
 
 @dataclass

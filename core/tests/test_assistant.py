@@ -694,3 +694,26 @@ def test_assistant_create_task_missing_input_reports_tool_error(tmp_path: Path) 
     )
     result = run_assistant_message(ws, "make a task for nope.srt")
     assert result["created_task_ids"] == []
+
+
+def test_run_assistant_message_passes_images_to_runner(
+    tmp_path: Path, monkeypatch
+) -> None:
+    from traduko.agents import assistant as assistant_module
+    from traduko.agents.runner import AgentRunResult
+
+    ws = scripted_ws(tmp_path, [])
+    seen = {}
+
+    def fake_run(self, goal, *, images=None):
+        seen["goal"] = goal
+        seen["images"] = images
+        return AgentRunResult(True, "done", "ok", 1, 1)
+
+    monkeypatch.setattr(assistant_module.AgentRunner, "run", fake_run)
+    image = str(tmp_path / "shot.png")
+    result = run_assistant_message(ws, "what does this screenshot show?", images=[image])
+
+    assert result["converged"] is True
+    assert seen["images"] == [image]
+    assert f"[attached files: {image}]" in seen["goal"]

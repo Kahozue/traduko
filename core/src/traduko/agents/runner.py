@@ -111,19 +111,24 @@ class AgentRunner:
         )
         return AgentRunResult(converged, reason, summary, rounds, turns)
 
-    def run(self, goal: str) -> AgentRunResult:
+    def run(self, goal: str, *, images: list[str] | None = None) -> AgentRunResult:
+        """`images` are absolute paths to image files that accompany the goal;
+        they ride on the opening user message so vision-capable providers see
+        the pixels on every turn of the loop."""
         system = goal + _PROTOCOL_HEADER + json.dumps(
             self.registry.specs(), ensure_ascii=False, indent=2
         )
         messages = [
             ChatMessage(role="system", content=system),
-            ChatMessage(role="user", content="Begin round 1."),
+            ChatMessage(role="user", content="Begin round 1.", images=list(images or [])),
         ]
         rounds = 1
         turns = 0
         protocol_failures = 0
         round_start_usd = self.meter.task_usage_usd(self.task_id)
-        self.recorder.record("start", goal=goal[:2000], tools=self.registry.names())
+        # 4000 keeps the assistant's full system prompt plus a 40-message
+        # history transcript inside the start record; 2000 no longer fits.
+        self.recorder.record("start", goal=goal[:4000], tools=self.registry.names())
         if self.on_round:
             self.on_round(1)
         while True:

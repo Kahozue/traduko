@@ -143,3 +143,19 @@ def test_preround_budget_check(tmp_path: Path) -> None:
     assert runner._should_stop_for_budget(0.0) is False
     assert runner._should_stop_for_budget(0.5) is False
     assert runner._should_stop_for_budget(1.5) is True
+
+
+def test_run_attaches_images_to_opening_user_message(tmp_path: Path) -> None:
+    runner, _, _ = make_runner(tmp_path, ['{"done": true, "summary": "ok"}'])
+    seen = {}
+    inner_chat = runner.provider.chat
+
+    def capture(request):
+        seen["messages"] = request.messages
+        return inner_chat(request)
+
+    runner.provider.chat = capture
+    result = runner.run("Goal.", images=["/abs/shot.png"])
+    assert result.converged is True
+    assert seen["messages"][0].images == []
+    assert seen["messages"][1].images == ["/abs/shot.png"]

@@ -1,14 +1,43 @@
 """OpenAI-compatible chat provider (OpenAI, DeepSeek, Groq, Ollama, LM Studio)."""
 from __future__ import annotations
 
+import base64
+import mimetypes
 import os
 import time
+from pathlib import Path
 
 import httpx
 
-from .base import ChatRequest, ChatResponse, LLMError, Usage, register_llm
+from .base import ChatMessage, ChatRequest, ChatResponse, LLMError, Usage, register_llm
 
 _RETRY_STATUS = {429, 500, 502, 503, 504}
+
+
+def _message_content(message: ChatMessage) -> str | list[dict]:
+    """Plain string normally; OpenAI content-parts when images are attached.
+
+    Each readable image becomes an image_url part with a base64 data URL.
+    An image that disappeared between attach and send is skipped rather than
+    failing the chat: its path still reaches the model as text, so the model
+    can report the missing file itself.
+    """
+    if not message.images:
+        return message.content
+    parts: list[dict] = [{"type": "text", "text": message.content}]
+    for path in message.images:
+        try:
+            data = Path(path).read_bytes()
+        except OSError:
+            continue
+        mime = mimetypes.guess_type(path)[0]
+        if not mime or not mime.startswith("image/"):
+            mime = "image/png"
+        encoded = base64.b64encode(data).decode("ascii")
+        parts.append(
+            {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{encoded}"}}
+        )
+    return parts
 
 
 @register_llm("openai_compat")
@@ -35,7 +64,8 @@ class OpenAICompatProvider:
         payload: dict = {
             "model": request.model,
             "messages": [
-                {"role": m.role, "content": m.content} for m in request.messages
+                {"role": m.role, "content": _message_content(m)}
+                for m in request.messages
             ],
         }
         if request.temperature is not None:

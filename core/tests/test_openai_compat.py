@@ -1,4 +1,6 @@
+import base64
 import json
+from pathlib import Path
 
 import httpx
 import pytest
@@ -84,6 +86,60 @@ def test_raises_after_exhausted_retries() -> None:
     provider = make_provider(handler, max_retries=2)
     with pytest.raises(LLMError):
         provider.chat(make_request())
+
+
+def test_images_become_content_parts_with_data_url(tmp_path: Path) -> None:
+    image = tmp_path / "shot.png"
+    image.write_bytes(b"\x89PNG-fake-bytes")
+    captured = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["payload"] = json.loads(request.content)
+        return httpx.Response(200, json=OK_BODY)
+
+    provider = make_provider(handler)
+    provider.chat(
+        ChatRequest(
+            model="test-model",
+            messages=[
+                ChatMessage(role="system", content="sys"),
+                ChatMessage(role="user", content="look", images=[str(image)]),
+            ],
+        )
+    )
+    messages = captured["payload"]["messages"]
+    assert messages[0]["content"] == "sys"
+    parts = messages[1]["content"]
+    assert parts[0] == {"type": "text", "text": "look"}
+    encoded = base64.b64encode(b"\x89PNG-fake-bytes").decode("ascii")
+    assert parts[1] == {
+        "type": "image_url",
+        "image_url": {"url": f"data:image/png;base64,{encoded}"},
+    }
+
+
+def test_unreadable_image_is_skipped_not_fatal(tmp_path: Path) -> None:
+    captured = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["payload"] = json.loads(request.content)
+        return httpx.Response(200, json=OK_BODY)
+
+    provider = make_provider(handler)
+    response = provider.chat(
+        ChatRequest(
+            model="test-model",
+            messages=[
+                ChatMessage(
+                    role="user", content="look", images=[str(tmp_path / "gone.png")]
+                ),
+            ],
+        )
+    )
+    assert response.content == "translated"
+    assert captured["payload"]["messages"][0]["content"] == [
+        {"type": "text", "text": "look"}
+    ]
 
 
 def test_client_error_fails_immediately() -> None:

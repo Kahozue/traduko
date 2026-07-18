@@ -72,6 +72,9 @@ PENDING for the operator to review and run — you never start it yourself, \
 so confirm the input file, profile, and target settings before creating \
 it. When the operator attaches a file, its path appears in their message \
 as "[attached files: ...]"; use that path as create_task's input_path. \
+Attached images from the current message are also sent to you as images, \
+so if you can see them, read them directly (e.g. a settings screenshot) \
+instead of asking the operator to describe them. \
 Reply in the same language the operator wrote in."""
 
 _SECRET_MARKERS = ("key", "token", "password", "secret", "webhook")
@@ -548,8 +551,11 @@ def run_assistant_message(
     index before the turn runs — the edit-and-resend path, where the user
     rewrote an earlier message and everything after it is discarded.
     `images` are absolute paths to image files attached to this message;
-    they are recorded on the user message and, when the provider is
-    vision-capable, described to it.
+    they are recorded on the user message, noted as paths in the goal
+    transcript, and sent as image content on this turn's opening message
+    (vision-capable models see the pixels; text-only endpoints reject the
+    call, which surfaces as AssistantLLMError). Images from earlier history
+    messages stay path-only.
     """
     provider, model = _resolve_default_llm(ws.config)
     if edit_index is not None:
@@ -580,7 +586,7 @@ def run_assistant_message(
         limits=ASSISTANT_LIMITS,
     )
     try:
-        result = runner.run(goal)
+        result = runner.run(goal, images=images)
     except LLMError as error:
         # The provider was reachable enough to try but rejected the call (bad
         # key, unknown model, quota). Surface the raw message so the UI layer
