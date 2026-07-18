@@ -224,7 +224,7 @@ test("skill rows show name, description and an error pill when invalid", async (
 
 test("empty skill list shows the empty state", async () => {
   setup();
-  expect(await screen.findByText("尚無任何 skill，輸入名稱建立第一個")).toBeInTheDocument();
+  expect(await screen.findByText("尚無任何 skill，按右上角「建立」新增第一個")).toBeInTheDocument();
 });
 
 test("enabling an unconfirmed skill shows the SKILL.md; cancel keeps it off", async () => {
@@ -322,16 +322,18 @@ test("disabling a skill keeps its confirmed flag", async () => {
 
 test("add form validates the name before calling the api", async () => {
   const { api } = setup();
+  // The create form is transient: it opens from the section-header button.
+  await userEvent.click(await screen.findByRole("button", { name: "建立" }));
   const input = await screen.findByLabelText("新 skill 名稱");
   await userEvent.type(input, "Bad_Name");
   expect(
     screen.getByText("名稱須為小寫英數字，可用連字號分隔，最長 64 字元"),
   ).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "建立" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "確認建立" })).toBeDisabled();
   expect(api.createSkill).not.toHaveBeenCalled();
   await userEvent.clear(input);
   await userEvent.type(input, "my-style");
-  await userEvent.click(screen.getByRole("button", { name: "建立" }));
+  await userEvent.click(screen.getByRole("button", { name: "確認建立" }));
   await waitFor(() => expect(api.createSkill).toHaveBeenCalledWith("my-style"));
 });
 
@@ -343,8 +345,9 @@ test("duplicate skill name surfaces the conflict", async () => {
         .mockRejectedValue(new ApiError(409, "skill already exists: my-style")),
     },
   });
+  await userEvent.click(await screen.findByRole("button", { name: "建立" }));
   await userEvent.type(await screen.findByLabelText("新 skill 名稱"), "my-style");
-  await userEvent.click(screen.getByRole("button", { name: "建立" }));
+  await userEvent.click(screen.getByRole("button", { name: "確認建立" }));
   expect(await screen.findByText("同名 skill 已存在")).toBeInTheDocument();
   expect(api.createSkill).toHaveBeenCalledTimes(1);
 });
@@ -401,6 +404,6 @@ test("missing skill already dropped from the draft is hidden", async () => {
     ],
     skills: {},
   });
-  await screen.findByText("尚無任何 skill，輸入名稱建立第一個");
+  await screen.findByText("尚無任何 skill，按右上角「建立」新增第一個");
   expect(screen.queryByText("gone-skill")).not.toBeInTheDocument();
 });

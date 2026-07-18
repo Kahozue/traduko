@@ -74,7 +74,11 @@ export function PdfEngineSection() {
               {testResult.version ? `（${testResult.version}）` : ""}
             </p>
           ) : (
-            <p className={styles.asrError}>{testResult.error}</p>
+            <p className={styles.asrError}>
+              {testResult.error_kind === "timeout"
+                ? t("settings.pdf.testTimeout")
+                : testResult.error}
+            </p>
           ))}
       </SettingRow>
     </Section>

@@ -91,18 +91,57 @@ def _real_install(target_dir: Path, python: str) -> None:
 
 def _real_engine_probe(target_dir: Path) -> dict:
     py = target_dir / "venv" / "bin" / "python"
+    # Stage 1 — package metadata. Proves the install and yields a version
+    # without loading the engine, whose import tree (BabelDOC, onnxruntime,
+    # model assets) can take minutes to warm up.
     try:
-        result = subprocess.run(
-            [str(py), "-m", "pdf2zh_next", "--version"],
+        meta = subprocess.run(
+            [
+                str(py),
+                "-c",
+                "import importlib.metadata as m; print(m.version('pdf2zh-next'))",
+            ],
             capture_output=True,
             text=True,
-            timeout=30,
+            timeout=20,
         )
     except (OSError, subprocess.TimeoutExpired) as error:
         return {"ok": False, "error": str(error)}
+    if meta.returncode != 0:
+        return {"ok": False, "error": (meta.stderr or meta.stdout)[:200]}
+    version = meta.stdout.strip()
+    # Stage 2 — the real CLI. The package has no runnable __main__, so the
+    # venv console script is the entry point. Generous timeout for the
+    # cold-start cost; a structured kind lets the UI translate the timeout
+    # instead of dumping the raw command line.
+    cli = target_dir / "venv" / "bin" / "pdf2zh_next"
+    try:
+        result = subprocess.run(
+            [str(cli), "--version"],
+            capture_output=True,
+            text=True,
+            timeout=180,
+        )
+    except subprocess.TimeoutExpired:
+        return {
+            "ok": False,
+            "error_kind": "timeout",
+            "error": (
+                f"pdf2zh-next {version} is installed but did not respond "
+                "within 180 seconds"
+            ),
+        }
+    except OSError as error:
+        return {"ok": False, "error": str(error)}
     if result.returncode != 0:
         return {"ok": False, "error": (result.stderr or result.stdout)[:200]}
-    return {"ok": True, "version": (result.stdout or result.stderr).strip()}
+    # The CLI prints a service banner before the version; pick the line that
+    # actually carries it.
+    output = (result.stdout or result.stderr).strip()
+    line = next(
+        (ln.strip() for ln in output.splitlines() if "version" in ln.lower()), ""
+    )
+    return {"ok": True, "version": line or version}
 
 
 class PdfManager:

@@ -16,13 +16,15 @@ def build_translate_cmd(
 ) -> list[str]:
     """Assemble the pdf2zh-next CLI invocation.
 
-    model/base_url/api_key forward the chosen provider's endpoint to the
-    engine, which makes its own LLM calls. Empty values are omitted.
+    The package ships no runnable __main__, so the entry point is the venv
+    console script that lives next to the interpreter. A provider with a
+    base_url is forwarded through the engine's OpenAI-compatible backend
+    (the engine makes its own LLM calls); without one the engine falls back
+    to its built-in default service.
     """
+    cli = Path(venv_python).parent / "pdf2zh_next"
     cmd = [
-        str(venv_python),
-        "-m",
-        "pdf2zh_next",
+        str(cli),
         str(input_path),
         "--output",
         str(out_dir),
@@ -31,10 +33,11 @@ def build_translate_cmd(
         "--lang-out",
         target_lang,
     ]
-    if model:
-        cmd += ["--model", model]
     if base_url:
-        cmd += ["--base-url", base_url]
-    if api_key:
-        cmd += ["--api-key", api_key]
+        cmd.append("--openaicompatible")
+        cmd += ["--openai-compatible-base-url", base_url]
+        if model:
+            cmd += ["--openai-compatible-model", model]
+        if api_key:
+            cmd += ["--openai-compatible-api-key", api_key]
     return cmd

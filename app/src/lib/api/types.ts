@@ -435,6 +435,9 @@ export interface PdfEngineStatus {
 export interface PdfEngineTestResult {
   ok: boolean;
   version?: string;
+  // Machine-readable failure class ("timeout") so the UI can translate
+  // known cases instead of dumping the raw subprocess error.
+  error_kind?: string;
   error?: string;
 }
 

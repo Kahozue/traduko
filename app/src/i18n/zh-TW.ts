@@ -118,6 +118,8 @@ export const zhTW = {
   "settings.pdf.test": "測試",
   "settings.pdf.testing": "測試中…",
   "settings.pdf.testOk": "測試通過",
+  "settings.pdf.testTimeout":
+    "引擎回應逾時：首次載入需下載並初始化模型資產，可能需要數分鐘，請稍候再試一次。",
   "preflight.downloadModel": "下載模型並執行",
   "preflight.downloadingModel": "模型下載中",
   "preflight.failed": "預檢未通過",
@@ -177,9 +179,10 @@ export const zhTW = {
   "settings.skills": "Skills",
   "settings.skills.hint":
     "存放於資料目錄 skills/ 的指示文件；啟用並確認後，校對 agent 可讀取其內容。",
-  "settings.skills.empty": "尚無任何 skill，輸入名稱建立第一個",
+  "settings.skills.empty": "尚無任何 skill，按右上角「建立」新增第一個",
   "settings.skills.name": "新 skill 名稱",
   "settings.skills.add": "建立",
+  "settings.skills.addConfirm": "確認建立",
   "settings.skills.nameInvalid": "名稱須為小寫英數字，可用連字號分隔，最長 64 字元",
   "settings.skills.exists": "同名 skill 已存在",
   "settings.skills.createFailed": "建立失敗",
@@ -239,6 +242,9 @@ export const zhTW = {
     "API key 以明文儲存在本機設定檔；較安全的做法是留空此欄，改填環境變數名稱。",
   "settings.apiKeyEnv": "API key 環境變數",
   "settings.defaultModel": "預設模型",
+  "settings.contextWindow": "上下文視窗（tokens）",
+  "settings.maxOutputTokens": "輸出上限（tokens）",
+  "settings.tokenLimitInvalid": "須為正整數",
   "settings.defaultProvider": "預設供應商",
   "settings.defaultProvider.auto": "自動（僅設定一個供應商時直接使用）",
   "settings.defaultProvider.hint":

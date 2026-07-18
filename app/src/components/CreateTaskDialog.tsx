@@ -13,9 +13,9 @@ import styles from "./CreateTaskDialog.module.css";
 // maps to the profiles the core classified under that kind; picking a type
 // filters the profile list. A type with no profiles yet still shows, disabled.
 const TASK_TYPES: { kind: TaskKind; label: MessageKey; icon: IconName }[] = [
-  { kind: "video", label: "create.kind.video", icon: "list" },
-  { kind: "document", label: "create.kind.document", icon: "pencil" },
-  { kind: "comic", label: "create.kind.comic", icon: "monitor" },
+  { kind: "video", label: "create.kind.video", icon: "film" },
+  { kind: "document", label: "create.kind.document", icon: "file-text" },
+  { kind: "comic", label: "create.kind.comic", icon: "book-open" },
 ];
 
 // File-picker extensions per task type, matching what each kind's pipelines

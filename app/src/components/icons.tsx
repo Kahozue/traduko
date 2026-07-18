@@ -15,6 +15,9 @@ export type IconName =
   | "monitor"
   | "list"
   | "pencil"
+  | "film"
+  | "file-text"
+  | "book-open"
   | "chevron-down";
 
 const GLYPHS: Record<IconName, ReactNode> = {
@@ -81,6 +84,25 @@ const GLYPHS: Record<IconName, ReactNode> = {
     <>
       <path d="M3 6h.01M3 12h.01M3 18h.01" />
       <path d="M8 6h13M8 12h13M8 18h13" />
+    </>
+  ),
+  film: (
+    <>
+      <rect x="3" y="3" width="18" height="18" rx="2" />
+      <path d="M7 3v18M17 3v18M3 7.5h4M3 12h18M3 16.5h4M17 7.5h4M17 16.5h4" />
+    </>
+  ),
+  "file-text": (
+    <>
+      <path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z" />
+      <path d="M14 2v4a2 2 0 0 0 2 2h4" />
+      <path d="M10 9H8M16 13H8M16 17H8" />
+    </>
+  ),
+  "book-open": (
+    <>
+      <path d="M12 7v14" />
+      <path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z" />
     </>
   ),
 };

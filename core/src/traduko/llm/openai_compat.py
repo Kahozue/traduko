@@ -9,7 +9,7 @@ from pathlib import Path
 import httpx
 
 from ._http import request_with_retries
-from .base import ChatMessage, ChatRequest, ChatResponse, Usage, register_llm
+from .base import ChatMessage, ChatRequest, ChatResponse, LLMError, Usage, register_llm
 
 
 def _message_content(message: ChatMessage) -> str | list[dict]:
@@ -45,6 +45,8 @@ class OpenAICompatProvider:
         base_url: str,
         api_key: str | None = None,
         api_key_env: str | None = None,
+        context_window: int | None = None,
+        max_output_tokens: int | None = None,
         timeout: float = 60.0,
         max_retries: int = 3,
         backoff_base: float = 0.5,
@@ -54,9 +56,23 @@ class OpenAICompatProvider:
             api_key = os.environ.get(api_key_env)
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
+        self.context_window = context_window
+        self.max_output_tokens = max_output_tokens
         self.max_retries = max_retries
         self.backoff_base = backoff_base
+        # Newer OpenAI models reject max_tokens and demand max_completion_tokens;
+        # most compatible endpoints (DeepSeek, GLM, Kimi, proxies) still speak
+        # max_tokens. Start with the widely-supported name and switch for the
+        # rest of this provider's lifetime the first time the endpoint says so.
+        self._tokens_param = "max_tokens"
         self._client = httpx.Client(timeout=timeout, transport=transport)
+
+    def _effective_max_tokens(self, request: ChatRequest) -> int | None:
+        if request.max_tokens is not None and self.max_output_tokens is not None:
+            return min(request.max_tokens, self.max_output_tokens)
+        if request.max_tokens is not None:
+            return request.max_tokens
+        return self.max_output_tokens
 
     def chat(self, request: ChatRequest) -> ChatResponse:
         payload: dict = {
@@ -68,26 +84,45 @@ class OpenAICompatProvider:
         }
         if request.temperature is not None:
             payload["temperature"] = request.temperature
-        if request.max_tokens is not None:
-            payload["max_tokens"] = request.max_tokens
+        max_tokens = self._effective_max_tokens(request)
+        if max_tokens is not None:
+            payload[self._tokens_param] = max_tokens
         headers = {}
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
 
-        data = request_with_retries(
+        try:
+            data = self._post(payload, headers)
+        except LLMError as error:
+            # http 400 "Unsupported parameter: 'max_tokens' ... Use
+            # 'max_completion_tokens' instead." — retry once under the new
+            # name and keep using it for subsequent calls.
+            if (
+                self._tokens_param == "max_tokens"
+                and "max_tokens" in payload
+                and "max_completion_tokens" in str(error)
+            ):
+                self._tokens_param = "max_completion_tokens"
+                payload["max_completion_tokens"] = payload.pop("max_tokens")
+                data = self._post(payload, headers)
+            else:
+                raise
+        usage = data.get("usage") or {}
+        return ChatResponse(
+            content=data["choices"][0]["message"]["content"] or "",
+            model=data.get("model", request.model),
+            usage=Usage(
+                prompt_tokens=usage.get("prompt_tokens", 0),
+                completion_tokens=usage.get("completion_tokens", 0),
+            ),
+        )
+
+    def _post(self, payload: dict, headers: dict) -> dict:
+        return request_with_retries(
             self._client,
             f"{self.base_url}/chat/completions",
             payload,
             headers,
             max_retries=self.max_retries,
             backoff_base=self.backoff_base,
-        )
-        usage = data.get("usage") or {}
-        return ChatResponse(
-            content=data["choices"][0]["message"]["content"],
-            model=data.get("model", request.model),
-            usage=Usage(
-                prompt_tokens=usage.get("prompt_tokens", 0),
-                completion_tokens=usage.get("completion_tokens", 0),
-            ),
         )

@@ -171,6 +171,11 @@ def _adopt_config(app: FastAPI, config: CoreConfig, notifier: Notifier) -> None:
     app.state.detach_notifier()
     app.state.detach_notifier = notifier.attach(ws.bus)
     skillhub.set_active(SkillsManager(ws.root, config.skills))
+    # Engine managers read their interpreter override lazily, so pointing
+    # them at the fresh value makes a saved python path take effect without
+    # a core restart.
+    app.state.dubbing.python_override = config.dubbing.python
+    app.state.pdf.python_override = config.pdf.python
 
 
 @router.put("/config")
@@ -225,7 +230,10 @@ def test_provider(request: Request, body: ProviderTestRequest) -> dict:
     probe = ChatRequest(
         model=model,
         messages=[ChatMessage(role="user", content="ping")],
-        max_tokens=1,
+        # Small but not minimal: reasoning-capable models may reject or
+        # zero-fill a 1-token budget, which would fail an otherwise healthy
+        # endpoint.
+        max_tokens=16,
     )
     try:
         provider.chat(probe)

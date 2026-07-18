@@ -84,6 +84,10 @@ export function AgentSection({
   const nextUid = useRef(rows.length);
   const [pending, setPending] = useState<PendingConfirm | null>(null);
   const [newSkillName, setNewSkillName] = useState("");
+  // The create form is a transient row at the top of the list, opened from
+  // the section header so creation sits next to import instead of dangling
+  // under the list.
+  const [creating, setCreating] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const statusByName = new Map(status.map((row) => [row.name, row]));
 
@@ -96,6 +100,7 @@ export function AgentSection({
     mutationFn: (name: string) => api.createSkill(name),
     onSuccess: () => {
       setNewSkillName("");
+      setCreating(false);
       void queryClient.invalidateQueries({ queryKey: ["skills"] });
     },
   });
@@ -379,6 +384,13 @@ export function AgentSection({
             <button
               type="button"
               className={`${styles.secondary} ${styles.headAction}`}
+              onClick={() => setCreating(true)}
+            >
+              {t("settings.skills.add")}
+            </button>
+            <button
+              type="button"
+              className={`${styles.secondary} ${styles.headAction}`}
               disabled={importSkill.isPending}
               onClick={() => fileInputRef.current?.click()}
             >
@@ -387,10 +399,61 @@ export function AgentSection({
           </>
         }
       >
+        {creating && (
+          <form className={styles.skillCreate} onSubmit={submitNewSkill}>
+            <label className={styles.field}>
+              <span className={styles.label}>{t("settings.skills.name")}</span>
+              <input
+                className={styles.input}
+                autoFocus
+                aria-label={t("settings.skills.name")}
+                placeholder="style-guide"
+                value={newSkillName}
+                onChange={(event) => {
+                  setNewSkillName(event.target.value);
+                  createSkill.reset();
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === "Escape") {
+                    setCreating(false);
+                    setNewSkillName("");
+                    createSkill.reset();
+                  }
+                }}
+              />
+              {newNameInvalid && (
+                <span className={styles.error}>{t("settings.skills.nameInvalid")}</span>
+              )}
+              {createSkill.isError && (
+                <span className={styles.error}>{describeCreateError(createSkill.error)}</span>
+              )}
+            </label>
+            <div className={styles.skillCreateActions}>
+              <button
+                type="submit"
+                className={styles.secondary}
+                disabled={!skillNameValid(newSkillName.trim()) || createSkill.isPending}
+              >
+                {t("settings.skills.addConfirm")}
+              </button>
+              <button
+                type="button"
+                className={styles.secondary}
+                onClick={() => {
+                  setCreating(false);
+                  setNewSkillName("");
+                  createSkill.reset();
+                }}
+              >
+                {t("settings.confirm.cancel")}
+              </button>
+            </div>
+          </form>
+        )}
         {importSkill.isError && (
           <p className={styles.skillFormError}>{describeImportError(importSkill.error)}</p>
         )}
-        {skillList.data && visibleSkills.length === 0 && (
+        {skillList.data && visibleSkills.length === 0 && !creating && (
           <p className={styles.emptyBox}>{t("settings.skills.empty")}</p>
         )}
         {visibleSkills.map((skill) => {
@@ -466,31 +529,6 @@ export function AgentSection({
             </div>
           );
         })}
-        <form className={styles.skillAdd} onSubmit={submitNewSkill}>
-          <input
-            className={styles.input}
-            aria-label={t("settings.skills.name")}
-            placeholder="style-guide"
-            value={newSkillName}
-            onChange={(event) => {
-              setNewSkillName(event.target.value);
-              createSkill.reset();
-            }}
-          />
-          <button
-            type="submit"
-            className={styles.secondary}
-            disabled={!skillNameValid(newSkillName.trim()) || createSkill.isPending}
-          >
-            {t("settings.skills.add")}
-          </button>
-        </form>
-        {newNameInvalid && (
-          <p className={styles.skillFormError}>{t("settings.skills.nameInvalid")}</p>
-        )}
-        {createSkill.isError && (
-          <p className={styles.skillFormError}>{describeCreateError(createSkill.error)}</p>
-        )}
       </Section>
 
       {pending && (

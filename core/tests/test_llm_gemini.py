@@ -118,3 +118,19 @@ def test_retries_on_transient_status() -> None:
     provider = make_provider(handler)
     assert provider.chat(make_request()).content == "translated"
     assert calls["n"] == 2
+
+
+def test_configured_max_output_tokens_fills_and_caps() -> None:
+    payloads: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        payloads.append(json.loads(request.content))
+        return httpx.Response(200, json=OK_BODY)
+
+    provider = make_provider(handler, max_output_tokens=65536)
+    provider.chat(make_request())
+    provider.chat(make_request(max_tokens=128))
+    provider.chat(make_request(max_tokens=999999))
+    assert [
+        p["generationConfig"]["maxOutputTokens"] for p in payloads
+    ] == [65536, 128, 65536]

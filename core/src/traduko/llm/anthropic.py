@@ -56,6 +56,8 @@ class AnthropicProvider:
         base_url: str = "https://api.anthropic.com/v1",
         api_key: str | None = None,
         api_key_env: str | None = None,
+        context_window: int | None = None,
+        max_output_tokens: int | None = None,
         anthropic_version: str = "2023-06-01",
         timeout: float = 60.0,
         max_retries: int = 3,
@@ -66,6 +68,8 @@ class AnthropicProvider:
             api_key = os.environ.get(api_key_env)
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
+        self.context_window = context_window
+        self.max_output_tokens = max_output_tokens
         self.anthropic_version = anthropic_version
         self.max_retries = max_retries
         self.backoff_base = backoff_base
@@ -75,9 +79,15 @@ class AnthropicProvider:
         system_parts = [
             m.content for m in request.messages if m.role == "system" and m.content
         ]
+        # The Messages API requires max_tokens: an explicit request wins
+        # (clamped to the configured model ceiling), then the configured
+        # ceiling, then a conservative default.
+        max_tokens = request.max_tokens or self.max_output_tokens or _DEFAULT_MAX_TOKENS
+        if self.max_output_tokens is not None:
+            max_tokens = min(max_tokens, self.max_output_tokens)
         payload: dict = {
             "model": request.model,
-            "max_tokens": request.max_tokens or _DEFAULT_MAX_TOKENS,
+            "max_tokens": max_tokens,
             "messages": [
                 {"role": m.role, "content": _content_blocks(m)}
                 for m in request.messages

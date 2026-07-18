@@ -139,3 +139,17 @@ def test_non_retryable_status_raises() -> None:
     provider = make_provider(handler)
     with pytest.raises(LLMError):
         provider.chat(make_request())
+
+
+def test_configured_max_output_tokens_fills_and_caps() -> None:
+    payloads: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        payloads.append(json.loads(request.content))
+        return httpx.Response(200, json=OK_BODY)
+
+    provider = make_provider(handler, max_output_tokens=64000)
+    provider.chat(make_request())
+    provider.chat(make_request(max_tokens=100))
+    provider.chat(make_request(max_tokens=999999))
+    assert [p["max_tokens"] for p in payloads] == [64000, 100, 64000]

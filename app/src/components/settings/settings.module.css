@@ -237,6 +237,16 @@
   flex: 1;
 }
 
+/* Token-ceiling fields: numeric, sized to their content per the design
+   language instead of stretching to the row. */
+.fieldRow .limitField {
+  flex: 0 0 132px;
+}
+
+.limitField .input {
+  font-variant-numeric: tabular-nums;
+}
+
 /* The adjacent-sibling vertical rhythm above must not apply to fields
    sitting side by side inside a fieldRow. */
 .fieldRow > .field + .field {
@@ -713,16 +723,27 @@ select.input {
   cursor: default;
 }
 
+/* Engine status feedback lives in the right-hand control column; long
+   errors (subprocess command lines, tracebacks) must wrap inside a capped
+   width instead of stretching the row and deforming the page. */
 .asrError {
   margin: 6px 0 0;
+  max-width: 420px;
   color: var(--danger);
   font-size: var(--fs-note);
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+  text-align: left;
 }
 
 .asrOk {
   margin: 6px 0 0;
+  max-width: 420px;
   color: var(--ok);
   font-size: var(--fs-note);
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+  text-align: left;
 }
 
 .mcpState {
@@ -743,6 +764,7 @@ select.input {
   margin: 0;
   color: var(--danger);
   font-size: var(--fs-note);
+  overflow-wrap: anywhere;
 }
 
 /* Skills list — plain rows (name, description, controls), per the design
@@ -802,22 +824,41 @@ select.input {
   flex-shrink: 0;
 }
 
-.skillAdd {
+/* Transient create-skill row, opened from the section header. An inset
+   surface separates the form from the list rows without adding a card. */
+.skillCreate {
   display: flex;
-  gap: 8px;
-  margin-top: 14px;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 4px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-s);
+  background: var(--bg-subtle);
 }
 
-.skillAdd .input {
+.skillCreate .field {
+  flex: 1;
+}
+
+.skillCreate .input {
   max-width: 280px;
   font-family: var(--font-mono);
   font-size: var(--fs-note);
+}
+
+/* Buttons align with the input row, below the field label. */
+.skillCreateActions {
+  display: flex;
+  gap: 8px;
+  margin-top: 22px;
 }
 
 .skillFormError {
   margin: 6px 0 0;
   color: var(--danger);
   font-size: var(--fs-note);
+  overflow-wrap: anywhere;
 }
 
 /* Enable-confirmation card (MCP server tools / skill full text). */

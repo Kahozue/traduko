@@ -50,6 +50,8 @@ class GeminiProvider:
         base_url: str = "https://generativelanguage.googleapis.com/v1beta",
         api_key: str | None = None,
         api_key_env: str | None = None,
+        context_window: int | None = None,
+        max_output_tokens: int | None = None,
         timeout: float = 60.0,
         max_retries: int = 3,
         backoff_base: float = 0.5,
@@ -59,6 +61,8 @@ class GeminiProvider:
             api_key = os.environ.get(api_key_env)
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
+        self.context_window = context_window
+        self.max_output_tokens = max_output_tokens
         self.max_retries = max_retries
         self.backoff_base = backoff_base
         self._client = httpx.Client(timeout=timeout, transport=transport)
@@ -83,8 +87,11 @@ class GeminiProvider:
         generation: dict = {}
         if request.temperature is not None:
             generation["temperature"] = request.temperature
-        if request.max_tokens is not None:
-            generation["maxOutputTokens"] = request.max_tokens
+        max_tokens = request.max_tokens or self.max_output_tokens
+        if max_tokens is not None:
+            if self.max_output_tokens is not None:
+                max_tokens = min(max_tokens, self.max_output_tokens)
+            generation["maxOutputTokens"] = max_tokens
         if generation:
             payload["generationConfig"] = generation
 
