@@ -1044,3 +1044,41 @@ select.input {
   font-size: var(--fs-body);
   font-weight: 600;
 }
+
+.candidateBlock {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.candidateTitle {
+  margin: 0 0 8px;
+  color: var(--text-secondary);
+  font-size: var(--fs-note);
+  font-weight: 600;
+}
+
+.candidateRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 0;
+}
+
+.candidateName {
+  min-width: 90px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-meta);
+  color: var(--text-primary);
+}
+
+.candidateDesc {
+  flex: 1;
+  color: var(--text-secondary);
+  font-size: var(--fs-note);
+}
+
+.candidateMissing {
+  color: var(--warn);
+  font-size: var(--fs-note);
+}

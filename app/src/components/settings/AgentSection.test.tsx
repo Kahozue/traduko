@@ -407,3 +407,70 @@ test("missing skill already dropped from the draft is hidden", async () => {
   await screen.findByText("尚無任何 skill，按右上角「建立」新增第一個");
   expect(screen.queryByText("gone-skill")).not.toBeInTheDocument();
 });
+
+test("built-in candidates can be added and go through the normal gates", async () => {
+  const onChange = vi.fn();
+  const api: Partial<ApiClient> = {
+    listSkills: vi.fn().mockResolvedValue([]),
+    getMcpCandidates: vi.fn().mockResolvedValue([
+      {
+        name: "memory",
+        available: true,
+        install_hint: "",
+        heavy: false,
+        config: {
+          transport: "stdio",
+          command: "npx",
+          args: ["-y", "@modelcontextprotocol/server-memory"],
+          env: { MEMORY_FILE_PATH: "/data/mcp-memory.json" },
+          url: "",
+          auth_token: "",
+          enabled: false,
+          confirmed: false,
+        },
+      },
+      {
+        name: "fetch",
+        available: false,
+        install_hint: "pip install uv（提供 uvx）",
+        heavy: false,
+        config: {
+          transport: "stdio",
+          command: "uvx",
+          args: ["mcp-server-fetch"],
+          env: {},
+          url: "",
+          auth_token: "",
+          enabled: false,
+          confirmed: false,
+        },
+      },
+    ]),
+  };
+  renderWithConnection(
+    <AgentSection
+      servers={{}}
+      status={[]}
+      skills={{}}
+      onChange={onChange}
+      onSkillsChange={() => {}}
+    />,
+    { api },
+  );
+  await screen.findByText(/預設候選/);
+  const addButtons = screen.getAllByRole("button", { name: "加入" });
+  expect(addButtons).toHaveLength(2);
+  // Unavailable command: add disabled, install hint shown.
+  expect(screen.getByText(/pip install uv/)).toBeInTheDocument();
+  const disabledAdd = addButtons.find((el) => (el as HTMLButtonElement).disabled);
+  expect(disabledAdd).toBeTruthy();
+  const enabledAdd = addButtons.find((el) => !(el as HTMLButtonElement).disabled)!;
+  await userEvent.click(enabledAdd);
+  await waitFor(() =>
+    expect(onChange).toHaveBeenCalledWith(
+      expect.objectContaining({
+        memory: expect.objectContaining({ enabled: false, confirmed: false }),
+      }),
+    ),
+  );
+});

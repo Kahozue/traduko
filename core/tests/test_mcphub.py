@@ -230,3 +230,27 @@ def test_unconfirmed_server_lists_tools_but_exposes_none_to_agents() -> None:
 def test_active_registry_defaults_to_empty() -> None:
     set_active(None)
     assert active_tools() == []
+
+
+def test_builtin_candidates_catalog(tmp_path):
+    from traduko.mcphub import candidate_entries
+
+    entries = candidate_entries(tmp_path, which=lambda cmd: "/usr/bin/npx" if cmd == "npx" else None)
+    by_name = {entry["name"]: entry for entry in entries}
+    assert set(by_name) == {"fetch", "memory", "filesystem", "playwright"}
+    # All disabled and unconfirmed; the standard gates apply after adding.
+    for entry in entries:
+        assert entry["config"]["enabled"] is False
+        assert entry["config"]["confirmed"] is False
+        assert entry["config"]["transport"] == "stdio"
+    # memory points its file into the data root, filesystem gets the
+    # workspace path as an arg — never user-supplied.
+    memory = by_name["memory"]
+    assert memory["config"]["env"]["MEMORY_FILE_PATH"].startswith(str(tmp_path))
+    filesystem = by_name["filesystem"]
+    assert str(tmp_path) in filesystem["config"]["args"]
+    # Availability follows the injected which: npx-based ones exist, uvx no.
+    assert by_name["fetch"]["available"] is False
+    assert by_name["fetch"]["install_hint"]
+    assert by_name["memory"]["available"] is True
+    assert by_name["playwright"]["heavy"] is True

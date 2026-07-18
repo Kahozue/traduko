@@ -1679,3 +1679,11 @@ def test_dubbing_model_endpoints(tmp_path: Path) -> None:
                 break
             time.sleep(0.01)
         assert status["state"] == "done"
+
+
+def test_mcp_candidates_endpoint(tmp_path: Path) -> None:
+    with service(tmp_path) as (client, headers, token):
+        response = client.get("/mcp/candidates", headers=headers)
+        assert response.status_code == 200
+        names = [entry["name"] for entry in response.json()]
+        assert names == ["fetch", "memory", "filesystem", "playwright"]

@@ -281,6 +281,14 @@ export interface SkillInfo {
   errors: string[];
 }
 
+export interface McpCandidate {
+  name: string;
+  available: boolean;
+  install_hint: string;
+  heavy: boolean;
+  config: McpServerConfigDoc;
+}
+
 export type McpServerState = "connected" | "connecting" | "error" | "disabled";
 
 export interface McpToolInfo {

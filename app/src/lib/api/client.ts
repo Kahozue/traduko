@@ -14,6 +14,7 @@ import type {
   BudgetInfo,
   ChannelConfigDoc,
   CoreConfigDoc,
+  McpCandidate,
   McpServerStatus,
   NotifyTestResult,
   PersistedEvent,
@@ -270,6 +271,10 @@ export class ApiClient {
 
   testPdfEngine(): Promise<PdfEngineTestResult> {
     return this.request("/pdf/test", { method: "POST" });
+  }
+
+  getMcpCandidates(): Promise<McpCandidate[]> {
+    return this.request("/mcp/candidates");
   }
 
   getMcpStatus(): Promise<McpServerStatus[]> {

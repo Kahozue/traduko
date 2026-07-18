@@ -715,6 +715,12 @@ def pdf_test(request: Request) -> dict:
     return manager.test()
 
 
+@router.get("/mcp/candidates")
+def mcp_candidates(request: Request) -> list[dict]:
+    ws: Workspace = request.app.state.workspace
+    return mcphub.candidate_entries(ws.root)
+
+
 @router.get("/mcp/status")
 def mcp_status(request: Request) -> list[dict]:
     manager: MCPManager | None = getattr(request.app.state, "mcp", None)

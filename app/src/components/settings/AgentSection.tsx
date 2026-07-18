@@ -1,8 +1,9 @@
 import { useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { t } from "../../i18n";
+import { t, type MessageKey } from "../../i18n";
 import { ApiError } from "../../lib/api/client";
 import type {
+  McpCandidate,
   McpServerConfigDoc,
   McpServerStatus,
   McpToolInfo,
@@ -56,6 +57,13 @@ function normalize(rows: Row[]): Record<string, McpServerConfigDoc> | null {
   return out;
 }
 
+const CANDIDATE_DESC: Record<string, MessageKey> = {
+  fetch: "settings.mcp.candidate.fetch",
+  memory: "settings.mcp.candidate.memory",
+  filesystem: "settings.mcp.candidate.filesystem",
+  playwright: "settings.mcp.candidate.playwright",
+};
+
 export function AgentSection({
   servers,
   status,
@@ -95,6 +103,25 @@ export function AgentSection({
     queryKey: ["skills"],
     queryFn: () => api.listSkills(),
   });
+
+  const candidates = useQuery({
+    queryKey: ["mcp-candidates"],
+    queryFn: () => api.getMcpCandidates(),
+  });
+
+  function addCandidate(entry: McpCandidate) {
+    const uid = nextUid.current;
+    nextUid.current += 1;
+    apply([
+      ...rows,
+      {
+        uid,
+        name: entry.name,
+        config: entry.config,
+        argsText: (entry.config.args ?? []).join(" "),
+      },
+    ]);
+  }
 
   const createSkill = useMutation({
     mutationFn: (name: string) => api.createSkill(name),
@@ -368,6 +395,39 @@ export function AgentSection({
             </div>
           );
         })}
+        {/* Built-in candidates not yet in the config: one click seeds the
+           entry disabled + unconfirmed; the normal gates take over. */}
+        {(candidates.data ?? []).filter((entry) => !trimmedNames.includes(entry.name))
+          .length > 0 && (
+          <div className={styles.candidateBlock}>
+            <p className={styles.candidateTitle}>{t("settings.mcp.candidates")}</p>
+            {(candidates.data ?? [])
+              .filter((entry) => !trimmedNames.includes(entry.name))
+              .map((entry) => (
+                <div key={entry.name} className={styles.candidateRow}>
+                  <span className={styles.candidateName}>{entry.name}</span>
+                  <span className={styles.candidateDesc}>
+                    {t(CANDIDATE_DESC[entry.name] ?? "settings.mcp.candidates")}
+                    {entry.heavy ? ` ${t("settings.mcp.candidateHeavy")}` : ""}
+                  </span>
+                  {!entry.available && (
+                    <span className={styles.candidateMissing}>
+                      {t("settings.mcp.candidateMissing")}
+                      {entry.install_hint}
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    className={styles.secondary}
+                    disabled={!entry.available}
+                    onClick={() => addCandidate(entry)}
+                  >
+                    {t("settings.mcp.candidateAdd")}
+                  </button>
+                </div>
+              ))}
+          </div>
+        )}
       </Section>
 
       <Section title={t("settings.skills")} hint={t("settings.skills.hint")}

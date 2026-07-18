@@ -285,3 +285,76 @@ def active_tools() -> list[AgentTool]:
 
 def active_manager() -> MCPManager | None:
     return _active
+
+
+# Built-in server candidates for the settings agent tab. All start disabled
+# and unconfirmed; the standard enable + confirm gates apply after adding.
+# Paths the servers need (memory file, filesystem workspace) are filled in
+# from the data root by candidate_entries, never typed by the user.
+BUILTIN_CANDIDATES = (
+    {
+        "name": "fetch",
+        "command": "uvx",
+        "args": ["mcp-server-fetch"],
+        "install_hint": "pip install uv（提供 uvx）",
+        "heavy": False,
+    },
+    {
+        "name": "memory",
+        "command": "npx",
+        "args": ["-y", "@modelcontextprotocol/server-memory"],
+        "env_memory_file": True,
+        "install_hint": "安裝 Node.js（提供 npx）",
+        "heavy": False,
+    },
+    {
+        "name": "filesystem",
+        "command": "npx",
+        "args": ["-y", "@modelcontextprotocol/server-filesystem"],
+        "workspace_arg": True,
+        "install_hint": "安裝 Node.js（提供 npx）",
+        "heavy": False,
+    },
+    {
+        "name": "playwright",
+        "command": "npx",
+        "args": ["@playwright/mcp@latest", "--headless", "--isolated"],
+        "install_hint": "安裝 Node.js（提供 npx）",
+        "heavy": True,
+    },
+)
+
+
+def candidate_entries(data_root, which=None):
+    import shutil as _shutil
+    from pathlib import Path as _Path
+
+    which = which or _shutil.which
+    root = _Path(data_root)
+    entries = []
+    for spec in BUILTIN_CANDIDATES:
+        args = list(spec["args"])
+        env: dict[str, str] = {}
+        if spec.get("workspace_arg"):
+            args.append(str(root))
+        if spec.get("env_memory_file"):
+            env["MEMORY_FILE_PATH"] = str(root / "mcp-memory.json")
+        entries.append(
+            {
+                "name": spec["name"],
+                "available": which(spec["command"]) is not None,
+                "install_hint": spec["install_hint"],
+                "heavy": spec["heavy"],
+                "config": {
+                    "transport": "stdio",
+                    "command": spec["command"],
+                    "args": args,
+                    "env": env,
+                    "url": "",
+                    "auth_token": "",
+                    "enabled": False,
+                    "confirmed": False,
+                },
+            }
+        )
+    return entries
