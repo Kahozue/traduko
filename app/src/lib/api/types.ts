@@ -494,10 +494,12 @@ export interface PdfEngineStatus {
   python: string;
   venv: boolean;
   installed: boolean;
-  state: "idle" | "installing" | "done" | "error";
+  state: "idle" | "installing" | "warming" | "done" | "error";
   installing: boolean;
+  warming?: boolean;
   error: string | null;
   installed_mb: number;
+  cache_mb?: number;
 }
 
 export interface PdfEngineTestResult {

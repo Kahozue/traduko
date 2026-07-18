@@ -55,7 +55,10 @@ def wait_state(manager: PdfManager, state: str, timeout: float = 5.0) -> dict:
 
 def test_status_before_install(tmp_path: Path) -> None:
     manager = PdfManager(
-        tmp_path, installer=fake_installer(), probe=probe_from({"python3.12": (3, 12, 3)})
+        tmp_path,
+        installer=fake_installer(),
+        probe=probe_from({"python3.12": (3, 12, 3)}),
+        cache_dir=tmp_path / "no-cache",
     )
     status = manager.status()
     assert status["python"] == "python3.12"
@@ -142,3 +145,73 @@ def test_pdf_config_round_trip(tmp_path: Path) -> None:
     save_config(tmp_path, config)
     loaded = load_config(tmp_path)
     assert loaded.pdf.python == "/opt/py/bin/python"
+
+
+def test_install_runs_warmup_and_counts_cache(tmp_path):
+    from traduko.pdfengine.setup import PdfManager
+
+    calls: list[str] = []
+
+    def installer(target_dir, python):
+        (target_dir / "venv" / "bin").mkdir(parents=True, exist_ok=True)
+        (target_dir / "venv" / "bin" / "python").write_text("", encoding="utf-8")
+        (target_dir / ".installed").write_text("{}", encoding="utf-8")
+        calls.append("install")
+
+    def warmer(target_dir):
+        calls.append("warmup")
+
+    cache = tmp_path / "babeldoc-cache"
+    cache.mkdir()
+    (cache / "model.onnx").write_bytes(b"x" * (2 * 1024 * 1024))
+    manager = PdfManager(
+        tmp_path,
+        installer=installer,
+        probe=lambda candidate: (3, 12, 0),
+        warmer=warmer,
+        cache_dir=cache,
+    )
+    assert manager.start_install() is True
+    import time
+
+    for _ in range(200):
+        if manager.status()["state"] in ("done", "error"):
+            break
+        time.sleep(0.01)
+    status = manager.status()
+    assert calls == ["install", "warmup"]
+    assert status["state"] == "done"
+    assert status["installed"] is True
+    assert status["cache_mb"] > 0
+    assert status["installed_mb"] >= status["cache_mb"]
+
+
+def test_warmup_failure_does_not_block_install(tmp_path):
+    from traduko.pdfengine.setup import PdfManager
+
+    def installer(target_dir, python):
+        (target_dir / "venv" / "bin").mkdir(parents=True, exist_ok=True)
+        (target_dir / "venv" / "bin" / "python").write_text("", encoding="utf-8")
+        (target_dir / ".installed").write_text("{}", encoding="utf-8")
+
+    def warmer(target_dir):
+        raise RuntimeError("warmup exploded")
+
+    manager = PdfManager(
+        tmp_path,
+        installer=installer,
+        probe=lambda candidate: (3, 12, 0),
+        warmer=warmer,
+        cache_dir=tmp_path / "none",
+    )
+    manager.start_install()
+    import time
+
+    for _ in range(200):
+        if manager.status()["state"] in ("done", "error"):
+            break
+        time.sleep(0.01)
+    status = manager.status()
+    assert status["installed"] is True
+    assert status["state"] == "done"
+    assert "warmup" in (status["error"] or "")

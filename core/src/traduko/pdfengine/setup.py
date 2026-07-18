@@ -144,6 +144,23 @@ def _real_engine_probe(target_dir: Path) -> dict:
     return {"ok": True, "version": line or version}
 
 
+def _default_cache_dir() -> Path:
+    return Path.home() / ".cache" / "babeldoc"
+
+
+def _real_warmup(target_dir: Path) -> None:
+    """Pull the ~340MB BabelDOC model/font assets right after install, so
+    the first translation is not slow and silent."""
+    cli = target_dir / "venv" / "bin" / "pdf2zh_next"
+    result = subprocess.run(
+        [str(cli), "--warmup"], capture_output=True, text=True, timeout=1800
+    )
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"warmup failed: {(result.stderr or result.stdout)[:300]}"
+        )
+
+
 class PdfManager:
     def __init__(
         self,
@@ -152,12 +169,16 @@ class PdfManager:
         probe: Callable[[str], tuple[int, int, int] | None] | None = None,
         engine_probe: Callable[[Path], dict] | None = None,
         python_override: str = "",
+        warmer: Callable[[Path], None] | None = None,
+        cache_dir: Path | None = None,
     ) -> None:
         self.data_root = data_root
         self._installer = installer or _real_install
         self._probe = probe
         self._engine_probe = engine_probe or _real_engine_probe
         self.python_override = python_override
+        self._warmer = warmer or _real_warmup
+        self._cache_dir = cache_dir or _default_cache_dir()
         self._lock = threading.Lock()
         self._state = "idle"
         self._error: str | None = None
@@ -171,20 +192,24 @@ class PdfManager:
         py = target / "venv" / "bin" / "python"
         with self._lock:
             state, error = self._state, self._error
+        cache_mb = round(_dir_size_mb(self._cache_dir), 1)
         return {
             "python": find_python(self.python_override, probe=self._probe) or "",
             "venv": py.exists(),
             "installed": engine_installed(self.data_root),
             "state": state,
             "installing": state == "installing",
+            "warming": state == "warming",
             "error": error,
-            "installed_mb": round(_dir_size_mb(target), 1),
+            # Full footprint: the venv plus the shared babeldoc asset cache.
+            "installed_mb": round(_dir_size_mb(target) + cache_mb, 1),
+            "cache_mb": cache_mb,
         }
 
     def start_install(self) -> bool:
         python = find_python(self.python_override, probe=self._probe)
         with self._lock:
-            if self._state == "installing":
+            if self._state in ("installing", "warming"):
                 return False
             if python is None:
                 self._state = "error"
@@ -206,6 +231,17 @@ class PdfManager:
             with self._lock:
                 self._state = "error"
                 self._error = str(error)
+            return
+        with self._lock:
+            self._state = "warming"
+        try:
+            self._warmer(self.engine_dir)
+        except Exception as error:
+            # Warmup is best-effort: the engine is installed either way, the
+            # assets just download on first translation instead.
+            with self._lock:
+                self._state = "done"
+                self._error = f"warmup incomplete: {error}"
             return
         with self._lock:
             self._state = "done"

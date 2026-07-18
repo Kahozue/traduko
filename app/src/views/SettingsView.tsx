@@ -391,7 +391,14 @@ export function SettingsView({
         hidden={tab !== "document"}
         className={styles.panel}
       >
-        <PdfEngineSection />
+        {draft && (
+          <PdfEngineSection
+            pdf={draft.pdf}
+            onChange={(value) =>
+              setDraft((prev) => (prev ? { ...prev, pdf: value } : prev))
+            }
+          />
+        )}
       </div>
 
       <div
