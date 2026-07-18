@@ -90,17 +90,21 @@ class FakeClient:
         return self.turns
 
     def synthesize(self, text, out, prompt_wav=None, prompt_text=None, instruction=None):
-        self.synth_calls.append(
-            {
-                "text": text,
-                "out": str(out),
-                "prompt_wav": str(prompt_wav) if prompt_wav else None,
-                "prompt_text": prompt_text,
-                "instruction": instruction,
-            }
-        )
+        call = {
+            "text": text,
+            "out": str(out),
+            "prompt_wav": str(prompt_wav) if prompt_wav else None,
+            "prompt_text": prompt_text,
+            "instruction": instruction,
+        }
+        self.synth_calls.append(call)
         Path(out).write_bytes(b"RIFFfake")
-        return {"ok": True, "path": str(out), "duration": self.synth_duration}
+        duration = (
+            self.synth_duration(call)
+            if callable(self.synth_duration)
+            else self.synth_duration
+        )
+        return {"ok": True, "path": str(out), "duration": duration}
 
     def close(self):
         self.closed = True
@@ -160,6 +164,217 @@ def test_diarize_requires_hf_token(tmp_path: Path, fake_client) -> None:
     write_translation(ctx)
     with pytest.raises(base.StageError, match="[Hh]ugging"):
         registry.create("diarize").run(ctx)
+
+
+def write_speakers(ctx, index: int = 7) -> None:
+    ctx.artifacts.write_json(
+        index,
+        "speakers.json",
+        {
+            "speakers": [
+                {"id": "S1", "label": "Speaker 1", "ref_start": 4.0,
+                 "ref_end": 9.0, "ref_text": "long speech"},
+                {"id": "S2", "label": "Speaker 2", "ref_start": 2.2,
+                 "ref_end": 3.8, "ref_text": "hi back"},
+            ],
+            "segments": [
+                {"id": 1, "speaker": "S1"},
+                {"id": 2, "speaker": "S2"},
+                {"id": 3, "speaker": "S1"},
+            ],
+        },
+    )
+
+
+def setup_tts(tmp_path, monkeypatch, stage_index=7):
+    install_engine(tmp_path)
+    write_dub_config(tmp_path)
+    ctx, progress = make_ctx(tmp_path, tmp_path / "in.mp4", stage_index=stage_index)
+    write_translation(ctx)
+    write_speakers(ctx)
+    commands: list[list[str]] = []
+    monkeypatch.setattr(dub, "run_media", lambda cmd: commands.append(cmd))
+    monkeypatch.setattr(dub, "ffmpeg_available", lambda: True)
+    return ctx, progress, commands
+
+
+def test_tts_synthesize_writes_clips_and_manifest(
+    tmp_path: Path, fake_client, monkeypatch
+) -> None:
+    ctx, progress, commands = setup_tts(tmp_path, monkeypatch)
+    result = registry.create("tts_synthesize").run(ctx)
+    assert "08-dub-manifest.json" in result.artifacts
+
+    # one reference clip extracted per speaker, from the original input
+    ref_cmds = [c for c in commands if any("ref-" in part for part in c)]
+    assert len(ref_cmds) == 2
+    assert str(tmp_path / "in.mp4") in ref_cmds[0]
+
+    manifest = ctx.artifacts.read_latest_json("dub-manifest.json")
+    assert [s["status"] for s in manifest["segments"]] == ["synthesized"] * 3
+    assert manifest["segments"][0]["file"] == "08-dub/seg-1.wav"
+    assert (ctx.artifacts.dir / "08-dub" / "seg-1.wav").exists()
+
+    calls = fake_client.synth_calls
+    assert [c["text"] for c in calls] == ["哈囉", "回嗨", "長篇"]
+    assert calls[0]["prompt_wav"].endswith("08-ref-S1.wav")
+    assert calls[1]["prompt_wav"].endswith("08-ref-S2.wav")
+    assert calls[0]["prompt_text"] == "long speech"
+    assert progress[-1] == (3, 3)
+
+
+def test_tts_synthesize_resumes_from_manifest(
+    tmp_path: Path, fake_client, monkeypatch
+) -> None:
+    ctx, _, _ = setup_tts(tmp_path, monkeypatch)
+    dub_dir = ctx.artifacts.dir / "08-dub"
+    dub_dir.mkdir(parents=True, exist_ok=True)
+    (dub_dir / "seg-1.wav").write_bytes(b"RIFFdone")
+    ctx.artifacts.write_json(
+        8,
+        "dub-manifest.json",
+        {
+            "segments": [
+                {"id": 1, "speaker": "S1", "file": "08-dub/seg-1.wav",
+                 "duration": 1.5, "status": "synthesized"}
+            ]
+        },
+    )
+    registry.create("tts_synthesize").run(ctx)
+    assert [c["text"] for c in fake_client.synth_calls] == ["回嗨", "長篇"]
+    manifest = ctx.artifacts.read_latest_json("dub-manifest.json")
+    assert len(manifest["segments"]) == 3
+    assert manifest["segments"][0]["duration"] == 1.5
+
+
+def test_tts_synthesize_records_failures_and_continues(
+    tmp_path: Path, monkeypatch
+) -> None:
+    from traduko.dubbing.client import DubbingError
+
+    client = FakeClient()
+    original = client.synthesize
+
+    def flaky(text, out, **kwargs):
+        if text == "回嗨":
+            raise DubbingError("synthesis exploded")
+        return original(text, out, **kwargs)
+
+    client.synthesize = flaky
+    monkeypatch.setattr(dub, "_make_client", lambda data_root, config: client)
+    ctx, _, _ = setup_tts(tmp_path, monkeypatch)
+    registry.create("tts_synthesize").run(ctx)
+    manifest = ctx.artifacts.read_latest_json("dub-manifest.json")
+    statuses = {s["id"]: s["status"] for s in manifest["segments"]}
+    assert statuses == {1: "synthesized", 2: "failed", 3: "synthesized"}
+    assert "exploded" in manifest["segments"][1]["error"]
+
+
+def test_tts_synthesize_fails_when_nothing_synthesized(
+    tmp_path: Path, monkeypatch
+) -> None:
+    from traduko.dubbing.client import DubbingError
+
+    client = FakeClient()
+
+    def broken(text, out, **kwargs):
+        raise DubbingError("dead engine")
+
+    client.synthesize = broken
+    monkeypatch.setattr(dub, "_make_client", lambda data_root, config: client)
+    ctx, _, _ = setup_tts(tmp_path, monkeypatch)
+    with pytest.raises(base.StageError, match="no segments"):
+        registry.create("tts_synthesize").run(ctx)
+
+
+def write_manifest(ctx, durations: dict[int, float], index: int = 8) -> None:
+    dub_dir = ctx.artifacts.dir / f"{index:02d}-dub"
+    dub_dir.mkdir(parents=True, exist_ok=True)
+    segments = []
+    for seg_id, duration in durations.items():
+        name = f"{index:02d}-dub/seg-{seg_id}.wav"
+        (ctx.artifacts.dir / name).write_bytes(b"RIFFfake")
+        segments.append(
+            {"id": seg_id, "speaker": "S1", "file": name,
+             "duration": duration, "status": "synthesized"}
+        )
+    ctx.artifacts.write_json(index, "dub-manifest.json", {"segments": segments})
+
+
+def test_align_duration_fit_regen_atempo_overflow(
+    tmp_path: Path, monkeypatch
+) -> None:
+    # windows: seg1 = 2.0s, seg2 = 1.6s, seg3 = 5.0s
+    client = FakeClient(synth_duration=lambda call: 1.7)
+    monkeypatch.setattr(dub, "_make_client", lambda data_root, config: client)
+    ctx, progress, commands = setup_tts(tmp_path, monkeypatch, stage_index=8)
+    # seg1 fits; seg2 needs regen (1.7 <= 1.6*1.1 fits after regen);
+    # seg3 overflows even the cap
+    write_manifest(ctx, {1: 2.1, 2: 3.0, 3: 12.0})
+
+    result = registry.create("align_duration").run(ctx)
+    assert "09-dub-timeline.json" in result.artifacts
+    timeline = ctx.artifacts.read_latest_json("dub-timeline.json")
+    by_id = {s["id"]: s for s in timeline["segments"]}
+
+    assert by_id[1]["status"] == "fit"
+    assert by_id[1]["file"] == "08-dub/seg-1.wav"
+    assert by_id[1]["tempo"] == 1.0
+
+    assert by_id[2]["status"] == "fit"
+    assert by_id[2]["regenerated"] is True
+    assert by_id[2]["file"] == "09-dub/seg-2.regen.wav"
+    assert by_id[2]["duration"] == 1.7
+
+    # regen still returns 1.7 for seg3 window 5.0 -> fits actually; adjust:
+    assert by_id[3]["status"] == "fit"
+
+    regen_calls = [c for c in client.synth_calls if c["instruction"]]
+    assert all(c["instruction"] == "speak faster" for c in regen_calls)
+
+
+def test_align_duration_atempo_and_overflow(tmp_path: Path, monkeypatch) -> None:
+    # regen never helps: always returns the original duration
+    durations = {2: 2.0, 3: 12.0}
+
+    def stuck(call):
+        seg_id = int(call["out"].rsplit("seg-", 1)[1].split(".")[0])
+        return durations[seg_id]
+
+    client = FakeClient(synth_duration=stuck)
+    monkeypatch.setattr(dub, "_make_client", lambda data_root, config: client)
+    ctx, _, commands = setup_tts(tmp_path, monkeypatch, stage_index=8)
+    write_manifest(ctx, {2: 2.0, 3: 12.0})
+
+    registry.create("align_duration").run(ctx)
+    timeline = ctx.artifacts.read_latest_json("dub-timeline.json")
+    by_id = {s["id"]: s for s in timeline["segments"]}
+
+    # seg2: window 1.6, duration 2.0 -> regen no help -> atempo 2.0/1.76
+    assert by_id[2]["status"] == "atempo"
+    assert by_id[2]["tempo"] == pytest.approx(2.0 / (1.6 * 1.1), abs=0.01)
+    assert by_id[2]["file"] == "09-dub/seg-2.tempo.wav"
+    # seg3: window 5.0, duration 12.0 -> beyond cap -> overflow at max tempo
+    assert by_id[3]["status"] == "overflow"
+    assert by_id[3]["tempo"] == 1.4
+    # both seg2 and seg3 get an atempo pass (overflow applies the cap)
+    atempo_cmds = [c for c in commands if any("atempo" in str(p) for p in c)]
+    assert len(atempo_cmds) == 2
+
+
+def test_align_duration_carries_failed_segments(tmp_path: Path, monkeypatch) -> None:
+    client = FakeClient()
+    monkeypatch.setattr(dub, "_make_client", lambda data_root, config: client)
+    ctx, _, _ = setup_tts(tmp_path, monkeypatch, stage_index=8)
+    ctx.artifacts.write_json(
+        8,
+        "dub-manifest.json",
+        {"segments": [{"id": 1, "speaker": "S1", "file": "", "duration": 0.0,
+                       "status": "failed", "error": "boom"}]},
+    )
+    registry.create("align_duration").run(ctx)
+    timeline = ctx.artifacts.read_latest_json("dub-timeline.json")
+    assert timeline["segments"][0]["status"] == "failed"
 
 
 def test_av_dub_profile_seeds_with_diarize_checkpoint(tmp_path: Path) -> None:

@@ -6,11 +6,28 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import json
+
 from ..config import CoreConfig, load_config
 from ..dubbing import setup as dubsetup
+from ..dubbing.align import plan_segment
 from ..dubbing.client import DubbingEngineClient, DubbingError
-from ..dubbing.models import Speaker, SpeakerAssignment, SpeakersDoc
-from ..media import MediaError, build_extract_audio_cmd, ffmpeg_available
+from ..dubbing.models import (
+    DubManifestDoc,
+    DubSegment,
+    DubTimelineDoc,
+    Speaker,
+    SpeakerAssignment,
+    SpeakersDoc,
+    TimelineSegment,
+)
+from ..media import (
+    MediaError,
+    build_atempo_cmd,
+    build_extract_audio_cmd,
+    build_extract_clip_cmd,
+    ffmpeg_available,
+)
 from ..media import run as run_media
 from . import registry
 from .base import StageContext, StageError, StageResult
@@ -121,4 +138,240 @@ class DiarizeStage:
             ctx.stage_index + 1, "speakers.json", doc.model_dump()
         )
         ctx.emit_progress(1, 1)
+        return StageResult(artifacts=[path.name])
+
+
+MAX_REF_SECONDS = 12.0
+MIN_REF_SECONDS = 0.5
+
+
+def _read_dub_inputs(ctx: StageContext, *names: str) -> list[dict]:
+    docs = []
+    for name in names:
+        try:
+            docs.append(ctx.artifacts.read_latest_json(name))
+        except FileNotFoundError as error:
+            raise StageError(f"stage requires a {name} artifact") from error
+    return docs
+
+
+@registry.register
+class TtsSynthesizeStage:
+    type = "tts_synthesize"
+
+    def run(self, ctx: StageContext) -> StageResult:
+        translation, speakers_doc = _read_dub_inputs(
+            ctx, "translation.json", "speakers.json"
+        )
+        _require_engine(ctx.data_root)
+        if not ffmpeg_available():
+            raise StageError("ffmpeg/ffprobe not found on PATH")
+        config = load_config(ctx.data_root)
+        segments = translation["segments"]
+        speakers = {s["id"]: s for s in speakers_doc["speakers"]}
+        speaker_of = {a["id"]: a["speaker"] for a in speakers_doc["segments"]}
+        default_speaker = next(iter(speakers), "")
+
+        out_index = ctx.stage_index + 1
+        dub_dir = ctx.artifacts.path_for(out_index, "dub")
+        dub_dir.mkdir(parents=True, exist_ok=True)
+
+        refs: dict[str, Path] = {}
+        ref_names: list[str] = []
+        for speaker_id, speaker in speakers.items():
+            ref_path = ctx.artifacts.path_for(out_index, f"ref-{speaker_id}.wav")
+            duration = min(
+                max(speaker["ref_end"] - speaker["ref_start"], MIN_REF_SECONDS),
+                MAX_REF_SECONDS,
+            )
+            try:
+                run_media(
+                    build_extract_clip_cmd(
+                        Path(ctx.task.input_path),
+                        speaker["ref_start"],
+                        duration,
+                        ref_path,
+                    )
+                )
+            except MediaError as error:
+                raise StageError(str(error)) from error
+            refs[speaker_id] = ref_path
+            ref_names.append(ref_path.name)
+
+        manifest_path = ctx.artifacts.path_for(out_index, "dub-manifest.json")
+        done: dict[int, dict] = {}
+        if manifest_path.exists():
+            previous = json.loads(manifest_path.read_text(encoding="utf-8"))
+            for entry in previous.get("segments", []):
+                if (
+                    entry.get("status") == "synthesized"
+                    and entry.get("file")
+                    and (ctx.artifacts.dir / entry["file"]).exists()
+                ):
+                    done[entry["id"]] = entry
+
+        client = _make_client(ctx.data_root, config)
+        entries: list[DubSegment] = []
+        last_error = ""
+        try:
+            for n, seg in enumerate(segments):
+                previous = done.get(seg["id"])
+                if previous is not None:
+                    entries.append(DubSegment.model_validate(previous))
+                    ctx.emit_progress(n + 1, len(segments))
+                    continue
+                speaker_id = speaker_of.get(seg["id"], default_speaker)
+                speaker = speakers.get(speaker_id)
+                out_path = dub_dir / f"seg-{seg['id']}.wav"
+                text = (seg.get("target") or "").strip()
+                if not text:
+                    entry = DubSegment(
+                        id=seg["id"], speaker=speaker_id, status="failed",
+                        error="empty target text",
+                    )
+                else:
+                    try:
+                        response = client.synthesize(
+                            text,
+                            out=out_path,
+                            prompt_wav=refs.get(speaker_id),
+                            prompt_text=(speaker or {}).get("ref_text") or None,
+                        )
+                        entry = DubSegment(
+                            id=seg["id"],
+                            speaker=speaker_id,
+                            file=f"{out_index:02d}-dub/seg-{seg['id']}.wav",
+                            duration=response["duration"],
+                        )
+                    except DubbingError as error:
+                        last_error = str(error)
+                        entry = DubSegment(
+                            id=seg["id"], speaker=speaker_id, status="failed",
+                            error=last_error,
+                        )
+                entries.append(entry)
+                ctx.artifacts.write_json(
+                    out_index,
+                    "dub-manifest.json",
+                    DubManifestDoc(segments=entries).model_dump(),
+                )
+                ctx.emit_progress(n + 1, len(segments))
+        finally:
+            client.close()
+
+        if not any(e.status == "synthesized" for e in entries):
+            raise StageError(
+                "no segments could be synthesized"
+                + (f": {last_error}" if last_error else "")
+            )
+        return StageResult(artifacts=[manifest_path.name, *ref_names])
+
+
+@registry.register
+class AlignDurationStage:
+    type = "align_duration"
+
+    def run(self, ctx: StageContext) -> StageResult:
+        translation, speakers_doc, manifest = _read_dub_inputs(
+            ctx, "translation.json", "speakers.json", "dub-manifest.json"
+        )
+        _require_engine(ctx.data_root)
+        if not ffmpeg_available():
+            raise StageError("ffmpeg/ffprobe not found on PATH")
+        config = load_config(ctx.data_root)
+        tolerance = ctx.params.get("tolerance", 1.1)
+        max_tempo = ctx.params.get("max_tempo", 1.4)
+
+        seg_by_id = {s["id"]: s for s in translation["segments"]}
+        speakers = {s["id"]: s for s in speakers_doc["speakers"]}
+        out_index = ctx.stage_index + 1
+        out_dir = ctx.artifacts.path_for(out_index, "dub")
+        out_dir.mkdir(parents=True, exist_ok=True)
+
+        client = _make_client(ctx.data_root, config)
+        timeline: list[TimelineSegment] = []
+        total = len(manifest["segments"])
+        try:
+            for n, entry in enumerate(manifest["segments"]):
+                seg = seg_by_id.get(entry["id"])
+                start = seg["start"] if seg else 0.0
+                window = (seg["end"] - seg["start"]) if seg else 0.0
+                if entry.get("status") != "synthesized" or seg is None:
+                    timeline.append(
+                        TimelineSegment(
+                            id=entry["id"], start=start, window=window,
+                            duration=0.0, status="failed",
+                        )
+                    )
+                    ctx.emit_progress(n + 1, total)
+                    continue
+
+                duration = entry["duration"]
+                file = entry["file"]
+                regenerated = False
+                plan = plan_segment(
+                    window, duration, tolerance=tolerance, max_tempo=max_tempo,
+                    can_regen=True,
+                )
+                if plan["action"] == "regen":
+                    regen_path = out_dir / f"seg-{entry['id']}.regen.wav"
+                    speaker = speakers.get(entry.get("speaker", ""))
+                    prompt_wav: Path | None = None
+                    try:
+                        prompt_wav = ctx.artifacts.latest_path(
+                            f"ref-{entry.get('speaker', '')}.wav"
+                        )
+                    except FileNotFoundError:
+                        prompt_wav = None
+                    try:
+                        response = client.synthesize(
+                            (seg.get("target") or "").strip(),
+                            out=regen_path,
+                            prompt_wav=prompt_wav,
+                            prompt_text=(speaker or {}).get("ref_text") or None,
+                            instruction="speak faster",
+                        )
+                        duration = response["duration"]
+                        file = f"{out_index:02d}-dub/seg-{entry['id']}.regen.wav"
+                        regenerated = True
+                    except DubbingError:
+                        pass  # keep the original clip; atempo may still fit it
+                    plan = plan_segment(
+                        window, duration, tolerance=tolerance,
+                        max_tempo=max_tempo, can_regen=False,
+                    )
+
+                tempo = 1.0
+                status = "fit"
+                if plan["action"] in ("atempo", "overflow"):
+                    tempo = plan["tempo"]
+                    status = plan["action"]
+                    tempo_path = out_dir / f"seg-{entry['id']}.tempo.wav"
+                    try:
+                        run_media(
+                            build_atempo_cmd(
+                                ctx.artifacts.dir / file, tempo, tempo_path
+                            )
+                        )
+                    except MediaError as error:
+                        raise StageError(str(error)) from error
+                    file = f"{out_index:02d}-dub/seg-{entry['id']}.tempo.wav"
+                    duration = duration / tempo
+
+                timeline.append(
+                    TimelineSegment(
+                        id=entry["id"], start=start, window=window,
+                        duration=duration, tempo=tempo,
+                        regenerated=regenerated, file=file, status=status,
+                    )
+                )
+                ctx.emit_progress(n + 1, total)
+        finally:
+            client.close()
+
+        path = ctx.artifacts.write_json(
+            out_index,
+            "dub-timeline.json",
+            DubTimelineDoc(segments=timeline).model_dump(),
+        )
         return StageResult(artifacts=[path.name])
