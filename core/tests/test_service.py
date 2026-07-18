@@ -1134,6 +1134,47 @@ def test_assistant_history_is_empty_list_before_any_message(tmp_path: Path) -> N
         assert response.json() == []
 
 
+def test_assistant_attachment_saves_pasted_image_and_returns_path(
+    tmp_path: Path,
+) -> None:
+    import base64 as b64
+
+    with service(tmp_path) as (client, headers, token):
+        payload = b"\x89PNG-clipboard-bytes"
+        response = client.post(
+            "/assistant/attachments",
+            headers=headers,
+            json={
+                "mime": "image/png",
+                "data_base64": b64.b64encode(payload).decode("ascii"),
+            },
+        )
+        assert response.status_code == 201, response.text
+        path = Path(response.json()["path"])
+        assert path.is_absolute()
+        assert path.parent == tmp_path / "assistant" / "attachments"
+        assert path.suffix == ".png"
+        assert path.read_bytes() == payload
+
+
+def test_assistant_attachment_rejects_bad_mime_and_bad_base64(
+    tmp_path: Path,
+) -> None:
+    with service(tmp_path) as (client, headers, token):
+        response = client.post(
+            "/assistant/attachments",
+            headers=headers,
+            json={"mime": "application/pdf", "data_base64": "aGk="},
+        )
+        assert response.status_code == 422
+        response = client.post(
+            "/assistant/attachments",
+            headers=headers,
+            json={"mime": "image/png", "data_base64": "not base64!!"},
+        )
+        assert response.status_code == 422
+
+
 def test_assistant_message_without_llm_provider_is_409(tmp_path: Path) -> None:
     with service(tmp_path) as (client, headers, token):
         response = client.post(

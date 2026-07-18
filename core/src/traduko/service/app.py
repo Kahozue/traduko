@@ -9,6 +9,8 @@ the whole app lifetime; handlers reach it through request.app.state.
 from __future__ import annotations
 
 import asyncio
+import base64
+import binascii
 import json
 import logging
 import secrets
@@ -16,6 +18,7 @@ import tempfile
 import threading
 from contextlib import asynccontextmanager, suppress
 from dataclasses import asdict
+from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import (
@@ -870,6 +873,54 @@ def post_assistant_message(request: Request, body: AssistantMessageRequest) -> d
         # it into readable wording instead of a generic 500.
         raise HTTPException(status_code=502, detail=str(error)) from None
     return {**result, "history": load_assistant_history(ws)}
+
+
+# Pasted images arrive as bytes with no path of their own; the accepted mimes
+# mirror the picker's extension filter so both attach routes take the same set.
+_ATTACHMENT_MIME_EXT = {
+    "image/png": "png",
+    "image/jpeg": "jpg",
+    "image/webp": "webp",
+    "image/gif": "gif",
+}
+ATTACHMENT_MAX_BYTES = 20 * 1024 * 1024
+
+
+class AssistantAttachmentRequest(BaseModel):
+    mime: str
+    data_base64: str
+
+
+@router.post("/assistant/attachments", status_code=201)
+def post_assistant_attachment(
+    request: Request, body: AssistantAttachmentRequest
+) -> dict:
+    """Save a pasted image into the workspace and return its absolute path,
+    so clipboard images ride the same `images` channel as picker-chosen
+    files. Files land under assistant/attachments/ and are never cleaned up
+    automatically: history messages keep referencing them."""
+    ws: Workspace = request.app.state.workspace
+    ext = _ATTACHMENT_MIME_EXT.get(body.mime)
+    if ext is None:
+        raise HTTPException(
+            status_code=422, detail=f"unsupported image mime: {body.mime}"
+        )
+    try:
+        data = base64.b64decode(body.data_base64, validate=True)
+    except (binascii.Error, ValueError):
+        raise HTTPException(
+            status_code=422, detail="data_base64 is not valid base64"
+        ) from None
+    if not data:
+        raise HTTPException(status_code=422, detail="image is empty")
+    if len(data) > ATTACHMENT_MAX_BYTES:
+        raise HTTPException(status_code=413, detail="image exceeds 20 MB")
+    directory = ws.root / "assistant" / "attachments"
+    directory.mkdir(parents=True, exist_ok=True)
+    name = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%f") + f".{ext}"
+    path = directory / name
+    path.write_bytes(data)
+    return {"path": str(path)}
 
 
 @router.get("/assistant/history")
