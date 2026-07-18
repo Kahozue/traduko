@@ -243,6 +243,10 @@
   flex: 0 0 132px;
 }
 
+.limitField .label {
+  white-space: nowrap;
+}
+
 .limitField .input {
   font-variant-numeric: tabular-nums;
 }
@@ -391,6 +395,41 @@ select.input {
 
 .headAction {
   flex-shrink: 0;
+}
+
+/* Paired header actions: same widths and gap as the per-row action groups
+   below (skillActions), so the two columns align vertically. */
+.headActions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+/* Section-level primary action (e.g. Skills 建立): accent-filled but sized
+   exactly like .secondary so paired buttons stay column-aligned. One per
+   section header; the save bar keeps the page-level primary. */
+.headPrimary {
+  height: 32px;
+  padding: 0 13px;
+  border: none;
+  border-radius: var(--radius-s);
+  background: var(--accent);
+  color: var(--text-on-dark);
+  font-size: var(--fs-note);
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--transition);
+}
+
+.headPrimary:hover:not(:disabled) {
+  background: var(--accent-strong);
+}
+
+.headPrimary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .typeTag {

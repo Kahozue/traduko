@@ -89,7 +89,7 @@ test("recognized model updates the token ceilings", async () => {
 
 test("non-numeric token ceiling blocks the draft with an error", async () => {
   const { onChange } = setup({ a: { type: "openai_compat", base_url: "https://x/v1" } });
-  await userEvent.type(screen.getByLabelText("上下文視窗（tokens）"), "abc");
+  await userEvent.type(screen.getByLabelText("上下文視窗"), "abc");
   expect(onChange).toHaveBeenLastCalledWith(null);
   expect(screen.getByText("須為正整數")).toBeInTheDocument();
 });

@@ -372,7 +372,7 @@ export function AgentSection({
 
       <Section title={t("settings.skills")} hint={t("settings.skills.hint")}
         action={
-          <>
+          <div className={styles.headActions}>
             <input
               ref={fileInputRef}
               type="file"
@@ -383,20 +383,20 @@ export function AgentSection({
             />
             <button
               type="button"
-              className={`${styles.secondary} ${styles.headAction}`}
+              className={styles.headPrimary}
               onClick={() => setCreating(true)}
             >
               {t("settings.skills.add")}
             </button>
             <button
               type="button"
-              className={`${styles.secondary} ${styles.headAction}`}
+              className={styles.secondary}
               disabled={importSkill.isPending}
               onClick={() => fileInputRef.current?.click()}
             >
               {t("settings.skills.import")}
             </button>
-          </>
+          </div>
         }
       >
         {creating && (
@@ -431,7 +431,7 @@ export function AgentSection({
             <div className={styles.skillCreateActions}>
               <button
                 type="submit"
-                className={styles.secondary}
+                className={styles.headPrimary}
                 disabled={!skillNameValid(newSkillName.trim()) || createSkill.isPending}
               >
                 {t("settings.skills.addConfirm")}

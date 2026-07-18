@@ -237,5 +237,8 @@
   flex: 1;
   min-width: 0;
   overflow-y: auto;
+  /* Reaching the top/bottom must not chain the scroll out to the viewport,
+     which would drag the whole shell (rubber-band) on macOS. */
+  overscroll-behavior: contain;
   padding: 32px 40px;
 }

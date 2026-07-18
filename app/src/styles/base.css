@@ -17,6 +17,11 @@ body {
   color: var(--text-primary);
   background: var(--bg-app);
   text-rendering: optimizeLegibility;
+  /* The app frame never scrolls as a whole: scrolling lives in the content
+     pane. Locking the viewport keeps WKWebView from rubber-banding the
+     entire shell (sidebar included) past the window edge. */
+  overflow: hidden;
+  overscroll-behavior: none;
 }
 
 button {

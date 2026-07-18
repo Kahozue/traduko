@@ -495,7 +495,6 @@ export function ProvidersSection({
                 )}
               </label>
             </div>
-            <span className={styles.hintNote}>{t("settings.apiKeyPlainHint")}</span>
             <ProviderTestRow config={row.config} onTest={onTest} />
           </div>
         );
