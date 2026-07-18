@@ -232,3 +232,15 @@ def plan_chunks(
         position = cut
     chunks.append((position, duration))
     return chunks
+
+
+def build_encode_audio_cmd(input_path: Path, output_path: Path, fmt: str) -> list[str]:
+    """Final dubbed-audio encode. m4a for size, mp3 for compatibility,
+    wav passthrough for editors."""
+    if fmt == "m4a":
+        codec = ["-c:a", "aac", "-b:a", "192k"]
+    elif fmt == "mp3":
+        codec = ["-c:a", "libmp3lame", "-q:a", "2"]
+    else:
+        codec = ["-c:a", "pcm_s16le"]
+    return ["ffmpeg", "-y", "-i", str(input_path), *codec, str(output_path)]

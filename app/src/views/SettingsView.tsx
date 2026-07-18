@@ -17,15 +17,24 @@ import { SyncSection } from "../components/settings/SyncSection";
 import styles from "../components/settings/settings.module.css";
 
 // Tabs follow the information architecture in internal/design-language.md:
-// one pipeline domain per tab, future domains (documents, comics, agent)
-// slot in after "video"; integrations and about stay last.
-const TABS = ["general", "video", "document", "agent", "integrations", "about"] as const;
+// one pipeline domain per tab, future domains (comics) slot in after the
+// media domains; integrations and about stay last.
+const TABS = [
+  "general",
+  "video",
+  "audio",
+  "document",
+  "agent",
+  "integrations",
+  "about",
+] as const;
 export type SettingsTab = (typeof TABS)[number];
 type TabId = SettingsTab;
 
 const TAB_LABELS: Record<TabId, MessageKey> = {
   general: "settings.tab.general",
   video: "settings.tab.video",
+  audio: "settings.tab.audio",
   document: "settings.tab.document",
   agent: "settings.tab.agent",
   integrations: "settings.tab.integrations",
@@ -338,6 +347,26 @@ export function SettingsView({
               }
             />
           </>
+        )}
+      </div>
+
+      <div
+        role="tabpanel"
+        id="settings-panel-audio"
+        aria-labelledby="settings-tab-audio"
+        hidden={tab !== "audio"}
+        className={styles.panel}
+      >
+        {/* Same engine assets as the video tab; only the audio-domain
+           default engine choice differs (design-language 1.2 ruling). */}
+        {draft && (
+          <AsrSection
+            domain="audio"
+            asr={draft.asr}
+            onChange={(value) =>
+              setDraft((prev) => (prev ? { ...prev, asr: value } : prev))
+            }
+          />
         )}
       </div>
 

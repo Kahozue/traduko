@@ -510,5 +510,39 @@ test("model chip is locked while the task runs and engine chip shows", async () 
   );
   const chip = await screen.findByRole("button", { name: /glm · glm-4/ });
   expect(chip).toBeDisabled();
-  expect(screen.getByText("faster-whisper")).toBeInTheDocument();
+  const asrChip = screen.getByRole("button", { name: /ASR · faster-whisper/ });
+  expect(asrChip).toBeDisabled();
+});
+
+test("asr chip switches the engine in place", async () => {
+  const audioTask: TaskRecord = {
+    ...task,
+    stages: [
+      {
+        type: "asr",
+        status: "pending",
+        params: { engine: "auto_audio" },
+        pause_after: false,
+        artifacts: [],
+        error: null,
+      },
+    ],
+  };
+  const setTaskAsrEngine = vi.fn().mockResolvedValue(audioTask);
+  const api: Partial<ApiClient> = {
+    showTask: vi.fn().mockResolvedValue(audioTask),
+    getConfig: vi.fn().mockResolvedValue(CONFIG),
+    setTaskAsrEngine,
+  };
+  renderWithConnection(
+    <TaskDetailView project="default" taskId="t1" onBack={() => {}} onOpenEditor={() => {}} />,
+    { api },
+  );
+  const chip = await screen.findByRole("button", { name: /ASR · 自動/ });
+  await userEvent.click(chip);
+  await userEvent.selectOptions(screen.getByLabelText("語音辨識引擎"), "openai_gpt4o");
+  await userEvent.click(screen.getByRole("button", { name: "套用" }));
+  await waitFor(() =>
+    expect(setTaskAsrEngine).toHaveBeenCalledWith("default", "t1", "openai_gpt4o"),
+  );
 });

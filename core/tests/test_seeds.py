@@ -57,3 +57,21 @@ def test_workspace_open_seeds_defaults(tmp_path: Path) -> None:
     Workspace.open(tmp_path)
     for rel in SEED_FILES:
         assert (tmp_path / rel).is_file(), rel
+
+
+def test_audio_profiles_seeded_with_audio_kind(tmp_path):
+    from traduko.profiles import load_profile, profile_kind
+    from traduko.seeds import ensure_defaults
+
+    ensure_defaults(tmp_path)
+    for name in ("audio-transcribe", "audio-translate", "audio-dub"):
+        profile = load_profile(tmp_path, name)
+        assert profile_kind(profile) == "audio", name
+    transcribe = load_profile(tmp_path, "audio-transcribe")
+    types = [stage.type for stage in transcribe.stages]
+    assert types == ["extract_audio", "asr", "export_transcript"]
+    asr_stage = transcribe.stages[1]
+    assert asr_stage.params.get("engine") == "auto_audio"
+    dub = load_profile(tmp_path, "audio-dub")
+    assert dub.stages[-1].type == "export_audio"
+    assert any(stage.pause_after for stage in dub.stages)

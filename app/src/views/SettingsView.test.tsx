@@ -92,6 +92,7 @@ test("tabs render in order and default to the general tab", async () => {
   expect(tabs.map((el) => el.textContent)).toEqual([
     "一般",
     "影片",
+    "音頻",
     "文件",
     "Agent",
     "整合",
@@ -101,14 +102,17 @@ test("tabs render in order and default to the general tab", async () => {
     "aria-selected",
     "true",
   );
-  expect(screen.getByText("語音辨識")).not.toBeVisible();
+  for (const el of screen.getAllByText("語音辨識")) {
+    expect(el).not.toBeVisible();
+  }
 });
 
 test("switching to the video tab reveals the ASR section", async () => {
   setup();
   await screen.findByLabelText("預設專案");
   await userEvent.click(screen.getByRole("tab", { name: "影片" }));
-  expect(screen.getByText("語音辨識")).toBeVisible();
+  const asrTitles = screen.getAllByText("語音辨識");
+  expect(asrTitles.some((el) => el.checkVisibility?.() ?? true)).toBe(true);
   expect(screen.getByLabelText("預設專案")).not.toBeVisible();
 });
 

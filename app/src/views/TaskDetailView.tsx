@@ -29,7 +29,14 @@ const LLM_STAGE_TYPES = new Set([
 const REAL_PROVIDER_TYPES = new Set(["openai_compat", "anthropic", "gemini"]);
 const ASR_ENGINE_LABELS: Record<string, string> = {
   faster_whisper: "faster-whisper",
+  macos_native: "macOS 原生",
+  openai_whisper: "whisper-1",
+  openai_gpt4o_diarize: "gpt-4o-transcribe-diarize",
+  openai_gpt4o: "gpt-4o-transcribe",
+  openai_gpt4o_mini: "gpt-4o-mini-transcribe",
+  cloud_custom: "自訂端點",
 };
+const ASR_ENGINE_IDS = Object.keys(ASR_ENGINE_LABELS);
 
 // One-line human summary for an event's payload; the raw JSON stays in the
 // row's tooltip instead of being dumped into the timeline.
@@ -137,6 +144,15 @@ export function TaskDetailView({
       api.setTaskModel(project, taskId, provider, model),
     onSuccess: () => {
       setModelMenuOpen(false);
+      queryClient.invalidateQueries({ queryKey: ["task", project, taskId] });
+    },
+  });
+  const [asrMenuOpen, setAsrMenuOpen] = useState(false);
+  const [draftAsrEngine, setDraftAsrEngine] = useState("");
+  const setAsrEngine = useMutation({
+    mutationFn: (engine: string) => api.setTaskAsrEngine(project, taskId, engine),
+    onSuccess: () => {
+      setAsrMenuOpen(false);
       queryClient.invalidateQueries({ queryKey: ["task", project, taskId] });
     },
   });
@@ -248,13 +264,23 @@ export function TaskDetailView({
     : t("task.model.unset");
   const modelLocked = task.status === "running";
 
-  // Read-only engine chips; engine switching lands with the engine menus.
+  // Read-only engine chips; the ASR chip switches in place, TTS/PDF stay
+  // informational until their engines grow choices.
   const asrStage = task.stages.find((stage) => stage.type === "asr");
+  const asrEngineParam =
+    typeof asrStage?.params.engine === "string" ? asrStage.params.engine : "";
+  const asrProviderParam =
+    typeof asrStage?.params.provider === "string" ? asrStage.params.provider : "";
+  const asrExplicit =
+    asrEngineParam !== "" &&
+    asrEngineParam !== "auto" &&
+    asrEngineParam !== "auto_audio";
+  const asrChipLabel = asrExplicit
+    ? (ASR_ENGINE_LABELS[asrEngineParam] ?? asrEngineParam)
+    : asrProviderParam && !asrEngineParam
+      ? (ASR_ENGINE_LABELS[asrProviderParam] ?? asrProviderParam)
+      : t("task.asrEngine.auto");
   const engineChips: string[] = [];
-  if (asrStage) {
-    const engine = String(asrStage.params.provider ?? "faster_whisper");
-    engineChips.push(ASR_ENGINE_LABELS[engine] ?? engine);
-  }
   if (task.stages.some((stage) => stage.type === "tts_synthesize")) {
     engineChips.push("VoxCPM2");
   }
@@ -453,6 +479,60 @@ export function TaskDetailView({
               )}
             </span>
           </>
+        )}
+        {asrStage && (
+          <span className={styles.modelWrap}>
+            <button
+              type="button"
+              className={styles.modelChip}
+              disabled={modelLocked}
+              aria-expanded={asrMenuOpen}
+              title={t("task.asrEngine.title")}
+              onClick={() => {
+                setDraftAsrEngine(asrExplicit ? asrEngineParam : "");
+                setAsrMenuOpen((open) => !open);
+              }}
+            >
+              ASR · {asrChipLabel}
+            </button>
+            {asrMenuOpen && (
+              <div className={styles.modelMenu}>
+                <label className={styles.modelField}>
+                  {t("create.asrEngine")}
+                  <select
+                    className={styles.modelSelect}
+                    value={draftAsrEngine}
+                    onChange={(event) => setDraftAsrEngine(event.target.value)}
+                  >
+                    <option value="">{t("create.asrEngine.auto")}</option>
+                    {ASR_ENGINE_IDS.map((id) => (
+                      <option key={id} value={id}>
+                        {ASR_ENGINE_LABELS[id]}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <div className={styles.modelActions}>
+                  <button
+                    type="button"
+                    className={styles.secondary}
+                    disabled={setAsrEngine.isPending}
+                    onClick={() => setAsrEngine.mutate("")}
+                  >
+                    {t("task.model.reset")}
+                  </button>
+                  <button
+                    type="button"
+                    className={styles.primary}
+                    disabled={setAsrEngine.isPending}
+                    onClick={() => setAsrEngine.mutate(draftAsrEngine)}
+                  >
+                    {t("task.model.apply")}
+                  </button>
+                </div>
+              </div>
+            )}
+          </span>
         )}
         {engineChips.map((chip) => (
           <span key={chip} className={styles.engineChip} title={t("task.engine.title")}>

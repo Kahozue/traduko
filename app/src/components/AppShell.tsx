@@ -13,6 +13,7 @@ export type NavKey = "tasks" | "budget" | "settings";
 // that filters the task list. `null` is the "all" entry at the top.
 const TASK_KINDS: { kind: TaskKind; label: MessageKey; icon: IconName }[] = [
   { kind: "video", label: "create.kind.video", icon: "film" },
+  { kind: "audio", label: "create.kind.audio", icon: "audio-lines" },
   { kind: "document", label: "create.kind.document", icon: "file-text" },
   { kind: "comic", label: "create.kind.comic", icon: "book-open" },
 ];

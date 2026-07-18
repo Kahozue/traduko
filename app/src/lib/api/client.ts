@@ -46,6 +46,8 @@ export interface TaskCreateBody {
   // Per-task LLM override written into the task's LLM stage params.
   provider?: string;
   model?: string;
+  // Per-task ASR engine override written into asr stage params.
+  asr_engine?: string;
 }
 
 export class ApiClient {
@@ -181,6 +183,18 @@ export class ApiClient {
     return this.request(`/tasks/${project}/${taskId}`, {
       method: "PATCH",
       body: JSON.stringify({ provider, model }),
+    });
+  }
+
+  // Per-task ASR engine; an empty string removes the override.
+  setTaskAsrEngine(
+    project: string,
+    taskId: string,
+    engine: string,
+  ): Promise<TaskRecord> {
+    return this.request(`/tasks/${project}/${taskId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ asr_engine: engine }),
     });
   }
 

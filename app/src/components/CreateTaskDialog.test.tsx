@@ -181,3 +181,34 @@ test("auto provider sends no override fields", async () => {
   expect(body.provider).toBeUndefined();
   expect(body.model).toBeUndefined();
 });
+
+test("audio kind offers profiles and a per-task ASR engine", async () => {
+  openMock.mockResolvedValue("/tmp/talk.mp3");
+  const createTask = vi.fn().mockResolvedValue({ id: "a1", project: "default" });
+  const api: Partial<ApiClient> = {
+    profilesDetailed: vi.fn().mockResolvedValue([
+      ...DETAILED,
+      { name: "audio-transcribe", kind: "audio" } as ProfileInfo,
+    ]),
+    createTask,
+  };
+  renderWithConnection(<CreateTaskDialog onClose={() => {}} onCreated={() => {}} />, { api });
+
+  await waitFor(() => expect(screen.getByRole("button", { name: /音頻/ })).toBeEnabled());
+  await userEvent.click(screen.getByRole("button", { name: /音頻/ }));
+  await userEvent.click(screen.getByText("選擇檔案"));
+  await waitFor(() => expect(screen.getByDisplayValue("/tmp/talk.mp3")).toBeInTheDocument());
+  await userEvent.selectOptions(
+    screen.getByLabelText("語音辨識引擎"),
+    "openai_gpt4o",
+  );
+  await userEvent.click(screen.getByText("建立"));
+  await waitFor(() =>
+    expect(createTask).toHaveBeenCalledWith(
+      expect.objectContaining({
+        profile: "audio-transcribe",
+        asr_engine: "openai_gpt4o",
+      }),
+    ),
+  );
+});

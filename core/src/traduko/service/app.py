@@ -73,7 +73,7 @@ from .. import proposals, skillhub
 from ..skillhub import SkillsManager, SkillValidationError
 from ..styles import SubtitleStyle
 from ..styles_render import render_style_frame
-from ..tasks import apply_model_override
+from ..tasks import apply_asr_engine_override, apply_model_override
 from ..sync.engine import (
     SyncConfigError,
     SyncEngine,
@@ -275,6 +275,8 @@ class TaskCreateRequest(BaseModel):
     # Optional per-task LLM override, written into every LLM stage's params.
     provider: str | None = None
     model: str | None = None
+    # Optional per-task ASR engine override, written into asr stage params.
+    asr_engine: str | None = None
 
 
 def _load_task(ws: Workspace, project: str, task_id: str) -> TaskRecord:
@@ -313,8 +315,9 @@ def create_task(request: Request, body: TaskCreateRequest) -> dict:
         stages=stage_records_from(profile),
         name=body.name,
     )
-    if body.provider or body.model:
+    if body.provider or body.model or body.asr_engine:
         apply_model_override(record, body.provider or None, body.model or None)
+        apply_asr_engine_override(record, body.asr_engine or None)
         ws.store.save(record)
     return record.model_dump()
 
@@ -348,6 +351,8 @@ class TaskUpdateRequest(BaseModel):
     # Per-task LLM override; "" resets to follow-default, None leaves as is.
     provider: str | None = None
     model: str | None = None
+    # Per-task ASR engine; "" removes the override, None leaves as is.
+    asr_engine: str | None = None
 
 
 @router.patch("/tasks/{project}/{task_id}")
@@ -361,9 +366,11 @@ def update_task(
         and body.project is None
         and body.provider is None
         and body.model is None
+        and body.asr_engine is None
     ):
         raise HTTPException(
-            status_code=422, detail="name, project, provider or model required"
+            status_code=422,
+            detail="name, project, provider, model or asr_engine required",
         )
     name_changed = False
     if body.name is not None:
@@ -373,11 +380,16 @@ def update_task(
         record.name = name
         name_changed = True
     model_changed = False
-    if body.provider is not None or body.model is not None:
+    if (
+        body.provider is not None
+        or body.model is not None
+        or body.asr_engine is not None
+    ):
         worker: TaskWorker = request.app.state.worker
         if worker.is_active(project, task_id):
             raise HTTPException(status_code=409, detail="task is queued or running")
         apply_model_override(record, body.provider, body.model)
+        apply_asr_engine_override(record, body.asr_engine)
         model_changed = True
     if body.project is not None:
         new_project = body.project.strip()

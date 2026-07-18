@@ -33,6 +33,7 @@ const COLLAPSE_KEY = "traduko.tasks.collapsed";
 
 const KIND_LABEL: Record<TaskKind, string> = {
   video: t("create.kind.video"),
+  audio: t("create.kind.audio"),
   document: t("create.kind.document"),
   comic: t("create.kind.comic"),
 };

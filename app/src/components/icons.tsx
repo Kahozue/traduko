@@ -18,10 +18,14 @@ export type IconName =
   | "film"
   | "file-text"
   | "book-open"
+  | "audio-lines"
   | "chevron-down";
 
 const GLYPHS: Record<IconName, ReactNode> = {
   "chevron-down": <path d="m6 9 6 6 6-6" />,
+  "audio-lines": (
+    <path d="M2 10v3M6 6v11M10 3v18M14 8v7M18 5v13M22 10v3" />
+  ),
   pencil: (
     <>
       <path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z" />

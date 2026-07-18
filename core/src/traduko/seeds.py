@@ -148,6 +148,81 @@ stages:
       target_lang: en
 """
 
+_PROFILE_AUDIO_TRANSCRIBE = """\
+# Audio transcript pipeline: audio file in, plain transcript out.
+# engine: auto_audio uses the audio-domain default from the settings audio
+# tab; timestampless engines (gpt-4o-transcribe) are fine here because no
+# subtitle timing is needed.
+schema_version: 1
+name: audio-transcribe
+kind: audio
+stages:
+  - type: extract_audio
+  - type: asr
+    params:
+      engine: auto_audio
+  - type: export_transcript
+"""
+
+_PROFILE_AUDIO_TRANSLATE = """\
+# Audio translation pipeline: audio in, translated transcript + srt out.
+# The segment stage needs timestamps, so pick a timestamped engine
+# (whisper-1, faster-whisper or macOS native) as the audio default; the
+# preflight blocks timestampless engines here with a clear message.
+# Set target_language before real use.
+schema_version: 1
+name: audio-translate
+kind: audio
+stages:
+  - type: extract_audio
+  - type: asr
+    params:
+      engine: auto_audio
+  - type: segment
+  - type: translate
+    params:
+      provider: fake
+      target_language: en
+  - type: proofread
+    params:
+      provider: fake
+      intensity: fast
+  - type: export_transcript
+  - type: export_subtitles
+    params:
+      formats: [srt]
+"""
+
+_PROFILE_AUDIO_DUB = """\
+# Audio dubbing pipeline: audio in, dubbed audio file out. Needs a
+# timestamped ASR engine plus the dubbing engine and Hugging Face token
+# from the settings video tab. Pauses after diarize for speaker review.
+# Set target_language before real use.
+schema_version: 1
+name: audio-dub
+kind: audio
+stages:
+  - type: extract_audio
+  - type: asr
+    params:
+      engine: auto_audio
+  - type: segment
+  - type: translate
+    params:
+      provider: fake
+      target_language: en
+  - type: proofread
+    params:
+      provider: fake
+      intensity: fast
+  - type: diarize
+    pause_after: true
+  - type: tts_synthesize
+  - type: align_duration
+  - type: mix_audio
+  - type: export_audio
+"""
+
 _STYLES_DEFAULT = """\
 # Named subtitle style presets (ASS-based), referenced by style_preset.
 default:
@@ -179,6 +254,9 @@ def ensure_defaults(root: Path) -> None:
         "profiles/novel-translate.yaml": _PROFILE_NOVEL_TRANSLATE,
         "profiles/av-dub.yaml": _PROFILE_AV_DUB,
         "profiles/translate-pdf.yaml": _PROFILE_TRANSLATE_PDF,
+        "profiles/audio-transcribe.yaml": _PROFILE_AUDIO_TRANSCRIBE,
+        "profiles/audio-translate.yaml": _PROFILE_AUDIO_TRANSLATE,
+        "profiles/audio-dub.yaml": _PROFILE_AUDIO_DUB,
         "prompts/translate.txt": DEFAULT_TRANSLATE_TEMPLATE,
         "prompts/proofread.txt": DEFAULT_PROOFREAD_TEMPLATE,
         "prompts/doc-translate.txt": DEFAULT_DOC_TRANSLATE_TEMPLATE,

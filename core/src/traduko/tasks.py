@@ -42,6 +42,21 @@ def apply_model_override(
                 stage.params.pop("model", None)
 
 
+def apply_asr_engine_override(record: TaskRecord, engine: str | None) -> None:
+    """Per-task ASR engine choice on every asr stage. None leaves things
+    untouched; an empty string removes the override so the profile default
+    (or the settings default) applies again."""
+    if engine is None:
+        return
+    for stage in record.stages:
+        if stage.type != "asr":
+            continue
+        if engine:
+            stage.params["engine"] = engine
+        else:
+            stage.params.pop("engine", None)
+
+
 class TaskStore:
     def __init__(self, root: Path, index: "TaskIndex | None" = None) -> None:
         self.root = root

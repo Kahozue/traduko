@@ -14,6 +14,7 @@ import styles from "./CreateTaskDialog.module.css";
 // filters the profile list. A type with no profiles yet still shows, disabled.
 const TASK_TYPES: { kind: TaskKind; label: MessageKey; icon: IconName }[] = [
   { kind: "video", label: "create.kind.video", icon: "film" },
+  { kind: "audio", label: "create.kind.audio", icon: "audio-lines" },
   { kind: "document", label: "create.kind.document", icon: "file-text" },
   { kind: "comic", label: "create.kind.comic", icon: "book-open" },
 ];
@@ -27,15 +28,29 @@ const KIND_EXTENSIONS: Record<TaskKind, string[]> = {
     "mp4", "mkv", "mov", "webm", "avi", "flv", "m4v",
     "mp3", "wav", "m4a", "aac", "flac", "ogg",
   ],
+  audio: ["mp3", "wav", "m4a", "aac", "flac", "ogg", "opus", "aiff", "wma"],
   document: ["txt", "md", "markdown", "epub", "html", "htm", "pdf"],
   comic: ["png", "jpg", "jpeg", "webp", "cbz", "zip"],
 };
 
 const KIND_FILTER_LABELS: Record<TaskKind, MessageKey> = {
   video: "create.fileFilter.video",
+  audio: "create.fileFilter.audio",
   document: "create.fileFilter.document",
   comic: "create.fileFilter.comic",
 };
+
+// Engine choices for the audio kind's per-task ASR override, mirroring the
+// settings menu; ids match core asr/engines.py.
+const ASR_ENGINE_OPTIONS: { id: string; label: MessageKey }[] = [
+  { id: "faster_whisper", label: "settings.asr.engine.fasterWhisper" },
+  { id: "macos_native", label: "settings.asr.engine.macos" },
+  { id: "openai_whisper", label: "settings.asr.engine.openaiWhisper" },
+  { id: "openai_gpt4o_diarize", label: "settings.asr.engine.gpt4oDiarize" },
+  { id: "openai_gpt4o", label: "settings.asr.engine.gpt4o" },
+  { id: "openai_gpt4o_mini", label: "settings.asr.engine.gpt4oMini" },
+  { id: "cloud_custom", label: "settings.asr.engine.custom" },
+];
 
 export function CreateTaskDialog({
   onClose,
@@ -57,6 +72,8 @@ export function CreateTaskDialog({
   // Per-task LLM override; empty means "follow the configured default".
   const [providerSel, setProviderSel] = useState("");
   const [model, setModel] = useState("");
+  // Per-task ASR engine override for the audio kind; empty follows defaults.
+  const [asrEngine, setAsrEngine] = useState("");
   const { data: profiles } = useQuery({
     queryKey: ["profiles-detailed"],
     queryFn: () => api.profilesDetailed(),
@@ -153,6 +170,7 @@ export function CreateTaskDialog({
         name: name.trim() === "" ? undefined : name.trim(),
         ...(providerSel !== "" ? { provider: providerSel } : {}),
         ...(model.trim() !== "" ? { model: model.trim() } : {}),
+        ...(kind === "audio" && asrEngine !== "" ? { asr_engine: asrEngine } : {}),
       }),
     onSuccess: (task) => {
       queryClient.invalidateQueries({ queryKey: ["tasks"] });
@@ -237,6 +255,24 @@ export function CreateTaskDialog({
               {kindProfiles.map((info) => (
                 <option key={info.name} value={info.name}>
                   {info.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+
+        {kind === "audio" && (
+          <label className={styles.label}>
+            {t("create.asrEngine")}
+            <select
+              className={styles.input}
+              value={asrEngine}
+              onChange={(event) => setAsrEngine(event.target.value)}
+            >
+              <option value="">{t("create.asrEngine.auto")}</option>
+              {ASR_ENGINE_OPTIONS.map((option) => (
+                <option key={option.id} value={option.id}>
+                  {t(option.label)}
                 </option>
               ))}
             </select>

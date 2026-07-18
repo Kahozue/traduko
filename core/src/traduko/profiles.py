@@ -18,6 +18,8 @@ class ProfileStage(BaseModel):
 class Profile(BaseModel):
     schema_version: int = 1
     name: str
+    # Explicit task domain; wins over stage inference when set.
+    kind: str = ""
     stages: list[ProfileStage]
 
 
@@ -54,12 +56,19 @@ _DOCUMENT_STAGES = {
     "translate_pdf",
 }
 _COMIC_STAGES = {"ingest_comic", "bubble_detect", "ocr", "inpaint", "typeset"}
+_AUDIO_STAGES = {"export_transcript", "export_audio"}
+
+_KNOWN_KINDS = {"video", "audio", "document", "comic"}
 
 
 def profile_kind(profile: Profile) -> str:
+    if profile.kind in _KNOWN_KINDS:
+        return profile.kind
     types = {stage.type for stage in profile.stages}
     if types & _COMIC_STAGES:
         return "comic"
+    if types & _AUDIO_STAGES:
+        return "audio"
     if types & _DOCUMENT_STAGES:
         return "document"
     return "video"

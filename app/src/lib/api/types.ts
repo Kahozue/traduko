@@ -41,7 +41,7 @@ export interface TaskIndexRow {
   updated_at: string;
 }
 
-export type TaskKind = "video" | "document" | "comic";
+export type TaskKind = "video" | "audio" | "document" | "comic";
 
 export interface ProfileInfo {
   name: string;

@@ -1632,3 +1632,30 @@ def test_asr_test_routes_by_engine(tmp_path: Path) -> None:
         # No key configured: the cloud test fails with a clear error.
         assert body["ok"] is False
         assert "key" in (body.get("error") or "")
+
+
+def test_create_and_patch_asr_engine(tmp_path: Path) -> None:
+    with service(tmp_path) as (client, headers, token):
+        create_profile(tmp_path, "with-asr", ["extract_audio", "asr", "export_transcript"])
+        response = client.post(
+            "/tasks",
+            json={
+                "input_path": str(make_input(tmp_path)),
+                "profile": "with-asr",
+                "asr_engine": "openai_gpt4o",
+            },
+            headers=headers,
+        )
+        assert response.status_code == 201, response.text
+        task = response.json()
+        by_type = {s["type"]: s for s in task["stages"]}
+        assert by_type["asr"]["params"]["engine"] == "openai_gpt4o"
+        url = f"/tasks/default/{task['id']}"
+        patched = client.patch(url, json={"asr_engine": "openai_whisper"}, headers=headers)
+        assert patched.status_code == 200
+        by_type = {s["type"]: s for s in patched.json()["stages"]}
+        assert by_type["asr"]["params"]["engine"] == "openai_whisper"
+        # Empty string removes the override, restoring the profile default.
+        reset = client.patch(url, json={"asr_engine": ""}, headers=headers)
+        by_type = {s["type"]: s for s in reset.json()["stages"]}
+        assert "engine" not in by_type["asr"]["params"]
