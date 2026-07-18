@@ -263,3 +263,15 @@ def test_v2_04_yaml_migrates_confirmed_and_persists(tmp_path: Path) -> None:
     data = yaml.safe_load(path.read_text(encoding="utf-8"))
     assert data["mcp_servers"]["files"]["confirmed"] is True
     assert data["skills"]["legacy-style"]["confirmed"] is True
+
+
+def test_dubbing_config_round_trip(tmp_path: Path) -> None:
+    config = CoreConfig()
+    assert config.dubbing.hf_token == ""
+    assert config.dubbing.python == ""
+    config.dubbing.hf_token = "hf_abc"
+    config.dubbing.python = "/opt/py311/bin/python"
+    save_config(tmp_path, config)
+    loaded = load_config(tmp_path)
+    assert loaded.dubbing.hf_token == "hf_abc"
+    assert loaded.dubbing.python == "/opt/py311/bin/python"

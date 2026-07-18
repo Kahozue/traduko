@@ -104,6 +104,17 @@ class SkillConfig(BaseModel):
     confirmed: bool = False
 
 
+class DubbingConfig(BaseModel):
+    """Dubbing engine settings. hf_token unlocks the gated pyannote
+    diarization model; python overrides interpreter discovery for the
+    engine venv (VoxCPM needs >=3.10 <3.13)."""
+
+    model_config = ConfigDict(extra="allow")
+
+    hf_token: str = ""
+    python: str = ""
+
+
 class CoreConfig(BaseModel):
     model_config = ConfigDict(extra="allow")
 
@@ -116,6 +127,7 @@ class CoreConfig(BaseModel):
     sync: SyncConfig = Field(default_factory=SyncConfig)
     mcp_servers: dict[str, McpServerConfig] = Field(default_factory=dict)
     skills: dict[str, SkillConfig] = Field(default_factory=dict)
+    dubbing: DubbingConfig = Field(default_factory=DubbingConfig)
 
 
 def _migrate_confirmed(data: dict) -> None:
