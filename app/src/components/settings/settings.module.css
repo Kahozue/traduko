@@ -989,3 +989,35 @@ select.input {
   gap: 8px;
   margin-top: 16px;
 }
+
+.asrInput {
+  width: 220px;
+  height: 32px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-s);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font-size: var(--fs-body);
+}
+
+.asrInputWide {
+  width: 320px;
+  height: 32px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-s);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font-size: var(--fs-body);
+}
+
+/* Timestampless-engine caveat: semantic color always paired with an icon. */
+.asrWarnNote {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  color: var(--warn);
+  font-size: var(--fs-note);
+}

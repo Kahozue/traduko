@@ -124,6 +124,32 @@ class PdfEngineConfig(BaseModel):
     python: str = ""
 
 
+class AsrConfig(BaseModel):
+    """Speech-recognition engine defaults. `engine` is the video domain's
+    default engine id; `audio_engine` the audio domain's (empty = follow
+    `engine`). Cloud credentials are shared by the OpenAI engine entries;
+    the custom entry carries its own endpoint."""
+
+    model_config = ConfigDict(extra="allow")
+
+    engine: str = "faster_whisper"
+    audio_engine: str = ""
+    # faster-whisper model size (also the settings download target).
+    model: str = "small"
+    # macOS native: BCP-47 locale; empty means follow the task language.
+    macos_locale: str = ""
+    cloud_base_url: str = "https://api.openai.com/v1"
+    cloud_api_key: str = ""
+    cloud_api_key_env: str = ""
+    custom_base_url: str = ""
+    custom_api_key: str = ""
+    custom_api_key_env: str = ""
+    custom_model: str = ""
+    # Bias whisper-1 / gpt-4o transcription toward Traditional Chinese
+    # output on Chinese audio via the documented prompt parameter.
+    zh_prompt: bool = True
+
+
 class CoreConfig(BaseModel):
     model_config = ConfigDict(extra="allow")
 
@@ -139,6 +165,7 @@ class CoreConfig(BaseModel):
     skills: dict[str, SkillConfig] = Field(default_factory=dict)
     dubbing: DubbingConfig = Field(default_factory=DubbingConfig)
     pdf: PdfEngineConfig = Field(default_factory=PdfEngineConfig)
+    asr: AsrConfig = Field(default_factory=AsrConfig)
 
 
 def _migrate_confirmed(data: dict) -> None:

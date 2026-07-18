@@ -295,3 +295,28 @@ def test_resolve_provider_name_fallbacks(tmp_path: Path) -> None:
     assert resolve_provider_name(config, None) == "fake"
     config.default_provider = "b"
     assert resolve_provider_name(config, "fake") == "b"
+
+
+def test_asr_config_defaults_and_roundtrip(tmp_path):
+    from traduko.config import AsrConfig, CoreConfig, load_config, save_config
+
+    config = CoreConfig()
+    assert config.asr.engine == "faster_whisper"
+    assert config.asr.audio_engine == ""
+    assert config.asr.model == "small"
+    assert config.asr.zh_prompt is True
+    config.asr = AsrConfig(
+        engine="openai_whisper",
+        audio_engine="openai_gpt4o",
+        model="medium",
+        cloud_api_key="sk-x",
+        custom_base_url="https://groq.example/v1",
+        custom_model="whisper-large-v3",
+    )
+    save_config(tmp_path, config)
+    loaded = load_config(tmp_path)
+    assert loaded.asr.engine == "openai_whisper"
+    assert loaded.asr.audio_engine == "openai_gpt4o"
+    assert loaded.asr.model == "medium"
+    assert loaded.asr.cloud_api_key == "sk-x"
+    assert loaded.asr.custom_model == "whisper-large-v3"

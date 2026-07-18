@@ -1595,3 +1595,40 @@ def test_patch_model_override_rejected_while_active(tmp_path: Path) -> None:
         assert denied.status_code == 409
         ServiceGateStage.gate.set()
         wait_completed(client, headers, "default", task_id)
+
+
+def test_asr_engines_endpoint_lists_catalog_and_macos_status(tmp_path: Path) -> None:
+    with service(tmp_path) as (client, headers, token):
+        response = client.get("/asr/engines", headers=headers)
+        assert response.status_code == 200
+        body = response.json()
+        ids = [engine["id"] for engine in body["engines"]]
+        assert "faster_whisper" in ids
+        assert "openai_gpt4o" in ids
+        gpt4o = next(e for e in body["engines"] if e["id"] == "openai_gpt4o")
+        assert gpt4o["timestamps"] is False
+        assert "macos" in body
+        assert "available" in body["macos"]
+        assert body["cloud_key_present"] is False
+
+
+def test_asr_macos_assets_endpoint_gates_unavailable(tmp_path: Path) -> None:
+    with service(tmp_path) as (client, headers, token):
+        # On an unavailable helper (non-macOS CI or uncompiled), the assets
+        # endpoint refuses instead of spawning a doomed download.
+        response = client.post(
+            "/asr/macos/assets", json={"locale": "zh-TW"}, headers=headers
+        )
+        assert response.status_code in (202, 409)
+
+
+def test_asr_test_routes_by_engine(tmp_path: Path) -> None:
+    with service(tmp_path) as (client, headers, token):
+        response = client.post(
+            "/asr/test", json={"engine": "openai_whisper"}, headers=headers
+        )
+        assert response.status_code == 200
+        body = response.json()
+        # No key configured: the cloud test fails with a clear error.
+        assert body["ok"] is False
+        assert "key" in (body.get("error") or "")

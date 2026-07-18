@@ -159,3 +159,64 @@ def test_extract_and_probe_integration(tmp_path: Path) -> None:
     run(build_extract_audio_cmd(clip, wav))
     assert wav.exists() and wav.stat().st_size > 0
     assert probe_duration(clip) == pytest.approx(1.0, abs=0.3)
+
+
+def test_build_silence_detect_and_chunk_cmds() -> None:
+    from pathlib import Path
+
+    from traduko.media import build_chunk_flac_cmd, build_silence_detect_cmd
+
+    detect = build_silence_detect_cmd(Path("in.wav"))
+    assert detect[0] == "ffmpeg"
+    assert any("silencedetect" in part for part in detect)
+    chunk = build_chunk_flac_cmd(Path("in.wav"), 12.5, 30.0, Path("out.flac"))
+    assert "-ss" in chunk and "12.5" in chunk
+    assert "-t" in chunk and "30.0" in chunk
+    assert "flac" in chunk
+    assert "16000" in chunk
+
+
+def test_parse_silences_extracts_midpoints() -> None:
+    from traduko.media import parse_silences
+
+    stderr = "\n".join(
+        [
+            "[silencedetect @ 0x0] silence_start: 10.2",
+            "[silencedetect @ 0x0] silence_end: 11.0 | silence_duration: 0.8",
+            "noise line",
+            "[silencedetect @ 0x0] silence_start: 55.5",
+            "[silencedetect @ 0x0] silence_end: 56.5 | silence_duration: 1.0",
+        ]
+    )
+    assert parse_silences(stderr) == [(10.2, 11.0), (55.5, 56.5)]
+
+
+def test_plan_chunks_prefers_silence_boundaries() -> None:
+    from traduko.media import plan_chunks
+
+    # 30-minute file, silences near 9 and 19 minutes; target 10-minute
+    # chunks with a 14-minute hard cap.
+    silences = [(540.0, 541.0), (1140.0, 1141.0)]
+    chunks = plan_chunks(1800.0, silences, target=600.0, hard_max=840.0)
+    assert chunks[0] == (0.0, 540.5)
+    assert chunks[1][0] == 540.5
+    # Every chunk respects the hard cap and they tile the duration.
+    assert all(end - start <= 840.0 for start, end in chunks)
+    assert chunks[-1][1] == 1800.0
+    for (a, b), (c, d) in zip(chunks, chunks[1:]):
+        assert b == c
+
+
+def test_plan_chunks_without_silence_cuts_at_hard_max() -> None:
+    from traduko.media import plan_chunks
+
+    chunks = plan_chunks(2000.0, [], target=600.0, hard_max=840.0)
+    assert all(end - start <= 840.0 for start, end in chunks)
+    assert chunks[-1][1] == 2000.0
+    assert chunks[0] == (0.0, 840.0)
+
+
+def test_plan_chunks_short_file_is_single_chunk() -> None:
+    from traduko.media import plan_chunks
+
+    assert plan_chunks(120.0, [], target=600.0, hard_max=840.0) == [(0.0, 120.0)]

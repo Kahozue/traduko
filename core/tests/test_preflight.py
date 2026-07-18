@@ -289,3 +289,51 @@ def test_pdf_engine_installed_ok(tmp_path: Path) -> None:
     assert report.ok is True
     check = next(c for c in report.checks if "pdf engine" in c.name)
     assert check.level == OK
+
+
+def _asr_config(tmp_path: Path, **asr_kwargs) -> None:
+    from traduko.config import AsrConfig
+
+    save_config(tmp_path, CoreConfig(asr=AsrConfig(**asr_kwargs)))
+
+
+def test_asr_cloud_engine_missing_key_fails(tmp_path: Path) -> None:
+    _asr_config(tmp_path, engine="openai_whisper", cloud_api_key="")
+    record = make_record(tmp_path, [StageRecord(type="asr")])
+    report = run_preflight(record, tmp_path)
+    check = next(c for c in report.checks if "asr" in c.name)
+    assert check.level == FAIL
+    assert "key" in check.message
+
+
+def test_asr_cloud_engine_with_key_ok(tmp_path: Path) -> None:
+    _asr_config(tmp_path, engine="openai_whisper", cloud_api_key="sk-1")
+    record = make_record(tmp_path, [StageRecord(type="asr")])
+    report = run_preflight(record, tmp_path)
+    check = next(c for c in report.checks if "asr" in c.name)
+    assert check.level == OK
+
+
+def test_asr_custom_engine_requires_base_url(tmp_path: Path) -> None:
+    _asr_config(tmp_path, engine="cloud_custom", custom_base_url="")
+    record = make_record(tmp_path, [StageRecord(type="asr")])
+    report = run_preflight(record, tmp_path)
+    check = next(c for c in report.checks if "asr" in c.name)
+    assert check.level == FAIL
+
+
+def test_asr_timestampless_engine_with_segment_stage_fails(tmp_path: Path) -> None:
+    _asr_config(tmp_path, engine="openai_gpt4o", cloud_api_key="sk-1")
+    record = make_record(
+        tmp_path, [StageRecord(type="asr"), StageRecord(type="segment")]
+    )
+    report = run_preflight(record, tmp_path)
+    failures = [c.message for c in report.failures()]
+    assert any("timestamp" in message for message in failures)
+
+
+def test_asr_timestampless_engine_without_segment_is_fine(tmp_path: Path) -> None:
+    _asr_config(tmp_path, engine="openai_gpt4o", cloud_api_key="sk-1")
+    record = make_record(tmp_path, [StageRecord(type="asr")])
+    report = run_preflight(record, tmp_path)
+    assert not any("timestamp" in c.message for c in report.failures())

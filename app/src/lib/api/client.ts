@@ -1,5 +1,6 @@
 import type {
   ArtifactListItem,
+  AsrEnginesInfo,
   AsrStatus,
   AsrTestResult,
   DubbingStatus,
@@ -189,6 +190,25 @@ export class ApiClient {
 
   getAsrStatus(model: string): Promise<AsrStatus> {
     return this.request(`/asr/status?model=${encodeURIComponent(model)}`);
+  }
+
+  getAsrEngines(macosProbe = false): Promise<AsrEnginesInfo> {
+    return this.request(`/asr/engines${macosProbe ? "?macos_probe=true" : ""}`);
+  }
+
+  downloadMacosAssets(locale: string): Promise<{ downloading: boolean; locale: string }> {
+    return this.request("/asr/macos/assets", {
+      method: "POST",
+      body: JSON.stringify({ locale }),
+    });
+  }
+
+  testAsrEngine(body: {
+    engine: string;
+    model?: string;
+    locale?: string;
+  }): Promise<AsrTestResult> {
+    return this.request("/asr/test", { method: "POST", body: JSON.stringify(body) });
   }
 
   downloadAsrModel(model: string): Promise<{ downloading: boolean; model: string }> {

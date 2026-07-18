@@ -131,6 +131,20 @@ test("config endpoints round trip", async () => {
     skills: {},
     dubbing: { hf_token: "", python: "" },
     pdf: { python: "" },
+    asr: {
+      engine: "faster_whisper",
+      audio_engine: "",
+      model: "small",
+      macos_locale: "",
+      cloud_base_url: "https://api.openai.com/v1",
+      cloud_api_key: "",
+      cloud_api_key_env: "",
+      custom_base_url: "",
+      custom_api_key: "",
+      custom_api_key_env: "",
+      custom_model: "",
+      zh_prompt: true,
+    },
   } as CoreConfigDoc;
   const fetchFn = vi.fn().mockResolvedValue(jsonResponse(200, doc));
   const client = new ApiClient("http://127.0.0.1:8686", "tok", fetchFn);

@@ -217,3 +217,83 @@ def test_translate_stage_manual_pause_raises_pause_requested(tmp_path: Path) -> 
     ctx.should_pause = lambda: True
     with pytest.raises(base.PauseRequested):
         registry.create("translate").run(ctx)
+
+
+@register_asr("fake-textonly")
+class FakeTextOnlyAsr:
+    def __init__(self, **_params) -> None:
+        pass
+
+    def transcribe(self, audio_path, *, language=None, on_progress=None):
+        return AsrResult(
+            language="ja",
+            duration=5.0,
+            segments=[AsrSegment(start=0.0, end=0.0, text="text only", speaker="A")],
+            timestamps=False,
+        )
+
+
+def test_asr_stage_resolves_engine_from_config(tmp_path: Path, monkeypatch) -> None:
+    # No provider/engine params: the configured default engine applies and
+    # its mapped options reach the provider constructor.
+    captured = {}
+
+    def fake_engine_provider(engine_id, config):
+        captured["engine"] = engine_id
+        return "fake-asr", {"model_size": "medium"}, True
+
+    monkeypatch.setattr("traduko.stages.av.engine_provider", fake_engine_provider)
+    src = tmp_path / "in.wav"
+    src.write_bytes(b"RIFF")
+    ctx, _ = make_ctx(tmp_path, src)
+    registry.create("asr").run(ctx)
+    assert captured["engine"] == "faster_whisper"
+    data = ctx.artifacts.read_latest_json("asr.json")
+    assert data["timestamps"] is True
+
+
+def test_asr_stage_records_missing_timestamps_and_speaker(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setattr(
+        "traduko.stages.av.engine_provider",
+        lambda engine_id, config: ("fake-textonly", {}, False),
+    )
+    src = tmp_path / "in.wav"
+    src.write_bytes(b"RIFF")
+    ctx, _ = make_ctx(tmp_path, src, params={"engine": "openai_gpt4o"})
+    registry.create("asr").run(ctx)
+    data = ctx.artifacts.read_latest_json("asr.json")
+    assert data["timestamps"] is False
+    assert data["segments"][0]["speaker"] == "A"
+
+
+def test_segment_stage_refuses_timestampless_asr(tmp_path: Path) -> None:
+    ctx, _ = make_ctx(tmp_path, tmp_path / "in.mp4", stage_index=1)
+    ctx.artifacts.write_json(
+        1,
+        "asr.json",
+        {
+            "language": "ja",
+            "duration": 5.0,
+            "timestamps": False,
+            "segments": [{"id": 1, "start": 0.0, "end": 0.0, "text": "x"}],
+        },
+    )
+    with pytest.raises(base.StageError, match="timestamp"):
+        registry.create("segment").run(ctx)
+
+
+def test_segment_stage_accepts_legacy_asr_without_flag(tmp_path: Path) -> None:
+    ctx, _ = make_ctx(tmp_path, tmp_path / "in.mp4", stage_index=1)
+    ctx.artifacts.write_json(
+        1,
+        "asr.json",
+        {
+            "language": "en",
+            "duration": 2.0,
+            "segments": [{"id": 1, "start": 0.0, "end": 1.0, "text": "hi"}],
+        },
+    )
+    result = registry.create("segment").run(ctx)
+    assert result.artifacts == ["02-segments.json"]

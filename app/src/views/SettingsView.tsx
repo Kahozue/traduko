@@ -80,6 +80,22 @@ function normalize(config: CoreConfigDoc): CoreConfigDoc {
   if (!next.skills) next.skills = {};
   if (!next.dubbing) next.dubbing = { hf_token: "", python: "" };
   if (!next.pdf) next.pdf = { python: "" };
+  if (!next.asr) {
+    next.asr = {
+      engine: "faster_whisper",
+      audio_engine: "",
+      model: "small",
+      macos_locale: "",
+      cloud_base_url: "https://api.openai.com/v1",
+      cloud_api_key: "",
+      cloud_api_key_env: "",
+      custom_base_url: "",
+      custom_api_key: "",
+      custom_api_key_env: "",
+      custom_model: "",
+      zh_prompt: true,
+    };
+  }
   return next;
 }
 
@@ -307,14 +323,21 @@ export function SettingsView({
         hidden={tab !== "video"}
         className={styles.panel}
       >
-        <AsrSection />
         {draft && (
-          <DubbingSection
-            dubbing={draft.dubbing}
-            onChange={(value) =>
-              setDraft((prev) => (prev ? { ...prev, dubbing: value } : prev))
-            }
-          />
+          <>
+            <AsrSection
+              asr={draft.asr}
+              onChange={(value) =>
+                setDraft((prev) => (prev ? { ...prev, asr: value } : prev))
+              }
+            />
+            <DubbingSection
+              dubbing={draft.dubbing}
+              onChange={(value) =>
+                setDraft((prev) => (prev ? { ...prev, dubbing: value } : prev))
+              }
+            />
+          </>
         )}
       </div>
 

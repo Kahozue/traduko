@@ -16,6 +16,8 @@ class AsrSegment:
     start: float
     end: float
     text: str
+    # Speaker label from diarizing engines (e.g. "A"); None elsewhere.
+    speaker: str | None = None
 
 
 @dataclass
@@ -23,6 +25,9 @@ class AsrResult:
     language: str
     duration: float
     segments: list[AsrSegment]
+    # False for engines that return plain text without timing (their
+    # start/end values are filler); the subtitle pipeline refuses those.
+    timestamps: bool = True
 
 
 @runtime_checkable

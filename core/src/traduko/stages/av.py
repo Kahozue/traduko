@@ -11,6 +11,7 @@ from pathlib import Path
 import yaml
 
 from ..asr import AsrError, create_asr
+from ..asr.engines import engine_provider, resolve_engine
 from ..budget import BudgetExceededError, BudgetMeter
 from ..config import load_config
 from ..fsutil import atomic_write_text
@@ -102,11 +103,29 @@ class AsrStage:
         language = ctx.params.get("language")
         if language in ("auto", ""):
             language = None
-        try:
-            provider = create_asr(
-                ctx.params.get("provider", "faster_whisper"),
-                **ctx.params.get("options", {}),
+        config = load_config(ctx.data_root)
+        engine_id = resolve_engine(ctx.params, config)
+        if engine_id is None:
+            # Legacy path: params.provider names a registry provider directly.
+            provider_name = ctx.params.get("provider", "faster_whisper")
+            options = dict(ctx.params.get("options", {}))
+            engine_timestamps_capable = True
+        else:
+            provider_name, options, engine_timestamps_capable = engine_provider(
+                engine_id, config
             )
+            options.update(ctx.params.get("options", {}))
+        if provider_name == "macos_native":
+            options.setdefault("data_root", str(ctx.data_root))
+            # Compile the helper on demand so a task run works even if the
+            # user never opened the settings section.
+            from ..asr.macos import MacosAsrManager
+
+            ok, error = MacosAsrManager(ctx.data_root).ensure_compiled()
+            if not ok:
+                raise StageError(f"macOS speech helper unavailable: {error}")
+        try:
+            provider = create_asr(provider_name, **options)
             result = provider.transcribe(
                 audio_path,
                 language=language,
@@ -116,16 +135,19 @@ class AsrStage:
             )
         except AsrError as error:
             raise StageError(str(error)) from error
-        segments = [
-            {"id": i + 1, "start": s.start, "end": s.end, "text": s.text}
-            for i, s in enumerate(result.segments)
-        ]
+        segments = []
+        for i, s in enumerate(result.segments):
+            segment = {"id": i + 1, "start": s.start, "end": s.end, "text": s.text}
+            if s.speaker is not None:
+                segment["speaker"] = s.speaker
+            segments.append(segment)
         path = ctx.artifacts.write_json(
             ctx.stage_index + 1,
             "asr.json",
             {
                 "language": result.language,
                 "duration": result.duration,
+                "timestamps": bool(result.timestamps and engine_timestamps_capable),
                 "segments": segments,
             },
         )
@@ -141,6 +163,12 @@ class SegmentStage:
             data = ctx.artifacts.read_latest_json("asr.json")
         except FileNotFoundError as error:
             raise StageError("segment stage requires an asr artifact") from error
+        if data.get("timestamps") is False:
+            raise StageError(
+                "this ASR engine returns no timestamps, so the subtitle "
+                "pipeline cannot use it; switch to whisper-1 or a local "
+                "engine, or use an audio-transcript pipeline instead"
+            )
         refined = refine_segments(
             data["segments"],
             max_chars=ctx.params.get("max_chars", 42),

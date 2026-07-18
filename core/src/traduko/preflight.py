@@ -90,7 +90,37 @@ def run_preflight(record: TaskRecord, root: Path) -> PreflightReport:
         for check in check_fn(stage, root, config):
             check.name = f"stage {i + 1} ({stage.type}): {check.name}"
             checks.append(check)
+    checks.extend(_check_asr_timestamps(record, config))
     return PreflightReport(checks)
+
+
+def _check_asr_timestamps(record: TaskRecord, config: CoreConfig) -> list[PreflightCheck]:
+    """Task-level pairing: a timestampless ASR engine ahead of a segment
+    stage can only fail at runtime, so block it up front."""
+    from .asr.engines import engine_timestamps, resolve_engine
+
+    pending = [
+        stage
+        for stage in record.stages
+        if stage.status not in (StageStatus.COMPLETED, StageStatus.SKIPPED)
+    ]
+    has_segment = any(stage.type == "segment" for stage in pending)
+    if not has_segment:
+        return []
+    for stage in pending:
+        if stage.type != "asr":
+            continue
+        engine_id = resolve_engine(stage.params, config)
+        if engine_id is not None and not engine_timestamps(engine_id):
+            return [
+                PreflightCheck(
+                    "asr timestamps", FAIL,
+                    f"engine '{engine_id}' returns no timestamps, but this "
+                    "pipeline builds subtitles (segment stage); pick a "
+                    "timestamped engine in settings",
+                )
+            ]
+    return []
 
 
 @register_check("extract_audio")
@@ -107,31 +137,89 @@ def _check_ffmpeg(
 def _check_asr(
     stage: StageRecord, root: Path, config: CoreConfig
 ) -> list[PreflightCheck]:
-    provider = stage.params.get("provider", "faster_whisper")
-    if provider != "faster_whisper":
-        return []
-    if not asrsetup.package_available():
-        return [
-            PreflightCheck(
-                "asr model", FAIL,
-                "faster-whisper is not installed; install the asr extra: "
-                "uv sync --extra asr",
-            )
-        ]
-    model_size = stage.params.get("options", {}).get("model_size", "small")
-    if not asrsetup.model_cached(model_size):
-        return [
-            PreflightCheck(
-                "asr model", FAIL,
-                f"model '{model_size}' is not downloaded yet",
-            )
-        ]
-    return [
-        PreflightCheck(
-            "asr model", OK,
-            f"faster-whisper installed; model '{model_size}' is cached",
+    from .asr.engines import resolve_engine
+
+    engine_id = resolve_engine(stage.params, config)
+    if engine_id is None:
+        # Legacy explicit provider param: only faster_whisper is checkable.
+        if stage.params.get("provider") != "faster_whisper":
+            return []
+        engine_id = "faster_whisper"
+    if engine_id == "faster_whisper":
+        if not asrsetup.package_available():
+            return [
+                PreflightCheck(
+                    "asr model", FAIL,
+                    "faster-whisper is not installed; install the asr extra: "
+                    "uv sync --extra asr",
+                )
+            ]
+        model_size = stage.params.get("options", {}).get(
+            "model_size", config.asr.model
         )
-    ]
+        if not asrsetup.model_cached(model_size):
+            return [
+                PreflightCheck(
+                    "asr model", FAIL,
+                    f"model '{model_size}' is not downloaded yet",
+                )
+            ]
+        return [
+            PreflightCheck(
+                "asr model", OK,
+                f"faster-whisper installed; model '{model_size}' is cached",
+            )
+        ]
+    if engine_id == "macos_native":
+        import platform
+        import shutil as _shutil
+
+        from .asr.macos import helper_binary
+
+        if platform.system() != "Darwin":
+            return [
+                PreflightCheck(
+                    "asr engine", FAIL, "macOS-native ASR requires macOS"
+                )
+            ]
+        if helper_binary(root).exists() or _shutil.which("swiftc"):
+            return [PreflightCheck("asr engine", OK, "macOS speech helper ready")]
+        return [
+            PreflightCheck(
+                "asr engine", FAIL,
+                "macOS speech helper needs the Xcode command line tools "
+                "(swiftc) to compile; install them or pick another engine",
+            )
+        ]
+    # Cloud engines: key requirements differ between the OpenAI entries and
+    # the custom endpoint (local endpoints often need no key).
+    if engine_id == "cloud_custom":
+        if not config.asr.custom_base_url:
+            return [
+                PreflightCheck(
+                    "asr engine", FAIL,
+                    "custom ASR endpoint has no base URL; fill it in settings",
+                )
+            ]
+        return [
+            PreflightCheck(
+                "asr engine", OK, f"custom endpoint {config.asr.custom_base_url}"
+            )
+        ]
+    key = config.asr.cloud_api_key or (
+        os.environ.get(config.asr.cloud_api_key_env)
+        if config.asr.cloud_api_key_env
+        else ""
+    )
+    if not key:
+        return [
+            PreflightCheck(
+                "asr engine", FAIL,
+                "cloud ASR needs an OpenAI API key; set it in the settings "
+                "speech-recognition section",
+            )
+        ]
+    return [PreflightCheck("asr engine", OK, f"cloud engine {engine_id}: key configured")]
 
 
 @register_check("translate_pdf")

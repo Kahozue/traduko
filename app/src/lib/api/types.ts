@@ -321,6 +321,7 @@ export interface CoreConfigDoc {
   skills: Record<string, SkillConfigDoc>;
   dubbing: DubbingConfigDoc;
   pdf: PdfEngineConfigDoc;
+  asr: AsrConfigDoc;
   [key: string]: unknown;
 }
 
@@ -395,7 +396,53 @@ export interface AsrStatus {
 export interface AsrTestResult {
   ok: boolean;
   load_seconds?: number;
+  locales?: number;
+  installed?: string[];
   error?: string;
+}
+
+export interface AsrConfigDoc {
+  engine: string;
+  audio_engine: string;
+  model: string;
+  macos_locale: string;
+  cloud_base_url: string;
+  cloud_api_key: string;
+  cloud_api_key_env: string;
+  custom_base_url: string;
+  custom_api_key: string;
+  custom_api_key_env: string;
+  custom_model: string;
+  zh_prompt: boolean;
+  [key: string]: unknown;
+}
+
+export interface AsrEngineInfo {
+  id: string;
+  kind: "local" | "cloud";
+  timestamps: boolean;
+}
+
+export interface MacosAsrStatus {
+  platform_ok: boolean;
+  compiled?: boolean;
+  available: boolean;
+  probed?: boolean;
+  os_ok?: boolean;
+  transcriber_locales: string[];
+  dictation_locales: string[];
+  installed_locales: string[];
+  assets_state: "idle" | "downloading" | "done" | "error";
+  assets_progress: number;
+  assets_error: string | null;
+  error: string | null;
+}
+
+export interface AsrEnginesInfo {
+  engines: AsrEngineInfo[];
+  macos: MacosAsrStatus;
+  cloud_key_present: boolean;
+  custom_ready: boolean;
 }
 
 export interface DubbingConfigDoc {

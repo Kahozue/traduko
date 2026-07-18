@@ -13,6 +13,8 @@ import base64
 import binascii
 import json
 import logging
+import os
+import platform
 import secrets
 import tempfile
 import threading
@@ -38,6 +40,7 @@ import yaml
 
 from .. import asrsetup
 from ..asrsetup import AsrManager
+from ..asr.macos import MacosAsrManager
 from ..agents.assistant import (
     AssistantLLMError,
     AssistantUnavailable,
@@ -482,6 +485,75 @@ class AsrModelRequest(BaseModel):
     model: str = "small"
 
 
+class AsrTestRequest(BaseModel):
+    engine: str = "faster_whisper"
+    model: str = ""
+    locale: str = ""
+
+
+class AsrAssetsRequest(BaseModel):
+    locale: str = ""
+
+
+@router.get("/asr/engines")
+def asr_engines(request: Request, macos_probe: bool = False) -> dict:
+    """Engine catalog plus per-engine readiness. The macOS helper is only
+    compiled/probed when macos_probe is set (the section requests it when
+    that engine is selected), so opening settings stays fast."""
+    from ..asr.engines import ENGINES
+    from ..asr.macos import helper_binary
+
+    ws: Workspace = request.app.state.workspace
+    config = ws.config
+    macos_manager = request.app.state.macos_asr
+    if macos_probe:
+        macos_status = macos_manager.status()
+    else:
+        macos_status = {
+            "platform_ok": platform.system() == "Darwin",
+            "compiled": helper_binary(ws.root).exists(),
+            "available": False,
+            "probed": False,
+            "transcriber_locales": [],
+            "dictation_locales": [],
+            "installed_locales": [],
+            "assets_state": "idle",
+            "assets_progress": 0.0,
+            "assets_error": None,
+            "error": None,
+        }
+    key_present = bool(
+        config.asr.cloud_api_key
+        or (
+            config.asr.cloud_api_key_env
+            and os.environ.get(config.asr.cloud_api_key_env)
+        )
+    )
+    return {
+        "engines": [
+            {"id": engine.id, "kind": engine.kind, "timestamps": engine.timestamps}
+            for engine in ENGINES
+        ],
+        "macos": macos_status,
+        "cloud_key_present": key_present,
+        "custom_ready": bool(config.asr.custom_base_url),
+    }
+
+
+@router.post("/asr/macos/assets", status_code=202)
+def asr_macos_assets(request: Request, body: AsrAssetsRequest) -> dict:
+    manager = request.app.state.macos_asr
+    status = manager.status()
+    if not status["available"]:
+        raise HTTPException(
+            status_code=409,
+            detail=status.get("error") or "macOS speech engine is unavailable",
+        )
+    if not manager.start_assets(body.locale):
+        raise HTTPException(status_code=409, detail="a download is already running")
+    return {"downloading": True, "locale": body.locale}
+
+
 @router.get("/asr/status")
 def asr_status(request: Request, model: str = "small") -> dict:
     manager: AsrManager = request.app.state.asr
@@ -500,15 +572,63 @@ def asr_download(request: Request, body: AsrModelRequest | None = None) -> dict:
 
 
 @router.post("/asr/test")
-def asr_test(request: Request, body: AsrModelRequest | None = None) -> dict:
+def asr_test(request: Request, body: AsrTestRequest | None = None) -> dict:
+    payload = body or AsrTestRequest()
+    ws: Workspace = request.app.state.workspace
+    if payload.engine == "macos_native":
+        return request.app.state.macos_asr.test(payload.locale)
+    if payload.engine in (
+        "openai_whisper",
+        "openai_gpt4o",
+        "openai_gpt4o_mini",
+        "openai_gpt4o_diarize",
+        "cloud_custom",
+    ):
+        return _asr_cloud_test(ws.config, payload.engine)
+    # faster_whisper (default), backwards compatible with the old body shape.
     manager: AsrManager = request.app.state.asr
-    model = (body or AsrModelRequest()).model
+    model = payload.model or ws.config.asr.model
     status = manager.status(model)
     if not status["package"]:
         raise HTTPException(status_code=409, detail="asr engine is not available")
     if not status["cached"]:
         raise HTTPException(status_code=409, detail="model is not downloaded")
     return manager.test(model)
+
+
+def _asr_cloud_test(config: CoreConfig, engine: str) -> dict:
+    """Credential check: list models on the target endpoint."""
+    import httpx
+
+    if engine == "cloud_custom":
+        base_url = config.asr.custom_base_url.rstrip("/")
+        key = config.asr.custom_api_key or (
+            os.environ.get(config.asr.custom_api_key_env)
+            if config.asr.custom_api_key_env
+            else ""
+        )
+        if not base_url:
+            return {"ok": False, "error": "no base URL configured"}
+    else:
+        base_url = config.asr.cloud_base_url.rstrip("/")
+        key = config.asr.cloud_api_key or (
+            os.environ.get(config.asr.cloud_api_key_env)
+            if config.asr.cloud_api_key_env
+            else ""
+        )
+        if not key:
+            return {"ok": False, "error": "no API key configured"}
+    headers = {"Authorization": f"Bearer {key}"} if key else {}
+    try:
+        response = httpx.get(f"{base_url}/models", headers=headers, timeout=15)
+    except httpx.HTTPError as error:
+        return {"ok": False, "error": str(error)}
+    if response.status_code != 200:
+        return {
+            "ok": False,
+            "error": f"http {response.status_code}: {response.text[:200]}",
+        }
+    return {"ok": True}
 
 
 @router.get("/dubbing/status")
@@ -1187,6 +1307,7 @@ def create_app(data_root: Path | None = None) -> FastAPI:
     app.state.token = load_or_create_token(workspace.root)
     app.state.sync_lock = threading.Lock()
     app.state.asr = AsrManager()
+    app.state.macos_asr = MacosAsrManager(workspace.root)
     app.state.dubbing = DubbingManager(
         workspace.root, python_override=workspace.config.dubbing.python
     )
