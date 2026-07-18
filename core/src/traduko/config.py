@@ -115,6 +115,15 @@ class DubbingConfig(BaseModel):
     python: str = ""
 
 
+class PdfEngineConfig(BaseModel):
+    """PDF translation engine settings. python overrides interpreter
+    discovery for the engine venv (pdf2zh-next needs >=3.10 <3.14)."""
+
+    model_config = ConfigDict(extra="allow")
+
+    python: str = ""
+
+
 class CoreConfig(BaseModel):
     model_config = ConfigDict(extra="allow")
 
@@ -128,6 +137,7 @@ class CoreConfig(BaseModel):
     mcp_servers: dict[str, McpServerConfig] = Field(default_factory=dict)
     skills: dict[str, SkillConfig] = Field(default_factory=dict)
     dubbing: DubbingConfig = Field(default_factory=DubbingConfig)
+    pdf: PdfEngineConfig = Field(default_factory=PdfEngineConfig)
 
 
 def _migrate_confirmed(data: dict) -> None:

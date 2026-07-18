@@ -129,6 +129,22 @@ stages:
   - type: mux
 """
 
+_PROFILE_TRANSLATE_PDF = """\
+# PDF pipeline: PDF in, translated PDF (mono + bilingual) out. Needs the
+# PDF engine installed from the settings document tab. The engine
+# (pdf2zh-next, BabelDOC backend) makes its own LLM calls; point provider
+# at an entry under llm_providers in config/core.yaml and it forwards the
+# endpoint and key. "fake" leaves the engine to its own default.
+schema_version: 1
+name: translate-pdf
+stages:
+  - type: translate_pdf
+    params:
+      provider: fake
+      source_lang: auto
+      target_lang: en
+"""
+
 _STYLES_DEFAULT = """\
 # Named subtitle style presets (ASS-based), referenced by style_preset.
 default:
@@ -159,6 +175,7 @@ def ensure_defaults(root: Path) -> None:
         "profiles/subtitle-translate.yaml": _PROFILE_SUBTITLE_TRANSLATE,
         "profiles/novel-translate.yaml": _PROFILE_NOVEL_TRANSLATE,
         "profiles/av-dub.yaml": _PROFILE_AV_DUB,
+        "profiles/translate-pdf.yaml": _PROFILE_TRANSLATE_PDF,
         "prompts/translate.txt": DEFAULT_TRANSLATE_TEMPLATE,
         "prompts/proofread.txt": DEFAULT_PROOFREAD_TEMPLATE,
         "prompts/doc-translate.txt": DEFAULT_DOC_TRANSLATE_TEMPLATE,

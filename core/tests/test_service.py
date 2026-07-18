@@ -1459,3 +1459,74 @@ def test_dubbing_install_without_python_is_409(tmp_path: Path) -> None:
         response = client.post("/dubbing/install", headers=headers)
         assert response.status_code == 409
         assert "python" in response.json()["detail"].lower()
+
+def test_pdf_status_install_and_test_flow(tmp_path: Path) -> None:
+    from traduko.pdfengine.setup import PdfManager
+
+    def fake_install(target_dir: Path, python: str) -> None:
+        bin_dir = target_dir / "venv" / "bin"
+        bin_dir.mkdir(parents=True, exist_ok=True)
+        (bin_dir / "python").write_bytes(b"x" * (2 * 1024 * 1024))
+        (target_dir / ".installed").write_text("{}", encoding="utf-8")
+
+    with service(tmp_path) as (client, headers, token):
+        client.app.state.pdf = PdfManager(
+            tmp_path,
+            installer=fake_install,
+            probe=lambda candidate: {"python3.12": (3, 12, 3)}.get(candidate),
+            engine_probe=lambda target: {"ok": True, "version": "2.9.0"},
+        )
+        status = client.get("/pdf/status", headers=headers).json()
+        assert status["python"] == "python3.12"
+        assert status["installed"] is False
+
+        blocked = client.post("/pdf/test", headers=headers)
+        assert blocked.status_code == 409
+
+        started = client.post("/pdf/install", headers=headers)
+        assert started.status_code == 202
+
+        deadline = time.monotonic() + 5
+        status = client.get("/pdf/status", headers=headers).json()
+        while time.monotonic() < deadline and status["state"] != "done":
+            status = client.get("/pdf/status", headers=headers).json()
+        assert status["installed"] is True
+
+        result = client.post("/pdf/test", headers=headers).json()
+        assert result == {"ok": True, "version": "2.9.0"}
+
+
+def test_pdf_install_without_python_is_409(tmp_path: Path) -> None:
+    from traduko.pdfengine.setup import PdfManager
+
+    with service(tmp_path) as (client, headers, token):
+        client.app.state.pdf = PdfManager(
+            tmp_path, installer=lambda t, p: None, probe=lambda candidate: None
+        )
+        response = client.post("/pdf/install", headers=headers)
+        assert response.status_code == 409
+        assert "python" in response.json()["detail"].lower()
+
+
+def test_provider_test_endpoint_accepts_native_types(tmp_path: Path) -> None:
+    """anthropic/gemini types flow through create_llm; an unreachable
+    endpoint comes back as data (ok: false), never a 500."""
+    with service(tmp_path) as (client, headers, token):
+        for provider_type in ("anthropic", "gemini"):
+            response = client.post(
+                "/config/providers/test",
+                headers=headers,
+                json={
+                    "config": {
+                        "type": provider_type,
+                        "base_url": "http://127.0.0.1:9/x",
+                        "model": "m",
+                        "max_retries": 0,
+                        "backoff_base": 0.0,
+                    }
+                },
+            )
+            assert response.status_code == 200
+            body = response.json()
+            assert body["ok"] is False
+            assert "failed" in body["error"]
