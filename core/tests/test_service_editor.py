@@ -302,3 +302,32 @@ def test_rename_task_rejects_blank(tmp_path):
             headers=headers, json={"name": "   "},
         )
         assert resp.status_code == 422
+
+
+def test_put_speakers_artifact_validates_and_saves(tmp_path):
+    with service(tmp_path) as (client, headers):
+        task = make_task_with_translation(client, headers, tmp_path)
+        body = {
+            "speakers": [
+                {"id": "S1", "label": "Narrator", "ref_start": 0.0,
+                 "ref_end": 3.0, "ref_text": "hi"}
+            ],
+            "segments": [{"id": 1, "speaker": "S1"}],
+        }
+        resp = client.put(
+            f"/tasks/{task['project']}/{task['id']}/artifacts/speakers.json",
+            headers=headers, json=body,
+        )
+        assert resp.status_code == 200
+        assert resp.json()["file"].endswith("-speakers.json")
+
+
+def test_put_speakers_artifact_rejects_bad_shape(tmp_path):
+    with service(tmp_path) as (client, headers):
+        task = make_task_with_translation(client, headers, tmp_path)
+        resp = client.put(
+            f"/tasks/{task['project']}/{task['id']}/artifacts/speakers.json",
+            headers=headers,
+            json={"speakers": [{"label": "no id"}], "segments": []},
+        )
+        assert resp.status_code == 422

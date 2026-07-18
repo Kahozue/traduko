@@ -1,0 +1,78 @@
+{
+  "$defs": {
+    "Speaker": {
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "label": {
+          "default": "",
+          "title": "Label",
+          "type": "string"
+        },
+        "ref_start": {
+          "default": 0.0,
+          "title": "Ref Start",
+          "type": "number"
+        },
+        "ref_end": {
+          "default": 0.0,
+          "title": "Ref End",
+          "type": "number"
+        },
+        "ref_text": {
+          "default": "",
+          "title": "Ref Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "Speaker",
+      "type": "object"
+    },
+    "SpeakerAssignment": {
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "integer"
+        },
+        "speaker": {
+          "title": "Speaker",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "speaker"
+      ],
+      "title": "SpeakerAssignment",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "schema_version": {
+      "default": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "speakers": {
+      "items": {
+        "$ref": "#/$defs/Speaker"
+      },
+      "title": "Speakers",
+      "type": "array"
+    },
+    "segments": {
+      "items": {
+        "$ref": "#/$defs/SpeakerAssignment"
+      },
+      "title": "Segments",
+      "type": "array"
+    }
+  },
+  "title": "SpeakersDoc",
+  "type": "object"
+}

@@ -1,0 +1,74 @@
+{
+  "$defs": {
+    "TimelineSegment": {
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "integer"
+        },
+        "start": {
+          "title": "Start",
+          "type": "number"
+        },
+        "window": {
+          "title": "Window",
+          "type": "number"
+        },
+        "duration": {
+          "title": "Duration",
+          "type": "number"
+        },
+        "tempo": {
+          "default": 1.0,
+          "title": "Tempo",
+          "type": "number"
+        },
+        "regenerated": {
+          "default": false,
+          "title": "Regenerated",
+          "type": "boolean"
+        },
+        "file": {
+          "default": "",
+          "title": "File",
+          "type": "string"
+        },
+        "status": {
+          "default": "fit",
+          "enum": [
+            "fit",
+            "atempo",
+            "overflow",
+            "failed"
+          ],
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "start",
+        "window",
+        "duration"
+      ],
+      "title": "TimelineSegment",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "schema_version": {
+      "default": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "segments": {
+      "items": {
+        "$ref": "#/$defs/TimelineSegment"
+      },
+      "title": "Segments",
+      "type": "array"
+    }
+  },
+  "title": "DubTimelineDoc",
+  "type": "object"
+}
