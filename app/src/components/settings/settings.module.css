@@ -326,14 +326,26 @@ select.input {
   margin-top: 0;
 }
 
+/* Top-aligned so an inline error under one field (e.g. an empty name)
+   extends downward without pushing that field's input off the shared row. */
 .cardHeader {
   display: flex;
-  align-items: flex-end;
+  align-items: flex-start;
   gap: 12px;
 }
 
 .cardHeader .field {
   flex: 1;
+}
+
+.cardHeader .field + .field {
+  margin-top: 0;
+}
+
+/* Offset non-field children (buttons, status chips) by label height + gap
+   so they line up with the input row, not the labels. */
+.cardHeader > :not(.field) {
+  margin-top: 27px;
 }
 
 /* Buttons */

@@ -199,6 +199,15 @@ export function SettingsView({
     },
   });
 
+  // The saved note is transient feedback, not state: dismiss it after a
+  // moment instead of letting it sit in the save bar until the next edit.
+  const saveReset = save.reset;
+  useEffect(() => {
+    if (!save.isSuccess) return;
+    const timer = setTimeout(() => saveReset(), 3000);
+    return () => clearTimeout(timer);
+  }, [save.isSuccess, saveReset]);
+
   function discard() {
     if (data) setDraft(normalize(data));
     setNumbersValid(true);

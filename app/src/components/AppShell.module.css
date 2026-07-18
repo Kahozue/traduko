@@ -186,6 +186,7 @@
 }
 
 .connDot {
+  position: relative;
   width: 9px;
   height: 9px;
   margin-left: auto;
@@ -193,6 +194,30 @@
   border-radius: var(--radius-full);
   background: var(--warn);
   cursor: default;
+}
+
+/* WKWebView never shows native title tooltips, so the hover text is a CSS
+   bubble fed by data-label; right-anchored to stay inside the sidebar. */
+.connDot::after {
+  content: attr(data-label);
+  position: absolute;
+  right: -6px;
+  bottom: calc(100% + 8px);
+  padding: 5px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-s);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font-size: var(--fs-meta);
+  white-space: nowrap;
+  box-shadow: var(--shadow-2);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--transition);
+}
+
+.connDot:hover::after {
+  opacity: 1;
 }
 
 .connDot[data-status="ready"] {

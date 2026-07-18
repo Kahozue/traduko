@@ -125,6 +125,18 @@ test("editing default project shows save bar and saves full document", async () 
   await screen.findByText("已儲存");
 });
 
+test("the saved note dismisses itself after a moment", async () => {
+  setup();
+  const input = await screen.findByLabelText("預設專案");
+  await userEvent.type(input, "-x");
+  await userEvent.click(screen.getByRole("button", { name: "儲存" }));
+  await screen.findByText("已儲存");
+  await waitFor(
+    () => expect(screen.queryByText("已儲存")).not.toBeInTheDocument(),
+    { timeout: 4000 },
+  );
+}, 10000);
+
 test("saving reconnects mcp servers", async () => {
   const { reloadMcp } = setup();
   const input = await screen.findByLabelText("預設專案");

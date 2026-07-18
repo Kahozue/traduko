@@ -120,7 +120,7 @@ export function AppShell({
             <span
               className={styles.connDot}
               data-status={conn.status}
-              title={connLabel}
+              data-label={connLabel}
               aria-label={connLabel}
               role="status"
             />

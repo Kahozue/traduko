@@ -26,17 +26,38 @@ test("adding a provider prefills the openai preset and stays editable", async ()
   });
 });
 
-test("choosing a preset prefills base_url without clobbering a typed value", async () => {
+test("switching presets replaces auto-filled base_url and model", async () => {
   const { onChange } = setup();
   await userEvent.click(screen.getByRole("button", { name: "新增供應商" }));
-  await userEvent.clear(screen.getByLabelText("API 位址（base_url）"));
+  // A fresh row carries the OpenAI pre-fill; picking another preset must
+  // swap both fields, not leave the OpenAI values behind.
+  await userEvent.selectOptions(screen.getByLabelText("供應商"), "gemini");
+  await userEvent.type(screen.getByLabelText("名稱"), "g");
+  expect(onChange).toHaveBeenLastCalledWith({
+    g: {
+      type: "openai_compat",
+      base_url: "https://generativelanguage.googleapis.com/v1beta/openai",
+      model: "gemini-2.5-flash",
+    },
+  });
+});
+
+test("choosing a preset never clobbers hand-typed values", async () => {
+  const { onChange } = setup();
+  await userEvent.click(screen.getByRole("button", { name: "新增供應商" }));
+  const urlInput = screen.getByLabelText("API 位址（base_url）");
+  await userEvent.clear(urlInput);
+  await userEvent.type(urlInput, "https://my-proxy.local/v1");
+  const modelInput = screen.getByLabelText("預設模型");
+  await userEvent.clear(modelInput);
+  await userEvent.type(modelInput, "my-model");
   await userEvent.selectOptions(screen.getByLabelText("供應商"), "deepseek");
   await userEvent.type(screen.getByLabelText("名稱"), "ds");
   expect(onChange).toHaveBeenLastCalledWith({
     ds: {
       type: "openai_compat",
-      base_url: "https://api.deepseek.com/v1",
-      model: "gpt-4o-mini",
+      base_url: "https://my-proxy.local/v1",
+      model: "my-model",
     },
   });
 });

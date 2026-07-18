@@ -135,11 +135,21 @@ export function ProvidersSection({
     if (!preset || preset.id === "custom") return;
     const row = rows.find((item) => item.uid === uid);
     if (!row) return;
-    // Pre-fill only empty fields so choosing a preset never clobbers values
-    // the user already typed; type stays openai_compat.
+    // Fill a field when it is empty or still holds another preset's default
+    // (i.e. it was auto-filled, like a fresh row's OpenAI pre-fill), but
+    // never clobber a value the user typed; type stays openai_compat.
     const config: ProviderConfigDoc = { ...row.config, type: "openai_compat" };
-    if (String(config.base_url ?? "").trim() === "") config.base_url = preset.baseUrl;
-    if (String(config.model ?? "").trim() === "" && preset.model) config.model = preset.model;
+    const baseUrl = String(config.base_url ?? "").trim().replace(/\/$/, "");
+    if (
+      baseUrl === "" ||
+      PRESETS.some((item) => item.baseUrl !== "" && item.baseUrl.replace(/\/$/, "") === baseUrl)
+    ) {
+      config.base_url = preset.baseUrl;
+    }
+    const model = String(config.model ?? "").trim();
+    if (model === "" || PRESETS.some((item) => item.model !== "" && item.model === model)) {
+      if (preset.model) config.model = preset.model;
+    }
     setRow(uid, { config });
   }
 
