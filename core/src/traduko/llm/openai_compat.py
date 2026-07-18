@@ -4,14 +4,12 @@ from __future__ import annotations
 import base64
 import mimetypes
 import os
-import time
 from pathlib import Path
 
 import httpx
 
-from .base import ChatMessage, ChatRequest, ChatResponse, LLMError, Usage, register_llm
-
-_RETRY_STATUS = {429, 500, 502, 503, 504}
+from ._http import request_with_retries
+from .base import ChatMessage, ChatRequest, ChatResponse, Usage, register_llm
 
 
 def _message_content(message: ChatMessage) -> str | list[dict]:
@@ -76,34 +74,20 @@ class OpenAICompatProvider:
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
 
-        last_error = ""
-        for attempt in range(self.max_retries + 1):
-            if attempt:
-                time.sleep(self.backoff_base * (2 ** (attempt - 1)))
-            try:
-                response = self._client.post(
-                    f"{self.base_url}/chat/completions", json=payload, headers=headers
-                )
-            except httpx.TransportError as error:
-                last_error = str(error)
-                continue
-            if response.status_code in _RETRY_STATUS:
-                last_error = f"http {response.status_code}"
-                continue
-            if response.status_code != 200:
-                raise LLMError(
-                    f"llm call failed: http {response.status_code}: {response.text[:200]}"
-                )
-            data = response.json()
-            usage = data.get("usage") or {}
-            return ChatResponse(
-                content=data["choices"][0]["message"]["content"],
-                model=data.get("model", request.model),
-                usage=Usage(
-                    prompt_tokens=usage.get("prompt_tokens", 0),
-                    completion_tokens=usage.get("completion_tokens", 0),
-                ),
-            )
-        raise LLMError(
-            f"llm call failed after {self.max_retries + 1} attempts: {last_error}"
+        data = request_with_retries(
+            self._client,
+            f"{self.base_url}/chat/completions",
+            payload,
+            headers,
+            max_retries=self.max_retries,
+            backoff_base=self.backoff_base,
+        )
+        usage = data.get("usage") or {}
+        return ChatResponse(
+            content=data["choices"][0]["message"]["content"],
+            model=data.get("model", request.model),
+            usage=Usage(
+                prompt_tokens=usage.get("prompt_tokens", 0),
+                completion_tokens=usage.get("completion_tokens", 0),
+            ),
         )
