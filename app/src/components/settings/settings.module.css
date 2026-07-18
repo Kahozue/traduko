@@ -1021,3 +1021,26 @@ select.input {
   color: var(--warn);
   font-size: var(--fs-note);
 }
+
+.numberInput {
+  width: 110px;
+  height: 32px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-s);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font-size: var(--fs-body);
+  font-variant-numeric: tabular-nums;
+}
+
+.disclosure {
+  margin-top: 4px;
+}
+
+.disclosureSummary {
+  cursor: pointer;
+  color: var(--text-secondary);
+  font-size: var(--fs-body);
+  font-weight: 600;
+}

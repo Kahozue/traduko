@@ -33,7 +33,7 @@ const DEFAULT_CONFIG: CoreConfigDoc = {
   },
   mcp_servers: {},
   skills: {},
-  dubbing: { hf_token: "", python: "" },
+  dubbing: { hf_token: "", python: "", inference_timesteps: null, cfg_value: null, seed: null, denoise: false },
   pdf: { python: "" },
   asr: {
     engine: "faster_whisper",

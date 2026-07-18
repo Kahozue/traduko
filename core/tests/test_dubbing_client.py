@@ -113,3 +113,36 @@ def test_transport_detects_dead_process(tmp_path: Path) -> None:
     with pytest.raises(DubbingError):
         client.ping()
     client.close()
+
+
+def test_generation_params_and_num_speakers_serialize() -> None:
+    transport = FakeTransport(
+        [
+            {"ok": True, "segments": []},
+            {"ok": True, "path": "/tmp/o.wav", "duration": 1.0},
+            {"ok": True, "path": "/tmp/p.wav", "duration": 1.0},
+        ]
+    )
+    client = DubbingEngineClient(
+        Path("/data/engines/dubbing"), hf_token="tok", transport=transport
+    )
+    client.diarize(Path("/tmp/a.wav"), num_speakers=3)
+    client.synthesize(
+        "hi",
+        out=Path("/tmp/o.wav"),
+        cfg_value=2.5,
+        inference_timesteps=16,
+        seed=7,
+        denoise=True,
+    )
+    client.synthesize("plain", out=Path("/tmp/p.wav"))
+    assert transport.requests[0]["num_speakers"] == 3
+    synth = transport.requests[1]
+    assert synth["cfg_value"] == 2.5
+    assert synth["inference_timesteps"] == 16
+    assert synth["seed"] == 7
+    assert synth["denoise"] is True
+    # Defaults stay off the wire so the engine's own defaults apply.
+    plain = transport.requests[2]
+    for key in ("cfg_value", "inference_timesteps", "seed", "denoise"):
+        assert key not in plain

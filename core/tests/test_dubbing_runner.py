@@ -99,11 +99,14 @@ def write_stubs(stub_dir: Path) -> None:
 
             class VoxCPM:
                 last_kwargs = None
+                last_load_denoiser = None
                 tts_model = _Inner()
 
                 @classmethod
                 def from_pretrained(cls, name, load_denoiser=True):
-                    assert load_denoiser is False, "denoiser must stay off"
+                    cls.last_load_denoiser = load_denoiser
+                    with open(os.environ.get("VOXCPM_STUB_LOG", "/dev/null"), "a") as f:
+                        f.write("load_denoiser=%s\\n" % load_denoiser)
                     return cls()
 
                 def generate(self, **kwargs):
@@ -214,3 +217,132 @@ def test_synthesize_without_prompt_omits_prompt_kwargs(tmp_path: Path) -> None:
         line for line in result.stdout.splitlines() if line.startswith("KWARGS:")
     ][0]
     assert json.loads(kwargs_line.removeprefix("KWARGS:")) == ["text"]
+
+
+def write_torch_stub(stub_dir: Path) -> None:
+    (stub_dir / "torch.py").write_text(
+        textwrap.dedent(
+            """\
+            import os
+
+            def manual_seed(seed):
+                with open(os.environ.get("TORCH_STUB_LOG", "/dev/null"), "a") as f:
+                    f.write(f"seed={seed}\\n")
+
+            class _MPS:
+                @staticmethod
+                def is_available():
+                    return False
+
+            class backends:
+                mps = _MPS()
+            """
+        ),
+        encoding="utf-8",
+    )
+
+
+def test_synthesize_forwards_generation_params_and_seed(tmp_path: Path) -> None:
+    write_stubs(tmp_path)
+    write_torch_stub(tmp_path)
+    torch_log = tmp_path / "torch.log"
+    out_wav = tmp_path / "seg-2.wav"
+    responses = run_lines(
+        [
+            json.dumps(
+                {
+                    "op": "synthesize",
+                    "text": "hello",
+                    "out": str(out_wav),
+                    "cfg_value": 2.5,
+                    "inference_timesteps": 24,
+                    "seed": 42,
+                }
+            )
+        ],
+        env={"PYTHONPATH": str(tmp_path), "TORCH_STUB_LOG": str(torch_log)},
+    )
+    assert responses[0]["ok"] is True
+    assert torch_log.read_text() == "seed=42\n"
+    check = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "import json,sys; sys.path.insert(0, sys.argv[1]); "
+            "print('ok')",
+            str(tmp_path),
+        ],
+        capture_output=True,
+        text=True,
+    )
+    assert check.returncode == 0
+
+
+def test_synthesize_denoise_reloads_model_with_denoiser(tmp_path: Path) -> None:
+    write_stubs(tmp_path)
+    log = tmp_path / "load.log"
+    out_a = tmp_path / "a.wav"
+    out_b = tmp_path / "b.wav"
+    responses = run_lines(
+        [
+            json.dumps({"op": "synthesize", "text": "x", "out": str(out_a)}),
+            json.dumps(
+                {"op": "synthesize", "text": "y", "out": str(out_b), "denoise": True}
+            ),
+        ],
+        env={"PYTHONPATH": str(tmp_path), "VOXCPM_STUB_LOG": str(log)},
+    )
+    assert [r["ok"] for r in responses] == [True, True]
+    assert log.read_text().splitlines() == [
+        "load_denoiser=False",
+        "load_denoiser=True",
+    ]
+
+
+def test_diarize_forwards_num_speakers(tmp_path: Path) -> None:
+    write_stubs(tmp_path)
+    # Extend the pyannote stub to record call kwargs.
+    (tmp_path / "pyannote" / "audio" / "__init__.py").write_text(
+        textwrap.dedent(
+            """\
+            import os
+
+
+            class _Turn:
+                def __init__(self, start, end):
+                    self.start = start
+                    self.end = end
+
+            class _Diarization:
+                def itertracks(self, yield_label=False):
+                    yield _Turn(0.0, 1.5), None, "SPEAKER_00"
+
+            class Pipeline:
+                @classmethod
+                def from_pretrained(cls, name, token=None):
+                    return cls()
+
+                def __call__(self, audio, **kwargs):
+                    with open(os.environ["PYANNOTE_STUB_LOG"], "a") as f:
+                        f.write(repr(kwargs) + "\\n")
+                    return _Diarization()
+            """
+        ),
+        encoding="utf-8",
+    )
+    log = tmp_path / "pyannote.log"
+    responses = run_lines(
+        [
+            json.dumps(
+                {
+                    "op": "diarize",
+                    "audio": "x.wav",
+                    "hf_token": "t",
+                    "num_speakers": 2,
+                }
+            )
+        ],
+        env={"PYTHONPATH": str(tmp_path), "PYANNOTE_STUB_LOG": str(log)},
+    )
+    assert responses[0]["ok"] is True
+    assert "num_speakers" in log.read_text()

@@ -43,6 +43,21 @@ def _make_client(data_root: Path, config: CoreConfig) -> DubbingEngineClient:
     )
 
 
+def _synth_options(config: CoreConfig, params: dict) -> dict:
+    """Generation kwargs for client.synthesize: the settings-page global
+    defaults, overridden by same-named stage params."""
+    dubbing = config.dubbing
+    options = {
+        "cfg_value": params.get("cfg_value", dubbing.cfg_value),
+        "inference_timesteps": params.get(
+            "inference_timesteps", dubbing.inference_timesteps
+        ),
+        "seed": params.get("seed", dubbing.seed),
+        "denoise": bool(params.get("denoise", dubbing.denoise)),
+    }
+    return options
+
+
 def _require_engine(data_root: Path) -> None:
     target = dubsetup.engine_dir(data_root)
     venv_python = target / "venv" / "bin" / "python"
@@ -131,7 +146,9 @@ class DiarizeStage:
 
         client = _make_client(ctx.data_root, config)
         try:
-            turns = client.diarize(audio_path)
+            turns = client.diarize(
+                audio_path, num_speakers=ctx.params.get("num_speakers")
+            )
         except DubbingError as error:
             raise StageError(str(error)) from error
         finally:
@@ -182,7 +199,19 @@ class TtsSynthesizeStage:
 
         refs: dict[str, Path] = {}
         ref_names: list[str] = []
+        # User-supplied per-speaker reference audio wins over the clip
+        # extracted from the original input.
+        reference_wavs = ctx.params.get("reference_wavs") or {}
         for speaker_id, speaker in speakers.items():
+            custom = reference_wavs.get(speaker_id)
+            if custom:
+                custom_path = Path(custom)
+                if not custom_path.exists():
+                    raise StageError(
+                        f"reference audio for {speaker_id} not found: {custom}"
+                    )
+                refs[speaker_id] = custom_path
+                continue
             ref_path = ctx.artifacts.path_for(out_index, f"ref-{speaker_id}.wav")
             duration = min(
                 max(speaker["ref_end"] - speaker["ref_start"], MIN_REF_SECONDS),
@@ -240,6 +269,8 @@ class TtsSynthesizeStage:
                             out=out_path,
                             prompt_wav=refs.get(speaker_id),
                             prompt_text=(speaker or {}).get("ref_text") or None,
+                            instruction=ctx.params.get("voice_instruction") or None,
+                            **_synth_options(config, ctx.params),
                         )
                         entry = DubSegment(
                             id=seg["id"],
@@ -328,12 +359,17 @@ class AlignDurationStage:
                     except FileNotFoundError:
                         prompt_wav = None
                     try:
+                        faster = "speak faster"
+                        voice_instruction = ctx.params.get("voice_instruction")
+                        if voice_instruction:
+                            faster = f"speak faster; {voice_instruction}"
                         response = client.synthesize(
                             (seg.get("target") or "").strip(),
                             out=regen_path,
                             prompt_wav=prompt_wav,
                             prompt_text=(speaker or {}).get("ref_text") or None,
-                            instruction="speak faster",
+                            instruction=faster,
+                            **_synth_options(config, ctx.params),
                         )
                         duration = response["duration"]
                         file = f"{out_index:02d}-dub/seg-{entry['id']}.regen.wav"

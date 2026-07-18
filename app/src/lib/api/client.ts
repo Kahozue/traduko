@@ -3,6 +3,7 @@ import type {
   AsrEnginesInfo,
   AsrStatus,
   AsrTestResult,
+  DubbingModelStatus,
   DubbingStatus,
   DubbingTestResult,
   PdfEngineStatus,
@@ -241,6 +242,14 @@ export class ApiClient {
 
   getDubbingStatus(): Promise<DubbingStatus> {
     return this.request("/dubbing/status");
+  }
+
+  getDubbingModelStatus(): Promise<DubbingModelStatus> {
+    return this.request("/dubbing/model/status");
+  }
+
+  downloadDubbingModel(): Promise<{ downloading: boolean }> {
+    return this.request("/dubbing/model/download", { method: "POST" });
   }
 
   installDubbingEngine(): Promise<{ installing: boolean }> {

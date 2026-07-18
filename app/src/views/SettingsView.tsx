@@ -87,7 +87,21 @@ function normalize(config: CoreConfigDoc): CoreConfigDoc {
     if (server.confirmed === undefined) server.confirmed = server.enabled;
   }
   if (!next.skills) next.skills = {};
-  if (!next.dubbing) next.dubbing = { hf_token: "", python: "" };
+  if (!next.dubbing) {
+    next.dubbing = {
+      hf_token: "",
+      python: "",
+      inference_timesteps: null,
+      cfg_value: null,
+      seed: null,
+      denoise: false,
+    };
+  }
+  if (next.dubbing.inference_timesteps === undefined)
+    next.dubbing.inference_timesteps = null;
+  if (next.dubbing.cfg_value === undefined) next.dubbing.cfg_value = null;
+  if (next.dubbing.seed === undefined) next.dubbing.seed = null;
+  if (next.dubbing.denoise === undefined) next.dubbing.denoise = false;
   if (!next.pdf) next.pdf = { python: "" };
   if (!next.asr) {
     next.asr = {

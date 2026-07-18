@@ -643,6 +643,20 @@ def _asr_cloud_test(config: CoreConfig, engine: str) -> dict:
     return {"ok": True}
 
 
+@router.get("/dubbing/model/status")
+def dubbing_model_status(request: Request) -> dict:
+    manager: DubbingManager = request.app.state.dubbing
+    return manager.model_status()
+
+
+@router.post("/dubbing/model/download", status_code=202)
+def dubbing_model_download(request: Request) -> dict:
+    manager: DubbingManager = request.app.state.dubbing
+    if not manager.start_model_download():
+        raise HTTPException(status_code=409, detail="a download is already running")
+    return {"downloading": True}
+
+
 @router.get("/dubbing/status")
 def dubbing_status(request: Request) -> dict:
     manager: DubbingManager = request.app.state.dubbing

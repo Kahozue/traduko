@@ -14,6 +14,7 @@ import sys
 _diarize_pipeline = None
 _diarize_token = None
 _tts_model = None
+_tts_denoiser_loaded = False
 
 
 def _dist_version(dist: str) -> str | None:
@@ -54,7 +55,10 @@ def _diarize(req: dict) -> dict:
             "pyannote/speaker-diarization-community-1", token=token
         )
         _diarize_token = token
-    diarization = _diarize_pipeline(req["audio"])
+    kwargs: dict = {}
+    if req.get("num_speakers"):
+        kwargs["num_speakers"] = int(req["num_speakers"])
+    diarization = _diarize_pipeline(req["audio"], **kwargs)
     segments = [
         {"start": float(turn.start), "end": float(turn.end), "speaker": str(label)}
         for turn, _, label in diarization.itertracks(yield_label=True)
@@ -63,16 +67,21 @@ def _diarize(req: dict) -> dict:
 
 
 def _synthesize(req: dict) -> dict:
-    global _tts_model
-    if _tts_model is None:
+    global _tts_model, _tts_denoiser_loaded
+    denoise = bool(req.get("denoise"))
+    if _tts_model is None or (denoise and not _tts_denoiser_loaded):
         from voxcpm import VoxCPM
 
-        # The denoiser is only used to clean reference audio, which the
-        # pipeline does not do; loading it would pull an extra model from
-        # ModelScope on first use.
+        # The denoiser only cleans reference audio; it stays unloaded until
+        # a request actually asks for it (extra model download on first use).
         _tts_model = VoxCPM.from_pretrained(
-            req.get("model", "openbmb/VoxCPM2"), load_denoiser=False
+            req.get("model", "openbmb/VoxCPM2"), load_denoiser=denoise
         )
+        _tts_denoiser_loaded = denoise
+    if req.get("seed") is not None:
+        import torch
+
+        torch.manual_seed(int(req["seed"]))
     text = req["text"]
     instruction = req.get("instruction")
     if instruction:
@@ -82,6 +91,12 @@ def _synthesize(req: dict) -> dict:
         kwargs["prompt_wav_path"] = req["prompt_wav"]
     if req.get("prompt_text"):
         kwargs["prompt_text"] = req["prompt_text"]
+    if req.get("cfg_value") is not None:
+        kwargs["cfg_value"] = float(req["cfg_value"])
+    if req.get("inference_timesteps") is not None:
+        kwargs["inference_timesteps"] = int(req["inference_timesteps"])
+    if denoise:
+        kwargs["denoise"] = True
     result = _tts_model.generate(**kwargs)
     if isinstance(result, tuple):
         rate, data = result

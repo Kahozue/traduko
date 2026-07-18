@@ -84,17 +84,19 @@ class FakeClient:
         self.synth_calls: list[dict] = []
         self.closed = False
 
-    def diarize(self, audio):
+    def diarize(self, audio, num_speakers=None):
         self.diarized.append(str(audio))
+        self.num_speakers = num_speakers
         return self.turns
 
-    def synthesize(self, text, out, prompt_wav=None, prompt_text=None, instruction=None):
+    def synthesize(self, text, out, prompt_wav=None, prompt_text=None, instruction=None, **options):
         call = {
             "text": text,
             "out": str(out),
             "prompt_wav": str(prompt_wav) if prompt_wav else None,
             "prompt_text": prompt_text,
             "instruction": instruction,
+            **options,
         }
         self.synth_calls.append(call)
         Path(out).write_bytes(b"RIFFfake")
@@ -501,3 +503,74 @@ def test_av_dub_profile_seeds_with_diarize_checkpoint(tmp_path: Path) -> None:
     ]
     diarize = profile.stages[types.index("diarize")]
     assert diarize.pause_after is True
+
+
+def test_synth_options_config_defaults_and_param_overrides(
+    tmp_path: Path, fake_client, monkeypatch
+) -> None:
+    install_engine(tmp_path)
+    config = CoreConfig()
+    config.dubbing.hf_token = "hf"
+    config.dubbing.cfg_value = 2.0
+    config.dubbing.inference_timesteps = 20
+    config.dubbing.denoise = True
+    save_config(tmp_path, config)
+    ctx, _ = make_ctx(
+        tmp_path,
+        tmp_path / "in.mp4",
+        stage_index=7,
+        params={"cfg_value": 3.5, "seed": 11, "voice_instruction": "沉穩語氣"},
+    )
+    write_translation(ctx)
+    write_speakers(ctx)
+    monkeypatch.setattr(dub, "run_media", lambda cmd: None)
+    monkeypatch.setattr(dub, "ffmpeg_available", lambda: True)
+    registry.create("tts_synthesize").run(ctx)
+    call = fake_client.synth_calls[0]
+    # Param override wins, config default fills the rest.
+    assert call["cfg_value"] == 3.5
+    assert call["inference_timesteps"] == 20
+    assert call["seed"] == 11
+    assert call["denoise"] is True
+    assert call["instruction"] == "沉穩語氣"
+
+
+def test_diarize_passes_num_speakers(tmp_path: Path, fake_client, monkeypatch) -> None:
+    install_engine(tmp_path)
+    write_dub_config(tmp_path)
+    ctx, _ = make_ctx(
+        tmp_path, tmp_path / "in.mp4", stage_index=6, params={"num_speakers": 2}
+    )
+    write_translation(ctx)
+    audio = ctx.artifacts.path_for(1, "audio.wav")
+    audio.parent.mkdir(parents=True, exist_ok=True)
+    audio.write_bytes(b"RIFF")
+    monkeypatch.setattr(dub, "ffmpeg_available", lambda: True)
+    registry.create("diarize").run(ctx)
+    assert fake_client.num_speakers == 2
+
+
+def test_reference_wavs_param_overrides_extraction(
+    tmp_path: Path, fake_client, monkeypatch
+) -> None:
+    install_engine(tmp_path)
+    write_dub_config(tmp_path)
+    custom = tmp_path / "custom-voice.wav"
+    custom.write_bytes(b"RIFF")
+    ctx, _ = make_ctx(
+        tmp_path,
+        tmp_path / "in.mp4",
+        stage_index=7,
+        params={"reference_wavs": {"S1": str(custom)}},
+    )
+    write_translation(ctx)
+    write_speakers(ctx)
+    commands: list[list[str]] = []
+    monkeypatch.setattr(dub, "run_media", lambda cmd: commands.append(cmd))
+    monkeypatch.setattr(dub, "ffmpeg_available", lambda: True)
+    registry.create("tts_synthesize").run(ctx)
+    # S1 clips use the custom wav; only S2 needs a ref extraction.
+    s1_call = next(c for c in fake_client.synth_calls if c["text"] == "哈囉")
+    assert s1_call["prompt_wav"] == str(custom)
+    assert not any("ref-S1" in " ".join(cmd) for cmd in commands)
+    assert any("ref-S2" in " ".join(cmd) for cmd in commands)

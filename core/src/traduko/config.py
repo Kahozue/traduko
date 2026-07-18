@@ -107,12 +107,18 @@ class SkillConfig(BaseModel):
 class DubbingConfig(BaseModel):
     """Dubbing engine settings. hf_token unlocks the gated pyannote
     diarization model; python overrides interpreter discovery for the
-    engine venv (VoxCPM needs >=3.10 <3.13)."""
+    engine venv (VoxCPM needs >=3.10 <3.13). The generation fields are
+    global synthesis defaults a task's stage params can override; None
+    leaves the engine default in charge."""
 
     model_config = ConfigDict(extra="allow")
 
     hf_token: str = ""
     python: str = ""
+    inference_timesteps: int | None = None
+    cfg_value: float | None = None
+    seed: int | None = None
+    denoise: bool = False
 
 
 class PdfEngineConfig(BaseModel):

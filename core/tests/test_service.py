@@ -1659,3 +1659,23 @@ def test_create_and_patch_asr_engine(tmp_path: Path) -> None:
         reset = client.patch(url, json={"asr_engine": ""}, headers=headers)
         by_type = {s["type"]: s for s in reset.json()["stages"]}
         assert "engine" not in by_type["asr"]["params"]
+
+
+def test_dubbing_model_endpoints(tmp_path: Path) -> None:
+    with service(tmp_path) as (client, headers, token):
+        app = client.app
+        # Inject fakes so no network or real HF cache is touched.
+        app.state.dubbing._model_info = lambda repo: 4960.0
+        app.state.dubbing._model_downloader = lambda repo: None
+        app.state.dubbing._model_cache_dir = tmp_path / "hf"
+        status = client.get("/dubbing/model/status", headers=headers).json()
+        assert status["repo"] == "openbmb/VoxCPM2"
+        assert status["cached"] is False
+        response = client.post("/dubbing/model/download", headers=headers)
+        assert response.status_code == 202
+        for _ in range(100):
+            status = client.get("/dubbing/model/status", headers=headers).json()
+            if status["state"] in ("done", "error"):
+                break
+            time.sleep(0.01)
+        assert status["state"] == "done"

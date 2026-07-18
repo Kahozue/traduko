@@ -448,7 +448,21 @@ export interface AsrEnginesInfo {
 export interface DubbingConfigDoc {
   hf_token: string;
   python: string;
+  inference_timesteps: number | null;
+  cfg_value: number | null;
+  seed: number | null;
+  denoise: boolean;
   [key: string]: unknown;
+}
+
+export interface DubbingModelStatus {
+  repo: string;
+  total_mb: number;
+  downloaded_mb: number;
+  cached: boolean;
+  state: "idle" | "downloading" | "done" | "error";
+  downloading: boolean;
+  error: string | null;
 }
 
 export interface DubbingStatus {

@@ -140,3 +140,67 @@ def test_probe_engine_delegates_and_catches(tmp_path: Path) -> None:
     result = manager.test()
     assert result["ok"] is False
     assert "no engine" in result["error"]
+
+
+def test_model_status_and_download(tmp_path):
+    from traduko.dubbing.setup import DubbingManager
+
+    downloads: list[str] = []
+
+    def fake_download(repo: str) -> None:
+        downloads.append(repo)
+
+    manager = DubbingManager(
+        tmp_path,
+        model_downloader=fake_download,
+        model_info=lambda repo: 4960.0,
+        model_cache_dir=tmp_path / "hf",
+    )
+    status = manager.model_status()
+    assert status["repo"] == "openbmb/VoxCPM2"
+    assert status["total_mb"] == 4960.0
+    assert status["cached"] is False
+    assert status["downloading"] is False
+
+    assert manager.start_model_download() is True
+    import time
+
+    for _ in range(100):
+        if manager.model_status()["state"] in ("done", "error"):
+            break
+        time.sleep(0.01)
+    assert manager.model_status()["state"] == "done"
+    assert downloads == ["openbmb/VoxCPM2"]
+    # A second start while idle is allowed; while downloading it would be
+    # refused (covered by the state machine reused from AsrManager).
+
+
+def test_model_cached_detection(tmp_path):
+    from traduko.dubbing.setup import DubbingManager
+
+    cache = tmp_path / "hf"
+    snapshot = cache / "models--openbmb--VoxCPM2" / "snapshots" / "abc"
+    snapshot.mkdir(parents=True)
+    (snapshot / "config.json").write_text("{}", encoding="utf-8")
+    manager = DubbingManager(
+        tmp_path,
+        model_info=lambda repo: 4960.0,
+        model_cache_dir=cache,
+    )
+    assert manager.model_status()["cached"] is True
+    blobs = cache / "models--openbmb--VoxCPM2" / "blobs"
+    blobs.mkdir(parents=True)
+    (blobs / "x.incomplete").write_text("", encoding="utf-8")
+    assert manager.model_status()["cached"] is False
+
+
+def test_model_info_failure_falls_back_to_known_size(tmp_path):
+    from traduko.dubbing.setup import DubbingManager
+
+    def broken_info(repo: str) -> float:
+        raise RuntimeError("offline")
+
+    manager = DubbingManager(
+        tmp_path, model_info=broken_info, model_cache_dir=tmp_path / "hf"
+    )
+    assert manager.model_status()["total_mb"] == 4960.0

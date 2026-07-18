@@ -105,10 +105,11 @@ class DubbingEngineClient:
     def ping(self) -> dict:
         return self._request({"op": "ping"})
 
-    def diarize(self, audio: Path) -> list[dict]:
-        response = self._request(
-            {"op": "diarize", "audio": str(audio), "hf_token": self.hf_token}
-        )
+    def diarize(self, audio: Path, num_speakers: int | None = None) -> list[dict]:
+        payload: dict = {"op": "diarize", "audio": str(audio), "hf_token": self.hf_token}
+        if num_speakers:
+            payload["num_speakers"] = num_speakers
+        response = self._request(payload)
         return response["segments"]
 
     def synthesize(
@@ -118,6 +119,11 @@ class DubbingEngineClient:
         prompt_wav: Path | None = None,
         prompt_text: str | None = None,
         instruction: str | None = None,
+        *,
+        cfg_value: float | None = None,
+        inference_timesteps: int | None = None,
+        seed: int | None = None,
+        denoise: bool = False,
     ) -> dict:
         payload: dict = {"op": "synthesize", "text": text, "out": str(out)}
         if prompt_wav is not None:
@@ -126,6 +132,14 @@ class DubbingEngineClient:
             payload["prompt_text"] = prompt_text
         if instruction:
             payload["instruction"] = instruction
+        if cfg_value is not None:
+            payload["cfg_value"] = cfg_value
+        if inference_timesteps is not None:
+            payload["inference_timesteps"] = inference_timesteps
+        if seed is not None:
+            payload["seed"] = seed
+        if denoise:
+            payload["denoise"] = True
         return self._request(payload)
 
     def close(self) -> None:
