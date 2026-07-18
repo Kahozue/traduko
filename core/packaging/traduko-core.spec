@@ -14,7 +14,11 @@ hiddenimports = (
 )
 
 binaries = []
-datas = []
+# The dubbing runner is executed by file path with the engine venv's
+# python (never imported), so it must exist as a real file in the bundle.
+# The heavy dubbing deps (voxcpm, pyannote, torch) intentionally stay out:
+# they live in the managed engine venv under the data root.
+datas = [("../src/traduko/dubbing/runner.py", "traduko/dubbing")]
 for package in (
     "faster_whisper",
     "ctranslate2",

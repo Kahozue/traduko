@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import sys
 from importlib.resources import files
 from pathlib import Path
 
@@ -14,7 +15,15 @@ class DubbingError(Exception):
 
 
 def runner_path() -> Path:
-    return Path(str(files("traduko.dubbing") / "runner.py"))
+    candidate = Path(str(files("traduko.dubbing") / "runner.py"))
+    if candidate.exists():
+        return candidate
+    # PyInstaller: the package lives in the PYZ archive, but the spec ships
+    # runner.py as a data file under the extraction dir.
+    bundle = getattr(sys, "_MEIPASS", None)
+    if bundle:
+        return Path(bundle) / "traduko" / "dubbing" / "runner.py"
+    return candidate
 
 
 def venv_python(engine_dir: Path) -> Path:
