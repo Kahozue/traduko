@@ -18,6 +18,10 @@ The project is an orchestration layer over existing tools rather than a new engi
 
 ![Task dashboard](docs/screenshot-tasks-light.png)
 
+![Subtitle editor](docs/screenshot-editor-light.png)
+
+![Built-in assistant, dark theme](docs/screenshot-assistant-dark.png)
+
 ![Settings, dark theme](docs/screenshot-settings-dark.png)
 
 ## Features

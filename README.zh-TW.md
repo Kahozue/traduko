@@ -18,6 +18,10 @@ Traduko 對影片、音訊或字幕檔執行可設定的管線：抽取音軌、
 
 ![任務儀表板](docs/screenshot-tasks-light.png)
 
+![字幕編輯器](docs/screenshot-editor-light.png)
+
+![內建助理，深色主題](docs/screenshot-assistant-dark.png)
+
 ![設定頁，深色主題](docs/screenshot-settings-dark.png)
 
 ## 功能
