@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import base64
+import json
+import logging
 import mimetypes
 import os
 from pathlib import Path
@@ -9,7 +11,17 @@ from pathlib import Path
 import httpx
 
 from ._http import request_with_retries
-from .base import ChatMessage, ChatRequest, ChatResponse, LLMError, Usage, register_llm
+from .base import (
+    ChatMessage,
+    ChatRequest,
+    ChatResponse,
+    DeltaCallback,
+    LLMError,
+    Usage,
+    register_llm,
+)
+
+logger = logging.getLogger(__name__)
 
 
 def _message_content(message: ChatMessage) -> str | list[dict]:
@@ -74,7 +86,7 @@ class OpenAICompatProvider:
             return request.max_tokens
         return self.max_output_tokens
 
-    def chat(self, request: ChatRequest) -> ChatResponse:
+    def _build_payload(self, request: ChatRequest) -> dict:
         payload: dict = {
             "model": request.model,
             "messages": [
@@ -87,9 +99,17 @@ class OpenAICompatProvider:
         max_tokens = self._effective_max_tokens(request)
         if max_tokens is not None:
             payload[self._tokens_param] = max_tokens
-        headers = {}
+        return payload
+
+    def _headers(self) -> dict:
+        headers: dict = {}
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
+        return headers
+
+    def chat(self, request: ChatRequest) -> ChatResponse:
+        payload = self._build_payload(request)
+        headers = self._headers()
 
         try:
             data = self._post(payload, headers)
@@ -126,3 +146,63 @@ class OpenAICompatProvider:
             max_retries=self.max_retries,
             backoff_base=self.backoff_base,
         )
+
+    def chat_stream(
+        self, request: ChatRequest, on_delta: DeltaCallback
+    ) -> ChatResponse:
+        """SSE streaming with usage in the final chunk. Any streaming-path
+        failure falls back to the plain call so budget metering stays exact;
+        the consumer then sees one delta with the whole reply (a rare
+        mid-stream failure may replay already-seen text, which downstream
+        renderers overwrite with the final content anyway)."""
+        payload = self._build_payload(request)
+        payload["stream"] = True
+        payload["stream_options"] = {"include_usage": True}
+        try:
+            return self._stream(payload, request, on_delta)
+        except (LLMError, httpx.HTTPError, json.JSONDecodeError) as error:
+            logger.debug("stream failed, falling back to plain chat: %s", error)
+            response = self.chat(request)
+            if response.content:
+                on_delta(response.content)
+            return response
+
+    def _stream(
+        self, payload: dict, request: ChatRequest, on_delta: DeltaCallback
+    ) -> ChatResponse:
+        parts: list[str] = []
+        usage = Usage()
+        model = request.model
+        with self._client.stream(
+            "POST",
+            f"{self.base_url}/chat/completions",
+            json=payload,
+            headers=self._headers(),
+        ) as response:
+            if response.status_code != 200:
+                body = response.read().decode("utf-8", errors="replace")[:200]
+                raise LLMError(
+                    f"llm call failed: http {response.status_code}: {body}"
+                )
+            for line in response.iter_lines():
+                if not line.startswith("data:"):
+                    continue
+                data_str = line[len("data:") :].strip()
+                if not data_str:
+                    continue
+                if data_str == "[DONE]":
+                    break
+                chunk = json.loads(data_str)
+                model = chunk.get("model") or model
+                for choice in chunk.get("choices") or []:
+                    delta = (choice.get("delta") or {}).get("content")
+                    if delta:
+                        parts.append(delta)
+                        on_delta(delta)
+                if chunk.get("usage"):
+                    raw = chunk["usage"]
+                    usage = Usage(
+                        prompt_tokens=raw.get("prompt_tokens", 0),
+                        completion_tokens=raw.get("completion_tokens", 0),
+                    )
+        return ChatResponse(content="".join(parts), model=model, usage=usage)

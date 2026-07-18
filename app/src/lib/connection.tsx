@@ -11,7 +11,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { useQueryClient } from "@tanstack/react-query";
 import { ApiClient } from "./api/client";
 import { EventStream } from "./events/stream";
-import { eventLog } from "./events/store";
+import { assistantLive, eventLog } from "./events/store";
 
 interface ConnectionInfo {
   baseUrl: string;
@@ -85,6 +85,12 @@ export function ConnectionProvider({ children }: { children: ReactNode }) {
       const api = new ApiClient(fresh.baseUrl, fresh.token);
       const stream = new EventStream(api.wsUrl(), {
         onEvent: (event) => {
+          // Assistant live-progress events feed the panel's own store; they
+          // are not task events and must not churn the task query cache.
+          if (event.type.startsWith("assistant_")) {
+            assistantLive.push(event);
+            return;
+          }
           eventLog.push(event);
           if (event.type === "stage_progress" || event.type === "agent_round") return;
           queryClient.invalidateQueries({ queryKey: ["tasks"] });

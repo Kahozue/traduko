@@ -717,3 +717,71 @@ def test_run_assistant_message_passes_images_to_runner(
     assert result["converged"] is True
     assert seen["images"] == [image]
     assert f"[attached files: {image}]" in seen["goal"]
+
+
+def collect_bus_events(ws: Workspace):
+    events = []
+    ws.bus.subscribe(lambda event: events.append(event))
+    return events
+
+
+def test_assistant_publishes_live_events_on_bus(tmp_path: Path) -> None:
+    ws = scripted_ws(
+        tmp_path,
+        [
+            '先查一下任務列表。\n{"tool": "list_tasks", "arguments": {}}',
+            '看完了。\n{"done": true, "summary": ""}',
+        ],
+    )
+    events = collect_bus_events(ws)
+    result = run_assistant_message(ws, "check my tasks")
+    assert result["reply"] == "看完了。"
+    types = [e.type for e in events if e.type.startswith("assistant_")]
+    assert "assistant_round" in types
+    assert "assistant_text" in types
+    assert "assistant_tool_started" in types
+    assert "assistant_tool_finished" in types
+    assert types[-1] == "assistant_done"
+    started = next(e for e in events if e.type == "assistant_tool_started")
+    assert started.project == "assistant"
+    assert started.data["tool"] == "list_tasks"
+    assert started.data["kind"] == "read"
+    text_event = next(e for e in events if e.type == "assistant_text")
+    assert text_event.data["text"] == "先查一下任務列表。"
+
+
+def test_assistant_persists_intermediate_narrative_messages(tmp_path: Path) -> None:
+    ws = scripted_ws(
+        tmp_path,
+        [
+            '我先看看狀態。\n{"tool": "list_tasks", "arguments": {}}',
+            '{"done": true, "summary": "一切正常。"}',
+        ],
+    )
+    result = run_assistant_message(ws, "hello")
+    assert result["reply"] == "一切正常。"
+    messages = read_active_messages(ws)
+    assert [m["role"] for m in messages] == ["user", "assistant", "assistant"]
+    assert messages[1]["text"] == "我先看看狀態。"
+    assert messages[2]["text"] == "一切正常。"
+    # The final row keeps the proposal/model metadata contract.
+    assert "proposal_ids" in messages[2]
+
+
+def test_assistant_propose_fires_authorization_event(tmp_path: Path) -> None:
+    ws = scripted_ws(
+        tmp_path,
+        [
+            (
+                '{"tool": "propose_config_change", "arguments": '
+                '{"patch": {"budget": {"monthly_usd_limit": 9}}, "reason": "r"}}'
+            ),
+            '{"done": true, "summary": "proposed"}',
+        ],
+    )
+    events = collect_bus_events(ws)
+    result = run_assistant_message(ws, "cap the budget")
+    assert len(result["proposal_ids"]) == 1
+    auth = [e for e in events if e.type == "assistant_authorization_required"]
+    assert len(auth) == 1
+    assert auth[0].data["proposal_id"] == result["proposal_ids"][0]

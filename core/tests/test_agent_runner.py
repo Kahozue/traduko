@@ -159,3 +159,66 @@ def test_run_attaches_images_to_opening_user_message(tmp_path: Path) -> None:
     assert result.converged is True
     assert seen["messages"][0].images == []
     assert seen["messages"][1].images == ["/abs/shot.png"]
+
+
+def make_event_runner(tmp_path: Path, responses: list[str]):
+    events: list[tuple[str, dict]] = []
+    runner, log, record_path = make_runner(tmp_path, responses)
+    runner.on_event = lambda kind, data: events.append((kind, data))
+    return runner, log, events
+
+
+def test_on_event_narrative_tool_and_done(tmp_path: Path) -> None:
+    runner, log, events = make_event_runner(
+        tmp_path,
+        [
+            '先看一下任務狀態。\n{"tool": "note", "arguments": {"text": "check"}}',
+            '都正常。\n{"done": true, "summary": ""}',
+        ],
+    )
+    result = runner.run("Test goal.")
+    assert result.converged is True
+    # Empty done summary falls back to the narrative text of the same turn.
+    assert result.summary == "都正常。"
+    kinds = [kind for kind, _ in events if kind != "delta"]
+    assert kinds == ["round", "text", "tool_started", "tool_finished", "done"]
+    deltas = [data["text"] for kind, data in events if kind == "delta"]
+    assert deltas and all("{" not in text for text in deltas)
+    by_kind = dict(events)
+    assert by_kind["text"] == {"text": "先看一下任務狀態。"}
+    assert by_kind["tool_started"]["tool"] == "note"
+    assert by_kind["tool_finished"]["ok"] is True
+    assert by_kind["done"]["converged"] is True
+    assert log == ["check"]
+
+
+def test_on_event_round_and_deltas(tmp_path: Path) -> None:
+    # The scripted provider has no chat_stream, so the meter degrades to a
+    # single delta per turn; the runner still forwards it.
+    runner, log, events = make_event_runner(
+        tmp_path,
+        [
+            '{"tool": "end_round", "arguments": {"summary": "pass 1"}}',
+            '{"done": true, "summary": "final"}',
+        ],
+    )
+    result = runner.run("Test goal.")
+    assert result.summary == "final"
+    rounds = [data["round"] for kind, data in events if kind == "round"]
+    assert rounds == [1, 2]
+    deltas = [data["text"] for kind, data in events if kind == "delta"]
+    # Protocol JSON must never leak into user-facing deltas.
+    assert all("{" not in text for text in deltas)
+
+
+def test_on_event_tool_error_reports_not_ok(tmp_path: Path) -> None:
+    runner, log, events = make_event_runner(
+        tmp_path,
+        [
+            '{"tool": "missing_tool", "arguments": {}}',
+            '{"done": true, "summary": "gave up"}',
+        ],
+    )
+    runner.run("Test goal.")
+    finished = [data for kind, data in events if kind == "tool_finished"]
+    assert finished and finished[0]["ok"] is False

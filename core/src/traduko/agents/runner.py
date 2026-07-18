@@ -42,30 +42,41 @@ _PROTOCOL_HEADER = """
 
 You accomplish the goal above strictly by calling tools.
 
-Reply with exactly ONE JSON object per turn and nothing else:
+Reply with exactly ONE JSON object per turn. Before the JSON you may write
+one short plain-text sentence to the user describing what you are doing;
+it is shown to them live.
 - Call a tool: {"tool": "<name>", "arguments": {...}}
 - Close the current round after one full scan/fix pass: {"tool": "end_round", "arguments": {"summary": "..."}}
 - Finish only when the goal is met: {"done": true, "summary": "..."}
+  (write the final reply as the plain text before the JSON and leave
+  summary empty, or put it in summary — either works)
 
 AGENT_TOOLS:
 """
 
 
-def _parse_action(content: str) -> dict | None:
+def _split_action(content: str) -> tuple[str, dict | None]:
+    """Narrative text before the first JSON action, plus the action.
+
+    Returns (text, None) when no valid protocol object is found — the
+    caller treats that as a protocol violation, same as before narrative
+    prefixes were allowed."""
     start = content.find("{")
     if start == -1:
-        return None
+        return content.strip(), None
     try:
         action, _ = json.JSONDecoder().raw_decode(content[start:])
     except json.JSONDecodeError:
-        return None
+        return content.strip(), None
     if not isinstance(action, dict):
-        return None
-    if action.get("done") is True:
-        return action
-    if isinstance(action.get("tool"), str):
-        return action
-    return None
+        return content.strip(), None
+    if action.get("done") is not True and not isinstance(action.get("tool"), str):
+        return content.strip(), None
+    return content[:start].strip(), action
+
+
+def _parse_action(content: str) -> dict | None:
+    return _split_action(content)[1]
 
 
 class AgentRunner:
@@ -82,6 +93,7 @@ class AgentRunner:
         limits: AgentLimits | None = None,
         temperature: float | None = None,
         on_round: Callable[[int], None] | None = None,
+        on_event: Callable[[str, dict], None] | None = None,
     ) -> None:
         self.provider = provider
         self.meter = meter
@@ -93,6 +105,36 @@ class AgentRunner:
         self.limits = limits or AgentLimits()
         self.temperature = temperature
         self.on_round = on_round
+        # Live progress hook: ("delta"|"text"|"tool_started"|"tool_finished"|
+        # "round"|"done", data). Narrative text before each JSON action is
+        # forwarded; protocol JSON itself never reaches it.
+        self.on_event = on_event
+
+    def _emit(self, kind: str, data: dict) -> None:
+        if self.on_event is not None:
+            self.on_event(kind, data)
+
+    def _make_delta_gate(self) -> Callable[[str], None]:
+        """Forward streamed deltas up to (not including) the first '{':
+        narrative streams to the user, protocol JSON stays internal."""
+        buffer = ""
+        sent = 0
+        stopped = False
+
+        def on_delta(piece: str) -> None:
+            nonlocal buffer, sent, stopped
+            if stopped or self.on_event is None:
+                return
+            buffer += piece
+            brace = buffer.find("{")
+            limit = brace if brace != -1 else len(buffer)
+            if limit > sent:
+                self._emit("delta", {"text": buffer[sent:limit]})
+                sent = limit
+            if brace != -1:
+                stopped = True
+
+        return on_delta
 
     def _should_stop_for_budget(self, round_cost: float) -> bool:
         remaining = self.meter.remaining_usd(self.task_id)
@@ -109,6 +151,7 @@ class AgentRunner:
             rounds=rounds,
             turns=turns,
         )
+        self._emit("done", {"converged": converged, "reason": reason})
         return AgentRunResult(converged, reason, summary, rounds, turns)
 
     def run(self, goal: str, *, images: list[str] | None = None) -> AgentRunResult:
@@ -131,6 +174,7 @@ class AgentRunner:
         self.recorder.record("start", goal=goal[:4000], tools=self.registry.names())
         if self.on_round:
             self.on_round(1)
+        self._emit("round", {"round": 1})
         while True:
             if turns >= self.limits.max_turns:
                 return self._finish(False, "max_turns", "turn limit reached", rounds, turns)
@@ -139,13 +183,17 @@ class AgentRunner:
             )
             try:
                 response = self.meter.chat(
-                    self.provider, request, project=self.project, task_id=self.task_id
+                    self.provider,
+                    request,
+                    project=self.project,
+                    task_id=self.task_id,
+                    on_delta=self._make_delta_gate() if self.on_event else None,
                 )
             except BudgetExceededError:
                 self.recorder.record("budget_stop", round=rounds, turn=turns)
                 return self._finish(False, "budget", "budget exhausted", rounds, turns)
             turns += 1
-            action = _parse_action(response.content)
+            narrative, action = _split_action(response.content)
             if action is None:
                 protocol_failures += 1
                 self.recorder.record(
@@ -171,7 +219,10 @@ class AgentRunner:
             protocol_failures = 0
             messages.append(ChatMessage(role="assistant", content=response.content))
             if action.get("done") is True:
-                summary = str(action.get("summary", ""))
+                # An empty summary falls back to the narrative text of the
+                # same turn, so the final reply can be streamed as plain
+                # text ahead of the done marker.
+                summary = str(action.get("summary", "")) or narrative
                 self.recorder.record("done", round=rounds, turn=turns, summary=summary)
                 return self._finish(True, "done", summary, rounds, turns)
             name = action["tool"]
@@ -194,6 +245,7 @@ class AgentRunner:
                 round_start_usd = self.meter.task_usage_usd(self.task_id)
                 if self.on_round:
                     self.on_round(rounds)
+                self._emit("round", {"round": rounds})
                 messages.append(
                     ChatMessage(
                         role="user",
@@ -204,15 +256,22 @@ class AgentRunner:
                     )
                 )
                 continue
+            if narrative:
+                self._emit("text", {"text": narrative})
+            self._emit("tool_started", {"tool": name})
             try:
                 result = self.registry.execute(name, arguments)
+                tool_ok = True
             except ToolError as error:
                 result = f"TOOL_ERROR: {error}"
+                tool_ok = False
             except BudgetExceededError:
+                self._emit("tool_finished", {"tool": name, "ok": False})
                 self.recorder.record("budget_stop", round=rounds, turn=turns, tool=name)
                 return self._finish(
                     False, "budget", "budget exhausted during tool call", rounds, turns
                 )
+            self._emit("tool_finished", {"tool": name, "ok": tool_ok})
             self.recorder.record(
                 "turn", round=rounds, turn=turns, tool=name,
                 arguments=arguments, result=result[:2000],

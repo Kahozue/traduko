@@ -754,3 +754,87 @@
   cursor: not-allowed;
   opacity: 0.5;
 }
+
+/* Live turn: the in-flight assistant activity between send and reply. */
+.liveTurn {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.streamText {
+  white-space: pre-wrap;
+}
+
+.streamCursor {
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  background: var(--accent);
+  animation: stream-blink 1s steps(2, start) infinite;
+}
+
+.toolRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-secondary);
+  font-size: var(--fs-note);
+}
+
+.toolBadge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-s);
+  color: var(--text-secondary);
+  animation: tool-pulse 1.2s var(--motion-curve) infinite;
+}
+
+.toolName {
+  font-family: var(--font-mono);
+  font-size: var(--fs-meta);
+  color: var(--text-secondary);
+}
+
+.contextGauge {
+  display: inline-flex;
+  margin-left: auto;
+  margin-right: 4px;
+}
+
+.contextTrack {
+  stroke: var(--border);
+}
+
+.contextFill {
+  stroke: var(--accent);
+  transition: stroke-dasharray var(--transition);
+}
+
+.contextFillWarn {
+  stroke: var(--warn);
+  transition: stroke-dasharray var(--transition);
+}
+
+@keyframes stream-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+@keyframes tool-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .streamCursor,
+  .toolBadge {
+    animation: none;
+  }
+}

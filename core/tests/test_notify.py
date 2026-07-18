@@ -224,3 +224,9 @@ def test_notifier_attach_and_unsubscribe() -> None:
     unsubscribe()
     bus.publish(make_event("task_completed"))
     assert len(channel.sent) == 1
+
+
+def test_default_events_exclude_assistant_stream() -> None:
+    from traduko.notify import DEFAULT_EVENTS
+
+    assert not any(name.startswith("assistant_") for name in DEFAULT_EVENTS)

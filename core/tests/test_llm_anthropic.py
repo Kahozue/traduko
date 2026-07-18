@@ -153,3 +153,29 @@ def test_configured_max_output_tokens_fills_and_caps() -> None:
     provider.chat(make_request(max_tokens=100))
     provider.chat(make_request(max_tokens=999999))
     assert [p["max_tokens"] for p in payloads] == [64000, 100, 64000]
+
+
+def test_chat_stream_parses_sse_and_usage() -> None:
+    events = [
+        ("message_start", {"type": "message_start", "message": {"model": "claude-x", "usage": {"input_tokens": 11}}}),
+        ("content_block_delta", {"type": "content_block_delta", "delta": {"type": "text_delta", "text": "Hi "}}),
+        ("content_block_delta", {"type": "content_block_delta", "delta": {"type": "text_delta", "text": "there"}}),
+        ("message_delta", {"type": "message_delta", "usage": {"output_tokens": 4}}),
+        ("message_stop", {"type": "message_stop"}),
+    ]
+    body = "".join(
+        f"event: {name}\ndata: {json.dumps(data)}\n\n" for name, data in events
+    ).encode()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content)
+        assert payload["stream"] is True
+        return httpx.Response(200, content=body)
+
+    provider = make_provider(handler)
+    deltas: list[str] = []
+    response = provider.chat_stream(make_request(), deltas.append)
+    assert deltas == ["Hi ", "there"]
+    assert response.content == "Hi there"
+    assert response.usage.prompt_tokens == 11
+    assert response.usage.completion_tokens == 4

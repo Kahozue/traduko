@@ -6,6 +6,9 @@ import { ApiError } from "../lib/api/client";
 import { humanizeError } from "../lib/errors";
 import { renderMarkdown } from "../lib/markdown";
 import { formatDateTime } from "../lib/time";
+import { assistantContextInfo } from "../lib/context";
+import { assistantLive, useAssistantLive } from "../lib/events/store";
+import type { IconName } from "./icons";
 import type {
   AssistantMessageDoc,
   AssistantSessionRow,
@@ -63,6 +66,19 @@ function localizeAssistantText(text: string): string {
   return t(FAIL_REASON_KEYS[match[1]] ?? "assistant.fail.generic");
 }
 
+// Live tool-activity badge: icon and label per tool category.
+const TOOL_ICONS: Record<string, IconName> = {
+  read: "book-open",
+  write: "pencil",
+  execute: "cpu",
+};
+
+const TOOL_LABEL_KEYS: Record<string, MessageKey> = {
+  read: "assistant.activity.read",
+  write: "assistant.activity.write",
+  execute: "assistant.activity.execute",
+};
+
 // Right-docked assistant panel: message flow + input row, with a history
 // drawer over conversation sessions. History survives close/reopen because it
 // lives in the shared react-query cache (staleTime Infinity), authoritative
@@ -81,6 +97,22 @@ export function AssistantPanel({ onClose }: { onClose: () => void }) {
     queryKey: PROPOSALS_KEY,
     queryFn: () => api.listProposals(),
   });
+  const live = useAssistantLive();
+  const { data: config } = useQuery({
+    queryKey: ["config"],
+    queryFn: () => api.getConfig(),
+  });
+  const contextInfo = useMemo(
+    () => assistantContextInfo(config, messages),
+    [config, messages],
+  );
+  // A proposal filed mid-run raises its card as soon as the event arrives,
+  // not only after the whole turn returns.
+  useEffect(() => {
+    if (live.proposalVersion > 0) {
+      void queryClient.invalidateQueries({ queryKey: PROPOSALS_KEY });
+    }
+  }, [live.proposalVersion, queryClient]);
   const proposalsById = useMemo(() => {
     const map: Record<string, ProposalDoc> = {};
     for (const proposal of proposals.data ?? []) map[proposal.id] = proposal;
@@ -153,6 +185,9 @@ export function AssistantPanel({ onClose }: { onClose: () => void }) {
     },
     onSettled: () => {
       abortRef.current = null;
+      // The turn is over (or abandoned): the live feed's job is done and the
+      // persisted history now carries the messages.
+      assistantLive.reset();
     },
   });
 
@@ -167,7 +202,7 @@ export function AssistantPanel({ onClose }: { onClose: () => void }) {
   useEffect(() => {
     const node = listRef.current;
     if (node) node.scrollTop = node.scrollHeight;
-  }, [messages.length]);
+  }, [messages.length, live.texts.length, live.streaming, live.tool]);
 
   function submit() {
     const text = draft.trim();
@@ -257,6 +292,7 @@ export function AssistantPanel({ onClose }: { onClose: () => void }) {
     <aside className={styles.panel}>
       <div className={styles.header}>
         <h2 className={styles.title}>{t("assistant.title")}</h2>
+        {contextInfo && <ContextGauge info={contextInfo} />}
         <button
           type="button"
           className={styles.iconButton}
@@ -315,6 +351,34 @@ export function AssistantPanel({ onClose }: { onClose: () => void }) {
             }
           />
         ))}
+        {send.isPending && (live.texts.length > 0 || live.streaming || live.tool) && (
+          <div className={styles.liveTurn}>
+            {live.texts.map((text, index) => (
+              <div key={`live-${index}`} className={styles.bubbleRow}>
+                <div className={`${styles.bubble} ${styles.bubbleAssistant}`}>
+                  <div className={styles.markdown}>{renderMarkdown(text)}</div>
+                </div>
+              </div>
+            ))}
+            {live.streaming && (
+              <div className={styles.bubbleRow}>
+                <div className={`${styles.bubble} ${styles.bubbleAssistant}`}>
+                  <span className={styles.streamText}>{live.streaming}</span>
+                  <span className={styles.streamCursor} aria-hidden="true" />
+                </div>
+              </div>
+            )}
+            {live.tool && (
+              <div className={styles.toolRow}>
+                <span className={styles.toolBadge} data-kind={live.tool.kind} aria-hidden="true">
+                  <Icon name={TOOL_ICONS[live.tool.kind] ?? "cpu"} size={13} />
+                </span>
+                <span>{t(TOOL_LABEL_KEYS[live.tool.kind] ?? "assistant.activity.execute")}</span>
+                <span className={styles.toolName}>{live.tool.name}</span>
+              </div>
+            )}
+          </div>
+        )}
       </div>
       {sendError && (
         <p className={styles.notice}>
@@ -701,5 +765,39 @@ function ProposalCard({
         <p className={styles.proposalError}>{t("assistant.proposal.rejectFailed")}</p>
       )}
     </div>
+  );
+}
+
+// 18px ring showing estimated context fill for the assistant's provider.
+// Estimate only (CJK-weighted char count), so the label says so.
+function ContextGauge({ info }: { info: { used: number; window: number; ratio: number } }) {
+  const radius = 7;
+  const circumference = 2 * Math.PI * radius;
+  const warn = info.ratio > 0.85;
+  const label = `${t("assistant.context.label")}: ${info.used.toLocaleString()} / ${info.window.toLocaleString()} tokens`;
+  return (
+    <span className={styles.contextGauge} role="img" aria-label={label} title={label}>
+      <svg width="18" height="18" viewBox="0 0 18 18">
+        <circle
+          cx="9"
+          cy="9"
+          r={radius}
+          fill="none"
+          className={styles.contextTrack}
+          strokeWidth="2.5"
+        />
+        <circle
+          cx="9"
+          cy="9"
+          r={radius}
+          fill="none"
+          className={warn ? styles.contextFillWarn : styles.contextFill}
+          strokeWidth="2.5"
+          strokeLinecap="round"
+          strokeDasharray={`${circumference * info.ratio} ${circumference}`}
+          transform="rotate(-90 9 9)"
+        />
+      </svg>
+    </span>
   );
 }

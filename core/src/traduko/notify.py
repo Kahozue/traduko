@@ -42,7 +42,12 @@ class NotifyError(Exception):
     pass
 
 
-DEFAULT_EVENTS = frozenset(EVENT_TYPES) - {"stage_progress", "agent_round"}
+DEFAULT_EVENTS = frozenset(
+    name
+    for name in EVENT_TYPES
+    if name not in {"stage_progress", "agent_round"}
+    and not name.startswith("assistant_")
+)
 EMAIL_DEFAULT_EVENTS = frozenset(
     {"task_completed", "task_failed", "budget_warning", "budget_exceeded"}
 )

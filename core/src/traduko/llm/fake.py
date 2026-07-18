@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 import re
 
-from .base import ChatRequest, ChatResponse, Usage, register_llm
+from .base import ChatRequest, ChatResponse, DeltaCallback, Usage, register_llm
 
 _ARRAY_RE = re.compile(r"\[.*\]", re.DOTALL)
 _BATCH_MARKER_RE = re.compile(r"SEGMENTS:|BLOCKS:")
@@ -14,6 +14,17 @@ _BATCH_MARKER_RE = re.compile(r"SEGMENTS:|BLOCKS:")
 class FakeLLMProvider:
     def __init__(self, prefix: str = "[T] ", **_ignored) -> None:
         self.prefix = prefix
+
+    def chat_stream(
+        self, request: ChatRequest, on_delta: DeltaCallback
+    ) -> ChatResponse:
+        """Deterministic streaming: the chat() reply sliced into small
+        pieces, so streaming consumers can be tested offline."""
+        response = self.chat(request)
+        step = 6
+        for start in range(0, len(response.content), step):
+            on_delta(response.content[start : start + step])
+        return response
 
     def chat(self, request: ChatRequest) -> ChatResponse:
         full_prompt = "\n".join(m.content for m in request.messages)

@@ -7,20 +7,24 @@ from .base import (
     ChatMessage,
     ChatRequest,
     ChatResponse,
+    DeltaCallback,
     LLMError,
     LLMProvider,
     Usage,
     create_llm,
     register_llm,
+    stream_chat,
 )
 
 __all__ = [
     "ChatMessage",
     "ChatRequest",
     "ChatResponse",
+    "DeltaCallback",
     "LLMError",
     "LLMProvider",
     "Usage",
     "create_llm",
     "register_llm",
+    "stream_chat",
 ]

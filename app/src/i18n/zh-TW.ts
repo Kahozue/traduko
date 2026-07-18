@@ -505,4 +505,8 @@ export const zhTW = {
   "assistant.proposal.approveFailed": "核准失敗，請稍後再試。",
   "assistant.proposal.rejectFailed": "駁回失敗，請稍後再試。",
   "assistant.proposal.missing": "此提案已無法取得。",
+  "assistant.activity.read": "讀取中",
+  "assistant.activity.write": "準備變更",
+  "assistant.activity.execute": "執行中",
+  "assistant.context.label": "上下文用量（估算）",
 } as const;

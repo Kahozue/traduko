@@ -421,3 +421,71 @@ test("core 的英文未收斂訊息以 zh-TW 對應文案呈現", async () => {
     await screen.findByText(/助理回覆格式異常，這則訊息未能處理完成/),
   ).toBeInTheDocument();
 });
+
+test("live turn shows streamed narrative and tool activity, then clears", async () => {
+  const { act } = await import("@testing-library/react");
+  const { assistantLive } = await import("../lib/events/store");
+  assistantLive.reset();
+  let resolveSend!: (value: AssistantReply) => void;
+  const pending = new Promise<AssistantReply>((resolve) => {
+    resolveSend = resolve;
+  });
+  const api: Partial<ApiClient> = {
+    getAssistantHistory: vi.fn().mockResolvedValue([]),
+    listProposals: vi.fn().mockResolvedValue([]),
+    listAssistantSessions: vi.fn().mockResolvedValue([]),
+    getConfig: vi.fn().mockResolvedValue({ llm_providers: {} }),
+    sendAssistantMessage: vi.fn().mockReturnValue(pending),
+  };
+  renderWithConnection(<AssistantPanel onClose={() => {}} />, { api });
+  await userEvent.type(await screen.findByRole("textbox"), "檢查任務");
+  await userEvent.click(screen.getByText("傳送"));
+
+  const base = { ts: "t", project: "assistant", task_id: "s1" };
+  act(() => {
+    assistantLive.push({ ...base, type: "assistant_round", data: { round: 1 } } as never);
+    assistantLive.push({ ...base, type: "assistant_delta", data: { text: "我先看看任務" } } as never);
+  });
+  expect(screen.getByText("我先看看任務")).toBeInTheDocument();
+  act(() => {
+    assistantLive.push({ ...base, type: "assistant_text", data: { text: "我先看看任務列表。" } } as never);
+    assistantLive.push({
+      ...base,
+      type: "assistant_tool_started",
+      data: { tool: "list_tasks", kind: "read" },
+    } as never);
+  });
+  expect(screen.getByText("我先看看任務列表。")).toBeInTheDocument();
+  expect(screen.getByText("讀取中")).toBeInTheDocument();
+  expect(screen.getByText("list_tasks")).toBeInTheDocument();
+
+  act(() => {
+    resolveSend({
+      reply: "都正常。",
+      proposal_ids: [],
+      converged: true,
+      reason: "done",
+      history: [
+        { role: "user", text: "檢查任務", ts: "t1" },
+        { role: "assistant", text: "都正常。", ts: "t2" },
+      ],
+    });
+  });
+  await waitFor(() => expect(screen.getByText("都正常。")).toBeInTheDocument());
+  expect(screen.queryByText("讀取中")).not.toBeInTheDocument();
+});
+
+test("context gauge appears when the provider declares a context window", async () => {
+  const api: Partial<ApiClient> = {
+    getAssistantHistory: vi.fn().mockResolvedValue(HISTORY),
+    listProposals: vi.fn().mockResolvedValue([]),
+    getConfig: vi.fn().mockResolvedValue({
+      llm_providers: {
+        default: { type: "openai_compat", model: "m", context_window: 128000 },
+      },
+    }),
+  };
+  renderWithConnection(<AssistantPanel onClose={() => {}} />, { api });
+  const gauge = await screen.findByRole("img", { name: /上下文/ });
+  expect(gauge.getAttribute("aria-label")).toMatch(/128,?000|128000/);
+});

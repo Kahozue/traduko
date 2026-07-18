@@ -91,7 +91,14 @@ export type EventType =
   | "task_paused"
   | "budget_warning"
   | "budget_exceeded"
-  | "agent_round";
+  | "agent_round"
+  | "assistant_round"
+  | "assistant_delta"
+  | "assistant_text"
+  | "assistant_tool_started"
+  | "assistant_tool_finished"
+  | "assistant_authorization_required"
+  | "assistant_done";
 
 export interface EventPayload {
   ts: string;

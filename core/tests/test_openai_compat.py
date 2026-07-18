@@ -231,3 +231,49 @@ def test_null_content_maps_to_empty_string() -> None:
 
     provider = make_provider(handler)
     assert provider.chat(make_request()).content == ""
+
+
+def _sse(chunks: list[dict]) -> bytes:
+    lines = [f"data: {json.dumps(c)}" for c in chunks]
+    lines.append("data: [DONE]")
+    return ("\n\n".join(lines) + "\n\n").encode()
+
+STREAM_CHUNKS = [
+    {"model": "test-model", "choices": [{"delta": {"role": "assistant"}}]},
+    {"model": "test-model", "choices": [{"delta": {"content": "Hel"}}]},
+    {"model": "test-model", "choices": [{"delta": {"content": "lo"}}]},
+    {"model": "test-model", "choices": [], "usage": {"prompt_tokens": 7, "completion_tokens": 3}},
+]
+
+
+def test_chat_stream_yields_deltas_and_final_usage() -> None:
+    captured = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["payload"] = json.loads(request.content)
+        return httpx.Response(200, content=_sse(STREAM_CHUNKS))
+
+    provider = make_provider(handler, api_key="sk-test")
+    deltas: list[str] = []
+    response = provider.chat_stream(make_request(), deltas.append)
+    assert deltas == ["Hel", "lo"]
+    assert response.content == "Hello"
+    assert response.usage.prompt_tokens == 7
+    assert response.usage.completion_tokens == 3
+    assert captured["payload"]["stream"] is True
+    assert captured["payload"]["stream_options"] == {"include_usage": True}
+
+
+def test_chat_stream_falls_back_to_plain_chat_on_stream_rejection() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content)
+        if payload.get("stream"):
+            return httpx.Response(400, json={"error": {"message": "stream unsupported"}})
+        return httpx.Response(200, json=OK_BODY)
+
+    provider = make_provider(handler, api_key="sk-test")
+    deltas: list[str] = []
+    response = provider.chat_stream(make_request(), deltas.append)
+    assert response.content == "translated"
+    assert response.usage.prompt_tokens == 10
+    assert deltas == ["translated"]

@@ -79,3 +79,21 @@ def test_fake_finishes_agent_protocol_conversations() -> None:
     )
     action = json.loads(provider.chat(request).content)
     assert action["done"] is True
+
+
+def test_fake_chat_stream_emits_deltas_matching_content() -> None:
+    provider = create_llm({"type": "fake"})
+    deltas: list[str] = []
+    response = provider.chat_stream(make_request("just a question"), deltas.append)
+    assert len(deltas) > 1
+    assert "".join(deltas) == response.content == "just a question"
+
+
+def test_stream_chat_helper_falls_back_for_plain_providers() -> None:
+    from traduko.llm import stream_chat
+
+    provider = create_llm({"type": "scripted", "responses": ["only"]})
+    deltas: list[str] = []
+    response = stream_chat(provider, make_request("x"), deltas.append)
+    assert deltas == ["only"]
+    assert response.content == "only"

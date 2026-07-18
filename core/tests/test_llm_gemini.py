@@ -134,3 +134,25 @@ def test_configured_max_output_tokens_fills_and_caps() -> None:
     assert [
         p["generationConfig"]["maxOutputTokens"] for p in payloads
     ] == [65536, 128, 65536]
+
+
+def test_chat_stream_parses_sse_and_usage() -> None:
+    chunks = [
+        {"candidates": [{"content": {"parts": [{"text": "Bon"}]}}]},
+        {"candidates": [{"content": {"parts": [{"text": "jour"}]}}],
+         "usageMetadata": {"promptTokenCount": 9, "candidatesTokenCount": 2}},
+    ]
+    body = "".join(f"data: {json.dumps(c)}\n\n" for c in chunks).encode()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert ":streamGenerateContent" in str(request.url)
+        assert "alt=sse" in str(request.url)
+        return httpx.Response(200, content=body)
+
+    provider = make_provider(handler)
+    deltas: list[str] = []
+    response = provider.chat_stream(make_request(), deltas.append)
+    assert deltas == ["Bon", "jour"]
+    assert response.content == "Bonjour"
+    assert response.usage.prompt_tokens == 9
+    assert response.usage.completion_tokens == 2

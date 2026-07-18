@@ -1,8 +1,11 @@
 """LLM provider abstraction. Runtime calls must go through BudgetMeter."""
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Protocol, runtime_checkable
+
+DeltaCallback = Callable[[str], None]
 
 
 class LLMError(Exception):
@@ -43,6 +46,22 @@ class ChatResponse:
 @runtime_checkable
 class LLMProvider(Protocol):
     def chat(self, request: ChatRequest) -> ChatResponse: ...
+
+
+def stream_chat(
+    provider: LLMProvider, request: ChatRequest, on_delta: DeltaCallback
+) -> ChatResponse:
+    """Stream when the provider can, degrade to one delta when it cannot.
+
+    Callers always observe the full reply through on_delta either way, so
+    UI code needs no capability checks."""
+    stream = getattr(provider, "chat_stream", None)
+    if callable(stream):
+        return stream(request, on_delta)
+    response = provider.chat(request)
+    if response.content:
+        on_delta(response.content)
+    return response
 
 
 _REGISTRY: dict[str, type] = {}

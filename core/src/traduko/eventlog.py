@@ -19,6 +19,10 @@ class EventLogger:
         self.root = root
 
     def handle(self, event: Event) -> None:
+        # Assistant live-progress events are a UI feed, not task history;
+        # logging them would grow junk dirs under projects/assistant.
+        if event.type.startswith("assistant_"):
+            return
         log_dir = (
             self.root / "projects" / event.project / "tasks" / event.task_id / "logs"
         )

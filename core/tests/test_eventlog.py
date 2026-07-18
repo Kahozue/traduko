@@ -34,3 +34,14 @@ def test_attach_subscribes_to_bus(tmp_path: Path) -> None:
     bus.publish(make_event("task_failed"))
     lines = log_path(tmp_path).read_text(encoding="utf-8").strip().splitlines()
     assert len(lines) == 1
+
+
+def test_assistant_events_are_not_logged_to_task_dirs(tmp_path):
+    from traduko.eventlog import EventLogger
+    from traduko.events import Event
+
+    logger = EventLogger(tmp_path)
+    logger.handle(
+        Event(type="assistant_delta", task_id="s1", project="assistant", data={})
+    )
+    assert not (tmp_path / "projects" / "assistant").exists()

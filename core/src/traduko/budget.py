@@ -14,7 +14,7 @@ import yaml
 
 from .config import CoreConfig
 from .events import Event, EventBus
-from .llm import ChatRequest, ChatResponse, LLMProvider
+from .llm import ChatRequest, ChatResponse, DeltaCallback, LLMProvider, stream_chat
 
 BUILTIN_PRICES: dict[str, tuple[float, float]] = {
     "gpt-4o": (2.5, 10.0),
@@ -124,10 +124,19 @@ class BudgetMeter:
                 )
 
     def chat(
-        self, provider: LLMProvider, request: ChatRequest, *, project: str, task_id: str
+        self,
+        provider: LLMProvider,
+        request: ChatRequest,
+        *,
+        project: str,
+        task_id: str,
+        on_delta: DeltaCallback | None = None,
     ) -> ChatResponse:
         self._check_caps(project, task_id)
-        response = provider.chat(request)
+        if on_delta is not None:
+            response = stream_chat(provider, request, on_delta)
+        else:
+            response = provider.chat(request)
         price = self._prices.get(request.model)
         usage = response.usage
         cost = 0.0

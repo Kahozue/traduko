@@ -26,6 +26,7 @@ from pathlib import Path
 from .. import mcphub, skillhub
 from ..budget import BudgetMeter
 from ..config import CoreConfig
+from ..events import Event
 from ..llm import LLMError, create_llm
 from ..preflight import run_preflight as compute_preflight
 from ..proposals import (
@@ -296,13 +297,18 @@ def build_assistant_tools(ws: Workspace) -> list[AgentTool]:
     ]
 
 
-def _build_propose_tool(ws: Workspace, proposal_ids: list[str]) -> AgentTool:
+def _build_propose_tool(
+    ws: Workspace,
+    proposal_ids: list[str],
+    on_proposal: Callable[[str], None] | None = None,
+) -> AgentTool:
     """The one write tool: files a pending proposal, never touches config.
 
     `proposal_ids` is a per-run accumulator owned by the caller
     (`run_assistant_message`); every proposal created during this run gets
     appended so the caller can report and persist which ids this message
-    produced.
+    produced. `on_proposal` fires per filed proposal so the live event feed
+    can raise the authorization card immediately.
     """
 
     def propose_config_change(args: dict) -> str:
@@ -322,6 +328,8 @@ def _build_propose_tool(ws: Workspace, proposal_ids: list[str]) -> AgentTool:
             # invalid merges and propose_config's own confirmed-gate error.
             raise ToolError(str(error)) from None
         proposal_ids.append(proposal["id"])
+        if on_proposal is not None:
+            on_proposal(proposal["id"])
         return json.dumps(
             {"proposal_id": proposal["id"], "diff": proposal["diff"]},
             ensure_ascii=False,
@@ -436,12 +444,15 @@ def _build_action_tools(ws: Workspace, created_task_ids: list[str]) -> list[Agen
 
 
 def _build_registry(
-    ws: Workspace, proposal_ids: list[str], created_task_ids: list[str]
+    ws: Workspace,
+    proposal_ids: list[str],
+    created_task_ids: list[str],
+    on_proposal: Callable[[str], None] | None = None,
 ) -> ToolRegistry:
     registry = ToolRegistry()
     for tool in build_assistant_tools(ws):
         registry.register(tool)
-    registry.register(_build_propose_tool(ws, proposal_ids))
+    registry.register(_build_propose_tool(ws, proposal_ids, on_proposal))
     for tool in _build_action_tools(ws, created_task_ids):
         registry.register(tool)
     for tool in mcphub.active_tools():
@@ -449,6 +460,27 @@ def _build_registry(
     for tool in skillhub.active_tools():
         registry.register(tool)
     return registry
+
+
+# Visual classification for the live tool-activity indicator. External MCP
+# tools (dotted names) count as "execute" — the conservative badge for
+# capabilities we do not control.
+_TOOL_KINDS = {
+    "list_tasks": "read",
+    "task_detail": "read",
+    "budget_status": "read",
+    "read_config": "read",
+    "read_logs": "read",
+    "run_preflight": "read",
+    "list_profiles": "read",
+    "use_skill": "read",
+    "propose_config_change": "write",
+    "create_task": "execute",
+}
+
+
+def tool_kind(name: str) -> str:
+    return _TOOL_KINDS.get(name, "execute")
 
 
 def _resolve_default_llm(config: CoreConfig):
@@ -567,13 +599,57 @@ def run_assistant_message(
     history = _load_history(ws)
     goal = _build_goal(history, text, images=images)
 
+    from . import assistant_store
+
+    session_id = assistant_store.active_session_id(ws)
+
+    def publish(event_type: str, data: dict) -> None:
+        ws.bus.publish(
+            Event(
+                type=event_type,
+                task_id=session_id,
+                project=ASSISTANT_PROJECT,
+                data=data,
+            )
+        )
+
     proposal_ids: list[str] = []
     created_task_ids: list[str] = []
-    registry = _build_registry(ws, proposal_ids, created_task_ids)
+    registry = _build_registry(
+        ws,
+        proposal_ids,
+        created_task_ids,
+        on_proposal=lambda proposal_id: publish(
+            "assistant_authorization_required", {"proposal_id": proposal_id}
+        ),
+    )
     meter = BudgetMeter(ws.root, ws.bus, ws.config)
     task_id = "assistant-" + datetime.now().strftime("%Y%m")
     run_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%f")
     recorder = AgentRunRecorder(ws.root / "assistant" / "runs", run_id=run_id)
+
+    # Narrative texts the model addressed to the user mid-run; persisted as
+    # their own assistant messages so the conversation reads as the
+    # multi-step flow it was.
+    intermediate_texts: list[str] = []
+
+    def on_event(kind: str, data: dict) -> None:
+        if kind == "text":
+            intermediate_texts.append(str(data.get("text", "")))
+            publish("assistant_text", data)
+        elif kind == "delta":
+            publish("assistant_delta", data)
+        elif kind == "tool_started":
+            publish(
+                "assistant_tool_started",
+                {**data, "kind": tool_kind(str(data.get("tool", "")))},
+            )
+        elif kind == "tool_finished":
+            publish("assistant_tool_finished", data)
+        elif kind == "round":
+            publish("assistant_round", data)
+        elif kind == "done":
+            publish("assistant_done", data)
 
     runner = AgentRunner(
         provider=provider,
@@ -584,6 +660,7 @@ def run_assistant_message(
         registry=registry,
         recorder=recorder,
         limits=ASSISTANT_LIMITS,
+        on_event=on_event,
     )
     try:
         result = runner.run(goal, images=images)
@@ -603,6 +680,16 @@ def run_assistant_message(
     if images:
         user_message["images"] = list(images)
     history.append(user_message)
+    for narrative in intermediate_texts:
+        if narrative:
+            history.append(
+                {
+                    "role": "assistant",
+                    "text": narrative,
+                    "ts": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                    "model": model,
+                }
+            )
     history.append(
         {
             "role": "assistant",

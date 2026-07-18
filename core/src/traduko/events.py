@@ -22,6 +22,15 @@ EVENT_TYPES = frozenset(
         "budget_warning",
         "budget_exceeded",
         "agent_round",
+        # Assistant live-progress stream (UI feed only: skipped by the task
+        # event logger and excluded from notification defaults).
+        "assistant_round",
+        "assistant_delta",
+        "assistant_text",
+        "assistant_tool_started",
+        "assistant_tool_finished",
+        "assistant_authorization_required",
+        "assistant_done",
     }
 )
 
