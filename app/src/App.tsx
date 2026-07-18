@@ -5,6 +5,7 @@ import { AppShell, type NavKey } from "./components/AppShell";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { t } from "./i18n";
 import { ConnectionProvider, useConnection } from "./lib/connection";
+import { useLocale } from "./lib/locale";
 import { BudgetView } from "./views/BudgetView";
 import { DocumentEditorView } from "./views/DocumentEditorView";
 import { SettingsView, type SettingsTab } from "./views/SettingsView";
@@ -213,10 +214,13 @@ function renderView(
 }
 
 export default function App() {
+  // Keying the tree by locale remounts everything on a language switch, so
+  // every t() call re-evaluates without per-component subscriptions.
+  const locale = useLocale();
   return (
     <QueryClientProvider client={queryClient}>
       <ConnectionProvider>
-        <ErrorBoundary>
+        <ErrorBoundary key={locale}>
           <Main />
         </ErrorBoundary>
       </ConnectionProvider>

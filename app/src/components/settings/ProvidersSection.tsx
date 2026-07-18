@@ -67,7 +67,7 @@ const PRESETS: Preset[] = [
     model: "kimi-k2.7-code",
     type: "openai_compat",
   },
-  { id: "custom", label: t("settings.provider.custom"), baseUrl: "", model: "", type: "openai_compat" },
+  { id: "custom", label: "", baseUrl: "", model: "", type: "openai_compat" },
 ];
 
 // Model suggestions per preset, offered through a datalist so the field
@@ -393,7 +393,7 @@ export function ProvidersSection({
                 >
                   {PRESETS.map((item) => (
                     <option key={item.id} value={item.id}>
-                      {item.label}
+                      {item.id === "custom" ? t("settings.provider.custom") : item.label}
                     </option>
                   ))}
                 </select>

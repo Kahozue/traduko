@@ -19,24 +19,20 @@ const STATUS_OPTIONS: TaskStatus[] = [
   "canceled",
 ];
 
-const STATUS_LABEL: Record<TaskStatus, string> = {
-  pending: t("status.pending"),
-  running: t("status.running"),
-  waiting_review: t("status.waiting_review"),
-  paused: t("status.paused"),
-  completed: t("status.completed"),
-  failed: t("status.failed"),
-  canceled: t("status.canceled"),
+// Computed per call so a locale switch (which remounts the tree) always
+// reads the active language instead of module-load-time text.
+function statusLabel(status: TaskStatus): string {
+  return t(`status.${status}` as Parameters<typeof t>[0]);
+}
+
+const KIND_LABEL_KEYS: Record<TaskKind, Parameters<typeof t>[0]> = {
+  video: "create.kind.video",
+  audio: "create.kind.audio",
+  document: "create.kind.document",
+  comic: "create.kind.comic",
 };
 
 const COLLAPSE_KEY = "traduko.tasks.collapsed";
-
-const KIND_LABEL: Record<TaskKind, string> = {
-  video: t("create.kind.video"),
-  audio: t("create.kind.audio"),
-  document: t("create.kind.document"),
-  comic: t("create.kind.comic"),
-};
 
 function rowKey(row: TaskIndexRow): string {
   return `${row.project}\n${row.id}`;
@@ -281,7 +277,7 @@ export function TasksView({
   return (
     <div>
       <header className={styles.header}>
-        <h1 className={styles.title}>{taskKind ? KIND_LABEL[taskKind] : t("tasks.title")}</h1>
+        <h1 className={styles.title}>{taskKind ? t(KIND_LABEL_KEYS[taskKind]) : t("tasks.title")}</h1>
         <div className={styles.actions}>
           <select
             className={styles.select}
@@ -291,7 +287,7 @@ export function TasksView({
             <option value="">{t("tasks.filter.all")}</option>
             {STATUS_OPTIONS.map((status) => (
               <option key={status} value={status}>
-                {STATUS_LABEL[status]}
+                {statusLabel(status)}
               </option>
             ))}
           </select>

@@ -48,3 +48,13 @@ test("arrow keys move the selection", async () => {
   );
   expect(document.documentElement.dataset.theme).toBe("dark");
 });
+
+test("language control switches the locale store", async () => {
+  const { localeStore } = await import("../../lib/locale");
+  render(<AppearanceSection />);
+  const group = screen.getByRole("radiogroup", { name: "介面語言" });
+  expect(group).toBeInTheDocument();
+  await userEvent.click(screen.getByRole("radio", { name: "English" }));
+  expect(localeStore.getLocale()).toBe("en");
+  localeStore.setLocale("zh-TW");
+});
