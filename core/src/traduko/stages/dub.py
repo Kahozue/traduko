@@ -26,6 +26,10 @@ from ..media import (
     build_atempo_cmd,
     build_extract_audio_cmd,
     build_extract_clip_cmd,
+    build_extract_mix_audio_cmd,
+    build_mix_cmd,
+    build_mix_filter_script,
+    build_mux_cmd,
     ffmpeg_available,
 )
 from ..media import run as run_media
@@ -375,3 +379,70 @@ class AlignDurationStage:
             DubTimelineDoc(segments=timeline).model_dump(),
         )
         return StageResult(artifacts=[path.name])
+
+
+@registry.register
+class MixAudioStage:
+    type = "mix_audio"
+
+    def run(self, ctx: StageContext) -> StageResult:
+        (timeline,) = _read_dub_inputs(ctx, "dub-timeline.json")
+        if not ffmpeg_available():
+            raise StageError("ffmpeg/ffprobe not found on PATH")
+        placed = [
+            s
+            for s in timeline["segments"]
+            if s.get("status") != "failed" and s.get("file")
+        ]
+        if not placed:
+            raise StageError("no synthesized segments to mix")
+
+        out_index = ctx.stage_index + 1
+        orig_path = ctx.artifacts.path_for(out_index, "orig-audio.wav")
+        orig_path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            run_media(
+                build_extract_mix_audio_cmd(Path(ctx.task.input_path), orig_path)
+            )
+        except MediaError as error:
+            raise StageError(str(error)) from error
+
+        clips = [ctx.artifacts.dir / s["file"] for s in placed]
+        offsets = [s["start"] for s in placed]
+        duck_windows = [(s["start"], s["start"] + s["duration"]) for s in placed]
+        script_path = ctx.artifacts.path_for(out_index, "mix.filter")
+        script_path.write_text(
+            build_mix_filter_script(
+                offsets, duck_windows, ctx.params.get("duck_volume", 0.2)
+            ),
+            encoding="utf-8",
+        )
+        mix_path = ctx.artifacts.path_for(out_index, "dub-mix.wav")
+        try:
+            run_media(build_mix_cmd(orig_path, clips, script_path, mix_path))
+        except MediaError as error:
+            raise StageError(str(error)) from error
+        ctx.emit_progress(1, 1)
+        return StageResult(artifacts=[mix_path.name, script_path.name])
+
+
+@registry.register
+class MuxStage:
+    type = "mux"
+
+    def run(self, ctx: StageContext) -> StageResult:
+        if not ffmpeg_available():
+            raise StageError("ffmpeg/ffprobe not found on PATH")
+        try:
+            mix_path = ctx.artifacts.latest_path("dub-mix.wav")
+        except FileNotFoundError as error:
+            raise StageError("mux stage requires a dub-mix artifact") from error
+        output = ctx.artifacts.path_for(
+            ctx.stage_index + 1, ctx.params.get("output_name", "video-dubbed.mp4")
+        )
+        try:
+            run_media(build_mux_cmd(Path(ctx.task.input_path), mix_path, output))
+        except MediaError as error:
+            raise StageError(str(error)) from error
+        ctx.emit_progress(1, 1)
+        return StageResult(artifacts=[output.name])

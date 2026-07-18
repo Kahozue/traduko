@@ -377,6 +377,120 @@ def test_align_duration_carries_failed_segments(tmp_path: Path, monkeypatch) -> 
     assert timeline["segments"][0]["status"] == "failed"
 
 
+def write_timeline(ctx, index: int = 9) -> None:
+    dub_dir = ctx.artifacts.dir / "08-dub"
+    dub_dir.mkdir(parents=True, exist_ok=True)
+    for seg_id in (1, 3):
+        (dub_dir / f"seg-{seg_id}.wav").write_bytes(b"RIFFfake")
+    ctx.artifacts.write_json(
+        index,
+        "dub-timeline.json",
+        {
+            "segments": [
+                {"id": 1, "start": 0.0, "window": 2.0, "duration": 1.8,
+                 "tempo": 1.0, "file": "08-dub/seg-1.wav", "status": "fit"},
+                {"id": 2, "start": 2.2, "window": 1.6, "duration": 0.0,
+                 "tempo": 1.0, "file": "", "status": "failed"},
+                {"id": 3, "start": 4.0, "window": 5.0, "duration": 4.2,
+                 "tempo": 1.2, "file": "08-dub/seg-3.wav", "status": "atempo"},
+            ]
+        },
+    )
+
+
+def test_mix_audio_builds_script_and_mix(tmp_path: Path, monkeypatch) -> None:
+    ctx, progress, commands = setup_tts(tmp_path, monkeypatch, stage_index=9)
+    write_timeline(ctx)
+    result = registry.create("mix_audio").run(ctx)
+    assert "10-dub-mix.wav" in result.artifacts
+
+    script = (ctx.artifacts.dir / "10-mix.filter").read_text(encoding="utf-8")
+    assert "between(t,0.000,1.800)" in script
+    assert "between(t,4.000,8.200)" in script
+    assert "adelay=0|0" in script and "adelay=4000|4000" in script
+    assert "amix=inputs=3" in script
+
+    mix_cmds = [c for c in commands if any("dub-mix.wav" in str(p) for p in c)]
+    assert len(mix_cmds) == 1
+    joined = " ".join(mix_cmds[0])
+    assert "08-dub/seg-1.wav" in joined and "08-dub/seg-3.wav" in joined
+    orig_cmds = [c for c in commands if str(c[-1]).endswith("orig-audio.wav")]
+    assert len(orig_cmds) == 1
+
+
+def test_mix_audio_without_usable_segments_fails(tmp_path: Path, monkeypatch) -> None:
+    ctx, _, _ = setup_tts(tmp_path, monkeypatch, stage_index=9)
+    ctx.artifacts.write_json(
+        9, "dub-timeline.json",
+        {"segments": [{"id": 1, "start": 0.0, "window": 1.0, "duration": 0.0,
+                       "tempo": 1.0, "file": "", "status": "failed"}]},
+    )
+    with pytest.raises(base.StageError, match="no synthesized"):
+        registry.create("mix_audio").run(ctx)
+
+
+def test_mux_replaces_audio_track(tmp_path: Path, monkeypatch) -> None:
+    ctx, _, commands = setup_tts(tmp_path, monkeypatch, stage_index=10)
+    (ctx.artifacts.dir / "10-dub-mix.wav").write_bytes(b"RIFFmix")
+    result = registry.create("mux").run(ctx)
+    assert result.artifacts == ["11-video-dubbed.mp4"]
+    mux_cmds = [c for c in commands if any("video-dubbed" in str(p) for p in c)]
+    assert len(mux_cmds) == 1
+    assert str(tmp_path / "in.mp4") in mux_cmds[0]
+
+
+def test_av_dub_end_to_end_with_checkpoint(tmp_path: Path, monkeypatch) -> None:
+    from pathlib import Path as P
+
+    from traduko.executor import PipelineExecutor
+    from traduko.models import StageStatus, TaskStatus
+    from traduko.profiles import load_profile, stage_records_from
+    from traduko.tasks import TaskStore
+
+    install_engine(tmp_path)
+    write_dub_config(tmp_path)
+    ensure_defaults(tmp_path)
+    client = FakeClient()
+    monkeypatch.setattr(dub, "_make_client", lambda data_root, config: client)
+    monkeypatch.setattr(dub, "run_media", lambda cmd: P(cmd[-1]).write_bytes(b"x"))
+    monkeypatch.setattr(dub, "ffmpeg_available", lambda: True)
+
+    store = TaskStore(tmp_path)
+    profile = load_profile(tmp_path, "av-dub")
+    record = store.create(
+        project="default",
+        input_path=str(tmp_path / "in.mp4"),
+        profile_name="av-dub",
+        stages=stage_records_from(profile),
+    )
+    # Subtitle stages are not under test: mark them completed and provide
+    # the translation artifact they would have produced.
+    for stage in record.stages[:6]:
+        stage.status = StageStatus.COMPLETED
+    store.save(record)
+    artifacts = ArtifactStore(store.task_dir(record.project, record.id))
+    artifacts.write_json(
+        4, "translation.json",
+        {"source_language": "en", "target_language": "zh", "segments": SEGMENTS},
+    )
+    artifacts.path_for(1, "audio.wav").parent.mkdir(parents=True, exist_ok=True)
+    artifacts.path_for(1, "audio.wav").write_bytes(b"RIFF")
+
+    executor = PipelineExecutor(store, EventBus(), tmp_path)
+    record = executor.run(record)
+    assert record.status == TaskStatus.WAITING_REVIEW
+    speakers = artifacts.read_latest_json("speakers.json")
+    assert [s["speaker"] for s in speakers["segments"]] == ["S1", "S2", "S1"]
+
+    record = executor.run(record)
+    assert record.status == TaskStatus.COMPLETED
+    assert artifacts.read_latest_json("dub-manifest.json")["segments"]
+    timeline = artifacts.read_latest_json("dub-timeline.json")
+    assert all(s["status"] == "fit" for s in timeline["segments"])
+    assert artifacts.latest_path("dub-mix.wav").exists()
+    assert artifacts.latest_path("video-dubbed.mp4").exists()
+
+
 def test_av_dub_profile_seeds_with_diarize_checkpoint(tmp_path: Path) -> None:
     ensure_defaults(tmp_path)
     profile = load_profile(tmp_path, "av-dub")
