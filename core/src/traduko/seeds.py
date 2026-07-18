@@ -95,6 +95,40 @@ stages:
   - type: export_document
 """
 
+_PROFILE_AV_DUB = """\
+# Dubbing pipeline: video in, dubbed video out. Needs the dubbing engine
+# installed from the settings video tab, plus a Hugging Face token there
+# for the diarization model. The pipeline pauses after diarize so you
+# can review speaker assignments before synthesis.
+# Before real use: set target_language, and point provider at an entry
+# under llm_providers in config/core.yaml ("fake" is an offline dry run).
+schema_version: 1
+name: av-dub
+stages:
+  - type: extract_audio
+  - type: asr
+    params:
+      provider: faster_whisper
+  - type: segment
+  - type: translate
+    params:
+      provider: fake
+      target_language: en
+  - type: proofread
+    params:
+      provider: fake
+      intensity: fast
+  - type: export_subtitles
+    params:
+      formats: [srt]
+  - type: diarize
+    pause_after: true
+  - type: tts_synthesize
+  - type: align_duration
+  - type: mix_audio
+  - type: mux
+"""
+
 _STYLES_DEFAULT = """\
 # Named subtitle style presets (ASS-based), referenced by style_preset.
 default:
@@ -124,6 +158,7 @@ def ensure_defaults(root: Path) -> None:
         "profiles/av-default.yaml": _PROFILE_AV_DEFAULT,
         "profiles/subtitle-translate.yaml": _PROFILE_SUBTITLE_TRANSLATE,
         "profiles/novel-translate.yaml": _PROFILE_NOVEL_TRANSLATE,
+        "profiles/av-dub.yaml": _PROFILE_AV_DUB,
         "prompts/translate.txt": DEFAULT_TRANSLATE_TEMPLATE,
         "prompts/proofread.txt": DEFAULT_PROOFREAD_TEMPLATE,
         "prompts/doc-translate.txt": DEFAULT_DOC_TRANSLATE_TEMPLATE,
