@@ -60,7 +60,7 @@ export function TaskDetailView({
   taskId: string;
   onBack: () => void;
   onOpenSettings?: () => void;
-  onOpenEditor: (kind: "subtitle" | "document") => void;
+  onOpenEditor: (kind: "subtitle" | "document" | "speakers") => void;
 }) {
   const api = useApi();
   const { dataRoot } = useConnection();
@@ -175,6 +175,8 @@ export function TaskDetailView({
   const isDocumentTask = (task?.stages ?? []).some(
     (stage) => stage.type === "ingest_document",
   );
+  const hasSpeakers = (artifacts ?? []).some((item) => item.name === "speakers.json");
+  const isDubTask = (task?.stages ?? []).some((stage) => stage.type === "diarize");
   const editorKind = isDocumentTask ? "document" : "subtitle";
   const editorLabel = isDocumentTask ? t("task.textEditor") : t("task.subtitleEditor");
   const outputs = (artifacts ?? []).filter((item) => !item.file.endsWith(".json"));
@@ -278,6 +280,16 @@ export function TaskDetailView({
           >
             {editorLabel}
           </button>
+          {isDubTask && (
+            <button
+              type="button"
+              className={styles.secondary}
+              disabled={!hasSpeakers}
+              onClick={() => onOpenEditor("speakers")}
+            >
+              {t("task.speakerReview")}
+            </button>
+          )}
         </div>
       </header>
 
@@ -342,15 +354,25 @@ export function TaskDetailView({
           <div>
             <h2 className={styles.sectionTitle}>{t("task.checkpoint.title")}</h2>
             <p className={styles.checkpointHint}>
-              {isDocumentTask ? t("task.checkpoint.hint.document") : t("task.checkpoint.hint")}
+              {isDubTask && hasSpeakers
+                ? t("task.checkpoint.hint.speakers")
+                : isDocumentTask
+                  ? t("task.checkpoint.hint.document")
+                  : t("task.checkpoint.hint")}
             </p>
           </div>
           <button
             type="button"
             className={styles.primary}
-            onClick={() => onOpenEditor(editorKind)}
+            onClick={() =>
+              onOpenEditor(isDubTask && hasSpeakers ? "speakers" : editorKind)
+            }
           >
-            {isDocumentTask ? t("task.openTextEditor") : t("task.openSubtitleEditor")}
+            {isDubTask && hasSpeakers
+              ? t("task.speakerReview")
+              : isDocumentTask
+                ? t("task.openTextEditor")
+                : t("task.openSubtitleEditor")}
           </button>
         </section>
       )}

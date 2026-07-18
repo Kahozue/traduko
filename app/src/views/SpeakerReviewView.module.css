@@ -1,0 +1,259 @@
+.back {
+  margin-bottom: 14px;
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-s);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  font-size: var(--fs-note);
+  cursor: pointer;
+  transition: background var(--transition);
+}
+
+.back:hover {
+  background: var(--bg-inset);
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.title {
+  margin: 0;
+  font-size: var(--fs-hero);
+  font-weight: 700;
+}
+
+.hint {
+  margin: 0 0 20px;
+  color: var(--text-secondary);
+  font-size: var(--fs-note);
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.dirty {
+  color: var(--warn);
+  font-size: var(--fs-note);
+}
+
+.saved {
+  color: var(--ok);
+  font-size: var(--fs-note);
+}
+
+.primary {
+  padding: 8px 16px;
+  border: none;
+  border-radius: var(--radius-s);
+  background: var(--accent);
+  color: var(--text-on-dark);
+  font-size: var(--fs-note);
+  font-weight: 500;
+  cursor: pointer;
+  box-shadow: var(--shadow-1);
+  transition: background var(--transition);
+}
+
+.primary:hover:not(:disabled) {
+  background: var(--accent-strong);
+}
+
+.primary:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.sectionTitle {
+  margin: 0 0 12px;
+  font-size: var(--fs-body);
+  font-weight: 600;
+}
+
+.speakers {
+  margin-bottom: 28px;
+}
+
+.speakerRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-top: 1px solid var(--border);
+}
+
+.speakerRow:first-of-type {
+  border-top: none;
+}
+
+.speakerId {
+  font-family: var(--font-mono);
+  font-size: var(--fs-meta);
+  color: var(--text-secondary);
+  min-width: 40px;
+}
+
+.labelInput {
+  width: 160px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-s);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--fs-note);
+}
+
+.labelInput:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.refText {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-secondary);
+  font-size: var(--fs-note);
+}
+
+.mergeControl {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-secondary);
+  font-size: var(--fs-meta);
+}
+
+.mergeControl select,
+.speakerSelect {
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-s);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--fs-note);
+}
+
+.grid {
+  background: var(--bg-surface);
+  border-radius: var(--radius-m);
+  overflow: hidden;
+  box-shadow: var(--shadow-1);
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 48px minmax(200px, 1fr) 200px;
+  border-top: 1px solid var(--border);
+}
+
+.headRow {
+  border-top: none;
+  background: var(--bg-inset);
+}
+
+.headCell {
+  padding: 10px 12px;
+  color: var(--text-secondary);
+  font-size: var(--fs-meta);
+  font-weight: 500;
+}
+
+.bodyRow {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 44px;
+}
+
+.bodyRow > span {
+  padding: 8px 12px;
+  min-width: 0;
+  overflow-wrap: break-word;
+  display: flex;
+  align-items: center;
+}
+
+.num {
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.source {
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+}
+
+.state {
+  color: var(--text-secondary);
+  padding: 24px 0;
+}
+
+.scrim {
+  position: fixed;
+  inset: 0;
+  background: var(--scrim);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 20;
+}
+
+.confirm {
+  background: var(--bg-surface-raised);
+  border-radius: var(--radius-m);
+  box-shadow: var(--shadow-2);
+  padding: 20px;
+  width: 340px;
+}
+
+.confirmMessage {
+  margin: 0 0 16px;
+  font-size: var(--fs-body);
+  color: var(--text-primary);
+}
+
+.confirmActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.toolButton {
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-s);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font-size: var(--fs-note);
+  cursor: pointer;
+  transition: background var(--transition);
+}
+
+.toolButton:hover {
+  background: var(--bg-inset);
+}
+
+.discard {
+  padding: 6px 12px;
+  border: 1px solid var(--danger);
+  border-radius: var(--radius-s);
+  background: var(--bg-surface);
+  color: var(--danger);
+  font-size: var(--fs-note);
+  cursor: pointer;
+  transition: background var(--transition);
+}
+
+.discard:hover {
+  background: var(--danger-soft);
+}

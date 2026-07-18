@@ -10,6 +10,7 @@ import { DocumentEditorView } from "./views/DocumentEditorView";
 import { SettingsView, type SettingsTab } from "./views/SettingsView";
 import { SkillEditorView } from "./views/SkillEditorView";
 import { SubtitleEditorView } from "./views/SubtitleEditorView";
+import { SpeakerReviewView } from "./views/SpeakerReviewView";
 import { TaskDetailView } from "./views/TaskDetailView";
 import { TasksView } from "./views/TasksView";
 import type { TaskKind } from "./lib/api/types";
@@ -20,6 +21,7 @@ export type View =
   | { name: "task"; project: string; taskId: string }
   | { name: "subtitle-editor"; project: string; taskId: string }
   | { name: "document-editor"; project: string; taskId: string }
+  | { name: "speaker-review"; project: string; taskId: string }
   | { name: "skill-editor"; skill: string }
   | { name: "budget" }
   | { name: "settings"; tab?: SettingsTab };
@@ -102,7 +104,8 @@ function Main() {
   const active: NavKey =
     view.name === "task" ||
     view.name === "subtitle-editor" ||
-    view.name === "document-editor"
+    view.name === "document-editor" ||
+    view.name === "speaker-review"
       ? "tasks"
       : view.name === "skill-editor"
         ? "settings"
@@ -154,7 +157,12 @@ function renderView(
           onOpenSettings={() => setView({ name: "settings" })}
           onOpenEditor={(kind) =>
             setView({
-              name: kind === "document" ? "document-editor" : "subtitle-editor",
+              name:
+                kind === "document"
+                  ? "document-editor"
+                  : kind === "speakers"
+                    ? "speaker-review"
+                    : "subtitle-editor",
               project: view.project,
               taskId: view.taskId,
             })
@@ -172,6 +180,14 @@ function renderView(
     case "document-editor":
       return (
         <DocumentEditorView
+          project={view.project}
+          taskId={view.taskId}
+          onBack={() => setView({ name: "task", project: view.project, taskId: view.taskId })}
+        />
+      );
+    case "speaker-review":
+      return (
+        <SpeakerReviewView
           project={view.project}
           taskId={view.taskId}
           onBack={() => setView({ name: "task", project: view.project, taskId: view.taskId })}
