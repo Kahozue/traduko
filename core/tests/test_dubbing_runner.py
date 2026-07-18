@@ -182,5 +182,7 @@ def test_synthesize_without_prompt_omits_prompt_kwargs(tmp_path: Path) -> None:
         timeout=30,
     )
     assert result.returncode == 0, result.stderr
-    kwargs_line = [l for l in result.stdout.splitlines() if l.startswith("KWARGS:")][0]
+    kwargs_line = [
+        line for line in result.stdout.splitlines() if line.startswith("KWARGS:")
+    ][0]
     assert json.loads(kwargs_line.removeprefix("KWARGS:")) == ["text"]

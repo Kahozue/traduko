@@ -84,7 +84,7 @@ def build_speakers_doc(segments: list[dict], turns: list[dict]) -> SpeakersDoc:
 
     speakers: list[Speaker] = []
     for label, speaker_id in mapping.items():
-        own = [seg for seg, l in raw if l == label]
+        own = [seg for seg, seg_label in raw if seg_label == label]
         ref = max(own, key=lambda s: s["end"] - s["start"])
         speakers.append(
             Speaker(
