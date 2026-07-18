@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { KeyboardEvent } from "react";
+import type { ClipboardEvent, KeyboardEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { t, type MessageKey } from "../i18n";
 import { ApiError } from "../lib/api/client";
@@ -90,6 +90,8 @@ export function AssistantPanel({ onClose }: { onClose: () => void }) {
   const [draft, setDraft] = useState("");
   // Paths of images attached to the message being composed.
   const [attachments, setAttachments] = useState<string[]>([]);
+  // True after a clipboard-image upload fails; cleared on the next paste/send.
+  const [attachError, setAttachError] = useState(false);
   // Non-null while an earlier user message is being edited; carries its index
   // so send truncates the session there before rerunning.
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
@@ -155,6 +157,7 @@ export function AssistantPanel({ onClose }: { onClose: () => void }) {
   function submit() {
     const text = draft.trim();
     if (!text || send.isPending) return;
+    setAttachError(false);
     send.reset();
     send.mutate({
       text,
@@ -195,6 +198,36 @@ export function AssistantPanel({ onClose }: { onClose: () => void }) {
     if (!chosen) return;
     const paths = Array.isArray(chosen) ? chosen : [chosen];
     setAttachments((prev) => [...prev, ...paths]);
+  }
+
+  // Clipboard images have no file path, so they go through the core's
+  // attachment endpoint, which saves the bytes and returns a path that rides
+  // the same `images` channel as picker-chosen files. Text paste is untouched.
+  function onPaste(event: ClipboardEvent<HTMLTextAreaElement>) {
+    const files = Array.from(event.clipboardData?.items ?? [])
+      .filter((item) => item.kind === "file" && item.type.startsWith("image/"))
+      .map((item) => item.getAsFile())
+      .filter((file): file is File => file !== null);
+    if (files.length === 0) return;
+    event.preventDefault();
+    setAttachError(false);
+    void (async () => {
+      try {
+        for (const file of files) {
+          const dataUrl = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(String(reader.result));
+            reader.onerror = () => reject(reader.error);
+            reader.readAsDataURL(file);
+          });
+          const base64 = dataUrl.slice(dataUrl.indexOf(",") + 1);
+          const { path } = await api.uploadAssistantAttachment(file.type, base64);
+          setAttachments((prev) => [...prev, path]);
+        }
+      } catch {
+        setAttachError(true);
+      }
+    })();
   }
 
   const sendError = send.isError && !(send.error instanceof DOMException);
@@ -313,6 +346,9 @@ export function AssistantPanel({ onClose }: { onClose: () => void }) {
           ))}
         </div>
       )}
+      {attachError && (
+        <p className={styles.attachError}>{t("assistant.attachFailed")}</p>
+      )}
       <form
         className={styles.footer}
         onSubmit={(event) => {
@@ -338,6 +374,7 @@ export function AssistantPanel({ onClose }: { onClose: () => void }) {
           disabled={send.isPending}
           onChange={(event) => setDraft(event.target.value)}
           onKeyDown={onKeyDown}
+          onPaste={onPaste}
         />
         <button
           type="submit"

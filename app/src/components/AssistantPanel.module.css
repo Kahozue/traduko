@@ -332,6 +332,12 @@
   margin: 0 16px 8px;
 }
 
+.attachError {
+  margin: 0 16px 8px;
+  color: var(--danger);
+  font-size: var(--fs-meta);
+}
+
 .attachChip {
   display: inline-flex;
   align-items: center;

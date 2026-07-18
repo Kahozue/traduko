@@ -257,6 +257,13 @@ export class ApiClient {
     });
   }
 
+  uploadAssistantAttachment(mime: string, dataBase64: string): Promise<{ path: string }> {
+    return this.request("/assistant/attachments", {
+      method: "POST",
+      body: JSON.stringify({ mime, data_base64: dataBase64 }),
+    });
+  }
+
   getAssistantHistory(): Promise<AssistantMessageDoc[]> {
     return this.request("/assistant/history");
   }

@@ -397,6 +397,7 @@ export const zhTW = {
   "assistant.pause": "暫停",
   "assistant.attach": "附加圖片或檔案",
   "assistant.attachRemove": "移除附件",
+  "assistant.attachFailed": "剪貼板圖片附加失敗，請再試一次",
   "assistant.empty": "尚無對話，輸入訊息開始",
   "assistant.loading": "載入中",
   "assistant.inputPlaceholder": "輸入訊息，Enter 送出、Shift+Enter 換行",

@@ -1,5 +1,5 @@
 import { QueryClient } from "@tanstack/react-query";
-import { screen, waitFor } from "@testing-library/react";
+import { fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test, vi } from "vitest";
 import { ApiError, type ApiClient } from "../lib/api/client";
@@ -372,4 +372,33 @@ test("a failed approve shows an inline error on that proposal's card", async () 
   });
   await userEvent.click(await screen.findByRole("button", { name: "核准" }));
   expect(await screen.findByText("核准失敗，請稍後再試。")).toBeInTheDocument();
+});
+
+function pasteImage(textarea: HTMLElement, file: File) {
+  fireEvent.paste(textarea, {
+    clipboardData: {
+      items: [{ kind: "file", type: file.type, getAsFile: () => file }],
+    },
+  });
+}
+
+test("pasting a clipboard image uploads it and adds an attachment chip", async () => {
+  const uploadAssistantAttachment = vi
+    .fn()
+    .mockResolvedValue({ path: "/data/assistant/attachments/20260718.png" });
+  setup({ api: { uploadAssistantAttachment } });
+  const textarea = screen.getByPlaceholderText("輸入訊息，Enter 送出、Shift+Enter 換行");
+  pasteImage(textarea, new File([new Uint8Array([1, 2, 3])], "clip.png", { type: "image/png" }));
+  await waitFor(() =>
+    expect(uploadAssistantAttachment).toHaveBeenCalledWith("image/png", expect.any(String)),
+  );
+  expect(await screen.findByText("20260718.png")).toBeInTheDocument();
+});
+
+test("a failed clipboard upload shows the attach error hint", async () => {
+  const uploadAssistantAttachment = vi.fn().mockRejectedValue(new ApiError(500, "disk full"));
+  setup({ api: { uploadAssistantAttachment } });
+  const textarea = screen.getByPlaceholderText("輸入訊息，Enter 送出、Shift+Enter 換行");
+  pasteImage(textarea, new File([new Uint8Array([1])], "clip.png", { type: "image/png" }));
+  expect(await screen.findByText("剪貼板圖片附加失敗，請再試一次")).toBeInTheDocument();
 });
