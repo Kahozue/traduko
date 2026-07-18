@@ -514,3 +514,87 @@
   max-height: 200px;
   overflow-y: auto;
 }
+
+/* Effective model chip in the meta line: quiet control, popover switcher. */
+.modelWrap {
+  position: relative;
+  display: inline-flex;
+}
+
+.modelChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-s);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: var(--fs-note);
+  cursor: pointer;
+  transition: background var(--transition), color var(--transition);
+}
+
+.modelChip:hover:not(:disabled) {
+  background: var(--bg-inset);
+  color: var(--text-primary);
+}
+
+.modelChip:disabled {
+  cursor: default;
+  opacity: 0.7;
+}
+
+.modelAuto {
+  color: var(--text-secondary);
+  opacity: 0.75;
+}
+
+.modelMenu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 260px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-m);
+  background: var(--bg-surface-raised);
+  box-shadow: var(--shadow-2);
+}
+
+.modelField {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--text-secondary);
+  font-size: var(--fs-note);
+}
+
+.modelSelect,
+.modelInput {
+  height: 32px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-s);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font-size: var(--fs-body);
+}
+
+.modelActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.engineChip {
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-s);
+  color: var(--text-secondary);
+  font-size: var(--fs-note);
+}

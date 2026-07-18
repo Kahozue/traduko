@@ -163,3 +163,11 @@
     transform: translateY(8px);
   }
 }
+
+/* Provider + model override side by side; both are short controls that do
+   not deserve a full row each. */
+.pairRow {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}

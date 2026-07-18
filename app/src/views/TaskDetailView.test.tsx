@@ -427,3 +427,88 @@ test("pause button is disabled when task is not running", async () => {
   );
   await waitFor(() => expect(screen.getByText("暫停")).toBeDisabled());
 });
+
+const CONFIG = {
+  default_provider: "glm",
+  llm_providers: {
+    glm: { type: "openai_compat", model: "glm-4" },
+    deepseek: { type: "openai_compat", model: "deepseek-chat" },
+  },
+};
+
+test("model chip shows the effective provider and opens the switcher", async () => {
+  const setTaskModel = vi.fn().mockResolvedValue(task);
+  const api: Partial<ApiClient> = {
+    showTask: vi.fn().mockResolvedValue(task),
+    getConfig: vi.fn().mockResolvedValue(CONFIG),
+    setTaskModel,
+  };
+  renderWithConnection(
+    <TaskDetailView project="default" taskId="t1" onBack={() => {}} onOpenEditor={() => {}} />,
+    { api },
+  );
+  // No override on the translate stage: chip shows the resolved default.
+  const chip = await screen.findByRole("button", { name: /glm · glm-4/ });
+  await userEvent.click(chip);
+  await userEvent.selectOptions(screen.getByLabelText("供應商"), "deepseek");
+  await userEvent.click(screen.getByRole("button", { name: "套用" }));
+  await waitFor(() =>
+    expect(setTaskModel).toHaveBeenCalledWith("default", "t1", "deepseek", ""),
+  );
+});
+
+test("model chip reset restores follow-default", async () => {
+  const overridden: TaskRecord = {
+    ...task,
+    stages: task.stages.map((stage) =>
+      stage.type === "translate"
+        ? { ...stage, params: { provider: "deepseek", model: "deepseek-reasoner" } }
+        : stage,
+    ),
+  };
+  const setTaskModel = vi.fn().mockResolvedValue(overridden);
+  const api: Partial<ApiClient> = {
+    showTask: vi.fn().mockResolvedValue(overridden),
+    getConfig: vi.fn().mockResolvedValue(CONFIG),
+    setTaskModel,
+  };
+  renderWithConnection(
+    <TaskDetailView project="default" taskId="t1" onBack={() => {}} onOpenEditor={() => {}} />,
+    { api },
+  );
+  const chip = await screen.findByRole("button", { name: /deepseek · deepseek-reasoner/ });
+  await userEvent.click(chip);
+  await userEvent.click(screen.getByRole("button", { name: "還原自動" }));
+  await waitFor(() =>
+    expect(setTaskModel).toHaveBeenCalledWith("default", "t1", "", ""),
+  );
+});
+
+test("model chip is locked while the task runs and engine chip shows", async () => {
+  const running: TaskRecord = {
+    ...task,
+    status: "running",
+    stages: [
+      {
+        type: "asr",
+        status: "running",
+        params: { provider: "faster_whisper" },
+        pause_after: false,
+        artifacts: [],
+        error: null,
+      },
+      ...task.stages,
+    ],
+  };
+  const api: Partial<ApiClient> = {
+    showTask: vi.fn().mockResolvedValue(running),
+    getConfig: vi.fn().mockResolvedValue(CONFIG),
+  };
+  renderWithConnection(
+    <TaskDetailView project="default" taskId="t1" onBack={() => {}} onOpenEditor={() => {}} />,
+    { api },
+  );
+  const chip = await screen.findByRole("button", { name: /glm · glm-4/ });
+  expect(chip).toBeDisabled();
+  expect(screen.getByText("faster-whisper")).toBeInTheDocument();
+});

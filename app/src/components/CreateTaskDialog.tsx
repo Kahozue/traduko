@@ -54,6 +54,9 @@ export function CreateTaskDialog({
   const [project, setProject] = useState("default");
   const [kind, setKind] = useState<TaskKind | null>(null);
   const [profile, setProfile] = useState("");
+  // Per-task LLM override; empty means "follow the configured default".
+  const [providerSel, setProviderSel] = useState("");
+  const [model, setModel] = useState("");
   const { data: profiles } = useQuery({
     queryKey: ["profiles-detailed"],
     queryFn: () => api.profilesDetailed(),
@@ -64,6 +67,14 @@ export function CreateTaskDialog({
   });
   const noProvider =
     config !== undefined && Object.keys(config.llm_providers ?? {}).length === 0;
+  const providerNames = Object.keys(config?.llm_providers ?? {});
+  // Placeholder mirrors what the core would resolve: the chosen provider's
+  // default model, or the global default provider's when following defaults.
+  const placeholderProvider = providerSel || config?.default_provider || "";
+  const providerDefaultModel = String(
+    (config?.llm_providers?.[placeholderProvider] as { model?: unknown } | undefined)
+      ?.model ?? "",
+  );
 
   // Which kinds actually have profiles, and the profiles under the chosen one.
   const byKind = useMemo(() => {
@@ -140,6 +151,8 @@ export function CreateTaskDialog({
         profile,
         project,
         name: name.trim() === "" ? undefined : name.trim(),
+        ...(providerSel !== "" ? { provider: providerSel } : {}),
+        ...(model.trim() !== "" ? { model: model.trim() } : {}),
       }),
     onSuccess: (task) => {
       queryClient.invalidateQueries({ queryKey: ["tasks"] });
@@ -228,6 +241,35 @@ export function CreateTaskDialog({
               ))}
             </select>
           </label>
+        )}
+
+        {providerNames.length > 0 && (
+          <div className={styles.pairRow}>
+            <label className={styles.label}>
+              {t("create.provider")}
+              <select
+                className={styles.input}
+                value={providerSel}
+                onChange={(event) => setProviderSel(event.target.value)}
+              >
+                <option value="">{t("create.provider.auto")}</option>
+                {providerNames.map((name) => (
+                  <option key={name} value={name}>
+                    {name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className={styles.label}>
+              {t("create.model")}
+              <input
+                className={styles.input}
+                value={model}
+                placeholder={providerDefaultModel || t("create.model.placeholder")}
+                onChange={(event) => setModel(event.target.value)}
+              />
+            </label>
+          </div>
         )}
 
         <label className={styles.label}>

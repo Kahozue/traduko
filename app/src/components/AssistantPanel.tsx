@@ -5,6 +5,7 @@ import { t, type MessageKey } from "../i18n";
 import { ApiError } from "../lib/api/client";
 import { humanizeError } from "../lib/errors";
 import { renderMarkdown } from "../lib/markdown";
+import { formatDateTime } from "../lib/time";
 import type {
   AssistantMessageDoc,
   AssistantSessionRow,
@@ -37,11 +38,6 @@ function diffLines(diff: string): string[] {
   return diff.replace(/\n$/, "").split("\n");
 }
 
-// Full timestamp for the hover tooltip; the bubbles themselves stay clean.
-function formatFullTime(iso: string): string {
-  const date = new Date(iso);
-  return Number.isNaN(date.getTime()) ? iso : date.toLocaleString("zh-TW");
-}
 
 function baseName(path: string): string {
   const parts = path.split(/[\\/]/);
@@ -542,7 +538,7 @@ function HistoryRow({
       <button
         type="button"
         className={styles.historyOpen}
-        title={formatFullTime(row.updated_at)}
+        title={formatDateTime(row.updated_at)}
         onClick={onOpen}
       >
         <span className={styles.historyRowTitle}>{row.title}</span>
@@ -586,7 +582,7 @@ function MessageBubble({
       <div className={styles.bubbleColumn}>
         <div
           className={`${styles.bubble} ${isUser ? styles.bubbleUser : styles.bubbleAssistant}`}
-          title={formatFullTime(message.ts)}
+          title={formatDateTime(message.ts)}
         >
           {isUser ? (
             message.text

@@ -1531,3 +1531,67 @@ def test_provider_test_endpoint_accepts_native_types(tmp_path: Path) -> None:
             body = response.json()
             assert body["ok"] is False
             assert "failed" in body["error"]
+
+
+def test_create_task_with_model_override(tmp_path: Path) -> None:
+    with service(tmp_path) as (client, headers, token):
+        response = client.post(
+            "/tasks",
+            json={
+                "input_path": str(make_input(tmp_path)),
+                "profile": "subtitle-translate",
+                "provider": "deepseek",
+                "model": "deepseek-chat",
+            },
+            headers=headers,
+        )
+        assert response.status_code == 201, response.text
+        stages = response.json()["stages"]
+        by_type = {stage["type"]: stage for stage in stages}
+        assert by_type["translate"]["params"]["provider"] == "deepseek"
+        assert by_type["translate"]["params"]["model"] == "deepseek-chat"
+        assert by_type["proofread"]["params"]["provider"] == "deepseek"
+        assert "provider" not in by_type["ingest_subtitle"]["params"]
+
+
+def test_patch_task_model_override_and_reset(tmp_path: Path) -> None:
+    with service(tmp_path) as (client, headers, token):
+        task_id = create_task(client, headers, tmp_path)
+        url = f"/tasks/default/{task_id}"
+        patched = client.patch(
+            url, json={"provider": "glm", "model": "glm-4"}, headers=headers
+        )
+        assert patched.status_code == 200
+        by_type = {s["type"]: s for s in patched.json()["stages"]}
+        assert by_type["translate"]["params"]["provider"] == "glm"
+        assert by_type["translate"]["params"]["model"] == "glm-4"
+        # Reset: empty strings restore the follow-default state.
+        reset = client.patch(url, json={"provider": "", "model": ""}, headers=headers)
+        assert reset.status_code == 200
+        by_type = {s["type"]: s for s in reset.json()["stages"]}
+        assert by_type["translate"]["params"]["provider"] == "fake"
+        assert "model" not in by_type["translate"]["params"]
+        # Persisted, not just echoed.
+        shown = client.get(url, headers=headers).json()
+        by_type = {s["type"]: s for s in shown["stages"]}
+        assert by_type["proofread"]["params"]["provider"] == "fake"
+
+
+def test_patch_model_override_rejected_while_active(tmp_path: Path) -> None:
+    with service(tmp_path) as (client, headers, token):
+        create_profile(tmp_path, "gated", ["svc-gate"])
+        ServiceGateStage.gate.clear()
+        ServiceGateStage.started.clear()
+        response = client.post(
+            "/tasks",
+            json={"input_path": str(make_input(tmp_path)), "profile": "gated"},
+            headers=headers,
+        )
+        task_id = response.json()["id"]
+        url = f"/tasks/default/{task_id}"
+        assert client.post(f"{url}/run", headers=headers).status_code == 202
+        assert ServiceGateStage.started.wait(timeout=5)
+        denied = client.patch(url, json={"provider": "glm"}, headers=headers)
+        assert denied.status_code == 409
+        ServiceGateStage.gate.set()
+        wait_completed(client, headers, "default", task_id)

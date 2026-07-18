@@ -70,6 +70,7 @@ from .. import proposals, skillhub
 from ..skillhub import SkillsManager, SkillValidationError
 from ..styles import SubtitleStyle
 from ..styles_render import render_style_frame
+from ..tasks import apply_model_override
 from ..sync.engine import (
     SyncConfigError,
     SyncEngine,
@@ -268,6 +269,9 @@ class TaskCreateRequest(BaseModel):
     profile: str
     project: str | None = None
     name: str | None = None
+    # Optional per-task LLM override, written into every LLM stage's params.
+    provider: str | None = None
+    model: str | None = None
 
 
 def _load_task(ws: Workspace, project: str, task_id: str) -> TaskRecord:
@@ -306,6 +310,9 @@ def create_task(request: Request, body: TaskCreateRequest) -> dict:
         stages=stage_records_from(profile),
         name=body.name,
     )
+    if body.provider or body.model:
+        apply_model_override(record, body.provider or None, body.model or None)
+        ws.store.save(record)
     return record.model_dump()
 
 
@@ -335,6 +342,9 @@ def task_events(
 class TaskUpdateRequest(BaseModel):
     name: str | None = None
     project: str | None = None
+    # Per-task LLM override; "" resets to follow-default, None leaves as is.
+    provider: str | None = None
+    model: str | None = None
 
 
 @router.patch("/tasks/{project}/{task_id}")
@@ -343,8 +353,15 @@ def update_task(
 ) -> dict:
     ws: Workspace = request.app.state.workspace
     record = _load_task(ws, project, task_id)
-    if body.name is None and body.project is None:
-        raise HTTPException(status_code=422, detail="name or project required")
+    if (
+        body.name is None
+        and body.project is None
+        and body.provider is None
+        and body.model is None
+    ):
+        raise HTTPException(
+            status_code=422, detail="name, project, provider or model required"
+        )
     name_changed = False
     if body.name is not None:
         name = body.name.strip()
@@ -352,6 +369,13 @@ def update_task(
             raise HTTPException(status_code=422, detail="name must not be empty")
         record.name = name
         name_changed = True
+    model_changed = False
+    if body.provider is not None or body.model is not None:
+        worker: TaskWorker = request.app.state.worker
+        if worker.is_active(project, task_id):
+            raise HTTPException(status_code=409, detail="task is queued or running")
+        apply_model_override(record, body.provider, body.model)
+        model_changed = True
     if body.project is not None:
         new_project = body.project.strip()
         if not new_project:
@@ -361,9 +385,9 @@ def update_task(
             if worker.is_active(project, task_id):
                 raise HTTPException(status_code=409, detail="task is queued or running")
             record = ws.store.move(record, new_project)
-        elif name_changed:
+        elif name_changed or model_changed:
             ws.store.save(record)
-    elif name_changed:
+    elif name_changed or model_changed:
         ws.store.save(record)
     return record.model_dump()
 

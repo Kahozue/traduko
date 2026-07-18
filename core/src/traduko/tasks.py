@@ -14,6 +14,33 @@ if TYPE_CHECKING:
 
 TASK_SUBDIRS = ("artifacts", "agent-runs", "logs")
 
+# Stage types whose params carry an LLM provider/model override (the set of
+# stages that call stages.common.resolve_llm, plus translate_pdf which
+# forwards the provider to its engine).
+LLM_STAGE_TYPES = frozenset(
+    {"translate", "proofread", "translate_chunks", "translate_pdf"}
+)
+
+
+def apply_model_override(
+    record: TaskRecord, provider: str | None, model: str | None
+) -> None:
+    """Write a per-task provider/model choice into every LLM stage's params.
+
+    None leaves the field untouched; an empty string resets it ("fake"
+    provider means: follow the configured default, no model key means: use
+    the provider's default model)."""
+    for stage in record.stages:
+        if stage.type not in LLM_STAGE_TYPES:
+            continue
+        if provider is not None:
+            stage.params["provider"] = provider or "fake"
+        if model is not None:
+            if model:
+                stage.params["model"] = model
+            else:
+                stage.params.pop("model", None)
+
 
 class TaskStore:
     def __init__(self, root: Path, index: "TaskIndex | None" = None) -> None:

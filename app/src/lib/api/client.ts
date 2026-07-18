@@ -42,6 +42,9 @@ export interface TaskCreateBody {
   profile: string;
   project?: string;
   name?: string;
+  // Per-task LLM override written into the task's LLM stage params.
+  provider?: string;
+  model?: string;
 }
 
 export class ApiClient {
@@ -164,6 +167,19 @@ export class ApiClient {
     return this.request(`/tasks/${project}/${taskId}`, {
       method: "PATCH",
       body: JSON.stringify({ project: newProject }),
+    });
+  }
+
+  // Per-task LLM override; empty strings restore the follow-default state.
+  setTaskModel(
+    project: string,
+    taskId: string,
+    provider: string,
+    model: string,
+  ): Promise<TaskRecord> {
+    return this.request(`/tasks/${project}/${taskId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ provider, model }),
     });
   }
 

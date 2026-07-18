@@ -9,6 +9,7 @@ import type { PreflightCheck } from "../lib/api/types";
 import { useApi, useConnection } from "../lib/connection";
 import { openArtifact, revealArtifact } from "../lib/shell";
 import { humanizeError, matchError } from "../lib/errors";
+import { formatDateTime } from "../lib/time";
 import { useTaskLive } from "../lib/events/store";
 import { eventTypeLabel, stageListLabels, stageStatusLabel, stageTypeLabel } from "../lib/labels";
 import styles from "./TaskDetailView.module.css";
@@ -17,9 +18,18 @@ const RUNNABLE = new Set(["pending", "paused", "waiting_review", "failed"]);
 const CANCELABLE = new Set(["pending", "running", "waiting_review", "paused"]);
 const PAUSABLE = new Set(["running"]);
 
-function formatTime(iso: string): string {
-  return new Date(iso).toLocaleString("zh-TW");
-}
+// Stage types whose params carry the per-task LLM override (mirrors the
+// core's tasks.LLM_STAGE_TYPES).
+const LLM_STAGE_TYPES = new Set([
+  "translate",
+  "proofread",
+  "translate_chunks",
+  "translate_pdf",
+]);
+const REAL_PROVIDER_TYPES = new Set(["openai_compat", "anthropic", "gemini"]);
+const ASR_ENGINE_LABELS: Record<string, string> = {
+  faster_whisper: "faster-whisper",
+};
 
 // One-line human summary for an event's payload; the raw JSON stays in the
 // row's tooltip instead of being dumped into the timeline.
@@ -85,6 +95,10 @@ export function TaskDetailView({
     queryKey: ["task-events", project, taskId],
     queryFn: () => api.taskEvents(project, taskId),
   });
+  const { data: config } = useQuery({
+    queryKey: ["config"],
+    queryFn: () => api.getConfig(),
+  });
 
   const run = useMutation({
     mutationFn: (skipPreflight: boolean) => api.runTask(project, taskId, { skipPreflight }),
@@ -115,6 +129,17 @@ export function TaskDetailView({
   const [editingName, setEditingName] = useState(false);
   const [draftName, setDraftName] = useState("");
   const [showDetails, setShowDetails] = useState(false);
+  const [modelMenuOpen, setModelMenuOpen] = useState(false);
+  const [draftProvider, setDraftProvider] = useState("");
+  const [draftModel, setDraftModel] = useState("");
+  const setModel = useMutation({
+    mutationFn: ({ provider, model }: { provider: string; model: string }) =>
+      api.setTaskModel(project, taskId, provider, model),
+    onSuccess: () => {
+      setModelMenuOpen(false);
+      queryClient.invalidateQueries({ queryKey: ["task", project, taskId] });
+    },
+  });
   const [modelDownload, setModelDownload] = useState<
     null | { model: string; mb: number; error?: string }
   >(null);
@@ -191,6 +216,51 @@ export function TaskDetailView({
   const editorLabel = isDocumentTask ? t("task.textEditor") : t("task.subtitleEditor");
   const stageLabels = stageListLabels(task.stages);
   const outputs = (artifacts ?? []).filter((item) => !item.file.endsWith(".json"));
+
+  // Effective LLM choice for the model chip, mirroring the core's
+  // resolve_provider_name: explicit override wins, then the configured
+  // default, then the sole real provider.
+  const llmStage = task.stages.find((stage) => LLM_STAGE_TYPES.has(stage.type));
+  const overrideProvider =
+    typeof llmStage?.params.provider === "string" ? llmStage.params.provider : "";
+  const overrideModel =
+    typeof llmStage?.params.model === "string" ? llmStage.params.model : "";
+  const providers = config?.llm_providers ?? {};
+  const realNames = Object.entries(providers)
+    .filter(([, value]) =>
+      REAL_PROVIDER_TYPES.has(String((value as { type?: unknown }).type)),
+    )
+    .map(([name]) => name);
+  const isExplicit = overrideProvider !== "" && overrideProvider !== "fake";
+  const effectiveProvider = isExplicit
+    ? overrideProvider
+    : config?.default_provider && providers[config.default_provider]
+      ? config.default_provider
+      : realNames.length === 1
+        ? realNames[0]
+        : "";
+  const providerDefaultModel = String(
+    (providers[effectiveProvider] as { model?: unknown } | undefined)?.model ?? "",
+  );
+  const effectiveModel = overrideModel || providerDefaultModel;
+  const modelChipLabel = effectiveProvider
+    ? `${effectiveProvider} · ${effectiveModel || "--"}`
+    : t("task.model.unset");
+  const modelLocked = task.status === "running";
+
+  // Read-only engine chips; engine switching lands with the engine menus.
+  const asrStage = task.stages.find((stage) => stage.type === "asr");
+  const engineChips: string[] = [];
+  if (asrStage) {
+    const engine = String(asrStage.params.provider ?? "faster_whisper");
+    engineChips.push(ASR_ENGINE_LABELS[engine] ?? engine);
+  }
+  if (task.stages.some((stage) => stage.type === "tts_synthesize")) {
+    engineChips.push("VoxCPM2");
+  }
+  if (task.stages.some((stage) => stage.type === "translate_pdf")) {
+    engineChips.push("pdf2zh-next");
+  }
 
   function artifactPath(file: string): string {
     return `${dataRoot}/projects/${project}/tasks/${taskId}/artifacts/${file}`;
@@ -309,9 +379,89 @@ export function TaskDetailView({
 
       <div className={styles.metaLine}>
         <span>{task.profile}</span>
+        {llmStage && config && (
+          <>
+            <span className={styles.metaSep}>·</span>
+            <span className={styles.modelWrap}>
+              <button
+                type="button"
+                className={styles.modelChip}
+                disabled={modelLocked}
+                aria-expanded={modelMenuOpen}
+                title={t("task.model.title")}
+                onClick={() => {
+                  setDraftProvider(isExplicit ? overrideProvider : "");
+                  setDraftModel(overrideModel);
+                  setModelMenuOpen((open) => !open);
+                }}
+              >
+                {modelChipLabel}
+                {!isExplicit && effectiveProvider && (
+                  <span className={styles.modelAuto}>{t("task.model.auto")}</span>
+                )}
+              </button>
+              {modelMenuOpen && (
+                <div className={styles.modelMenu}>
+                  <label className={styles.modelField}>
+                    {t("create.provider")}
+                    <select
+                      className={styles.modelSelect}
+                      value={draftProvider}
+                      onChange={(event) => setDraftProvider(event.target.value)}
+                    >
+                      <option value="">{t("create.provider.auto")}</option>
+                      {Object.keys(providers).map((name) => (
+                        <option key={name} value={name}>
+                          {name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className={styles.modelField}>
+                    {t("create.model")}
+                    <input
+                      className={styles.modelInput}
+                      value={draftModel}
+                      placeholder={t("create.model.placeholder")}
+                      onChange={(event) => setDraftModel(event.target.value)}
+                    />
+                  </label>
+                  <div className={styles.modelActions}>
+                    <button
+                      type="button"
+                      className={styles.secondary}
+                      disabled={setModel.isPending}
+                      onClick={() => setModel.mutate({ provider: "", model: "" })}
+                    >
+                      {t("task.model.reset")}
+                    </button>
+                    <button
+                      type="button"
+                      className={styles.primary}
+                      disabled={setModel.isPending}
+                      onClick={() =>
+                        setModel.mutate({
+                          provider: draftProvider,
+                          model: draftModel.trim(),
+                        })
+                      }
+                    >
+                      {t("task.model.apply")}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </span>
+          </>
+        )}
+        {engineChips.map((chip) => (
+          <span key={chip} className={styles.engineChip} title={t("task.engine.title")}>
+            {chip}
+          </span>
+        ))}
         <span className={styles.metaSep}>·</span>
         <span>
-          {t("task.meta.updated")} {formatTime(task.updated_at)}
+          {t("task.meta.updated")} {formatDateTime(task.updated_at)}
         </span>
         <button
           type="button"
@@ -337,7 +487,7 @@ export function TaskDetailView({
           </div>
           <div className={styles.detailsRow}>
             <dt>{t("task.created")}</dt>
-            <dd>{formatTime(task.created_at)}</dd>
+            <dd>{formatDateTime(task.created_at)}</dd>
           </div>
         </dl>
       )}
@@ -512,7 +662,7 @@ export function TaskDetailView({
                   className={styles.event}
                   title={JSON.stringify(event.data)}
                 >
-                  <span className={styles.eventTs}>{formatTime(event.ts)}</span>
+                  <span className={styles.eventTs}>{formatDateTime(event.ts)}</span>
                   <span className={styles.eventData}>{summarizeEventData(event.data)}</span>
                   <span className={styles.eventType}>{eventTypeLabel(event.type)}</span>
                 </li>

@@ -5,6 +5,7 @@ import { Icon } from "../components/icons";
 import { StatusBadge } from "../components/StatusBadge";
 import { t } from "../i18n";
 import { useApi } from "../lib/connection";
+import { formatDateTime } from "../lib/time";
 import type { TaskIndexRow, TaskKind, TaskStatus } from "../lib/api/types";
 import styles from "./TasksView.module.css";
 
@@ -35,10 +36,6 @@ const KIND_LABEL: Record<TaskKind, string> = {
   document: t("create.kind.document"),
   comic: t("create.kind.comic"),
 };
-
-function formatTime(iso: string): string {
-  return new Date(iso).toLocaleString("zh-TW");
-}
 
 function rowKey(row: TaskIndexRow): string {
   return `${row.project}\n${row.id}`;
@@ -430,7 +427,7 @@ export function TasksView({
                         </div>
                         <span className={styles.rowProfile}>{row.profile}</span>
                         <StatusBadge status={row.status} />
-                        <span className={styles.rowTime}>{formatTime(row.updated_at)}</span>
+                        <span className={styles.rowTime}>{formatDateTime(row.updated_at)}</span>
                       </div>
                     );
                   })}

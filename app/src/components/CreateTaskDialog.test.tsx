@@ -129,3 +129,55 @@ test("submits custom task name when provided", async () => {
     expect(createTask).toHaveBeenCalledWith(expect.objectContaining({ name: "第三集" })),
   );
 });
+
+test("provider and model overrides are sent when chosen", async () => {
+  openMock.mockResolvedValue("/tmp/in.srt");
+  const createTask = vi.fn().mockResolvedValue({ id: "t2", project: "default" });
+  const api: Partial<ApiClient> = {
+    profilesDetailed: vi.fn().mockResolvedValue(DETAILED),
+    getConfig: vi.fn().mockResolvedValue({
+      default_provider: "glm",
+      llm_providers: {
+        glm: { type: "openai_compat", model: "glm-4" },
+        deepseek: { type: "openai_compat", model: "deepseek-chat" },
+      },
+    }),
+    createTask,
+  };
+  renderWithConnection(<CreateTaskDialog onClose={() => {}} onCreated={() => {}} />, { api });
+
+  await waitFor(() => expect(screen.getByLabelText("供應商")).toBeInTheDocument());
+  await userEvent.click(screen.getByText("選擇檔案"));
+  await waitFor(() => expect(screen.getByDisplayValue("/tmp/in.srt")).toBeInTheDocument());
+  await userEvent.selectOptions(screen.getByLabelText("供應商"), "deepseek");
+  await userEvent.type(screen.getByLabelText("模型"), "deepseek-reasoner");
+  await userEvent.click(screen.getByText("建立"));
+  await waitFor(() =>
+    expect(createTask).toHaveBeenCalledWith(
+      expect.objectContaining({ provider: "deepseek", model: "deepseek-reasoner" }),
+    ),
+  );
+});
+
+test("auto provider sends no override fields", async () => {
+  openMock.mockResolvedValue("/tmp/in.srt");
+  const createTask = vi.fn().mockResolvedValue({ id: "t3", project: "default" });
+  const api: Partial<ApiClient> = {
+    profilesDetailed: vi.fn().mockResolvedValue(DETAILED),
+    getConfig: vi.fn().mockResolvedValue({
+      default_provider: "glm",
+      llm_providers: { glm: { type: "openai_compat", model: "glm-4" } },
+    }),
+    createTask,
+  };
+  renderWithConnection(<CreateTaskDialog onClose={() => {}} onCreated={() => {}} />, { api });
+
+  await waitFor(() => expect(screen.getByLabelText("供應商")).toBeInTheDocument());
+  await userEvent.click(screen.getByText("選擇檔案"));
+  await waitFor(() => expect(screen.getByDisplayValue("/tmp/in.srt")).toBeInTheDocument());
+  await userEvent.click(screen.getByText("建立"));
+  await waitFor(() => expect(createTask).toHaveBeenCalled());
+  const body = createTask.mock.calls[0][0] as Record<string, unknown>;
+  expect(body.provider).toBeUndefined();
+  expect(body.model).toBeUndefined();
+});

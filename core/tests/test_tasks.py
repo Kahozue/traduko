@@ -74,3 +74,63 @@ def test_create_accepts_explicit_name(tmp_path: Path) -> None:
     assert record.name == "第三集"
     reloaded = store.load("p", record.id)
     assert reloaded.name == "第三集"
+
+
+def _llm_stages() -> list[StageRecord]:
+    return [
+        StageRecord(type="ingest_subtitle"),
+        StageRecord(type="translate", params={"provider": "fake", "target_language": "en"}),
+        StageRecord(type="proofread", params={"provider": "fake"}),
+    ]
+
+
+def test_apply_model_override_sets_llm_stage_params() -> None:
+    from traduko.models import TaskRecord, utc_now_iso
+    from traduko.tasks import apply_model_override
+
+    now = utc_now_iso()
+    task = TaskRecord(
+        id="t", project="p", input_path="in.srt", profile="x",
+        stages=_llm_stages(), created_at=now, updated_at=now,
+    )
+    apply_model_override(task, provider="deepseek", model="deepseek-chat")
+    assert task.stages[0].params == {}
+    assert task.stages[1].params["provider"] == "deepseek"
+    assert task.stages[1].params["model"] == "deepseek-chat"
+    assert task.stages[2].params["provider"] == "deepseek"
+    assert task.stages[2].params["model"] == "deepseek-chat"
+    # Untouched params survive.
+    assert task.stages[1].params["target_language"] == "en"
+
+
+def test_apply_model_override_empty_strings_reset() -> None:
+    from traduko.models import TaskRecord, utc_now_iso
+    from traduko.tasks import apply_model_override
+
+    now = utc_now_iso()
+    task = TaskRecord(
+        id="t", project="p", input_path="in.srt", profile="x",
+        stages=_llm_stages(), created_at=now, updated_at=now,
+    )
+    apply_model_override(task, provider="deepseek", model="deepseek-chat")
+    apply_model_override(task, provider="", model="")
+    assert task.stages[1].params["provider"] == "fake"
+    assert "model" not in task.stages[1].params
+    assert task.stages[2].params["provider"] == "fake"
+
+
+def test_apply_model_override_none_leaves_untouched() -> None:
+    from traduko.models import TaskRecord, utc_now_iso
+    from traduko.tasks import apply_model_override
+
+    now = utc_now_iso()
+    task = TaskRecord(
+        id="t", project="p", input_path="in.srt", profile="x",
+        stages=_llm_stages(), created_at=now, updated_at=now,
+    )
+    apply_model_override(task, provider="deepseek", model=None)
+    assert task.stages[1].params["provider"] == "deepseek"
+    assert "model" not in task.stages[1].params
+    apply_model_override(task, provider=None, model="glm-4")
+    assert task.stages[1].params["provider"] == "deepseek"
+    assert task.stages[1].params["model"] == "glm-4"
