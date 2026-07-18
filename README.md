@@ -99,7 +99,7 @@ The bundled core does not include faster-whisper; run the core from a Python env
 
 ## Usage
 
-On first start the data directory is seeded with default profiles (`av-default`, `subtitle-translate`), prompt templates, subtitle styles, and a pricing table. All of these are commented plain-text files and can be edited.
+On first start the data directory is seeded with default profiles (`av-default`, `subtitle-translate`, `novel-translate`, `av-dub`, `translate-pdf`), prompt templates, subtitle styles, and a pricing table. All of these are commented plain-text files and can be edited.
 
 CLI basics:
 
@@ -116,7 +116,7 @@ uv run traduko task show <task-id>
 uv run traduko serve
 ```
 
-To use a real LLM, add a provider under `llm_providers` in `config/core.yaml` (`base_url` pointing at any OpenAI-compatible endpoint, `api_key_env` naming the key's environment variable), then set that provider on the `translate` and `proofread` stages of your profile. The default `fake` provider exists for offline dry runs.
+To use a real LLM, add a provider in the desktop app under Settings → General (any OpenAI-compatible endpoint, Anthropic, or Gemini) and pick a default when several are configured. Stages whose profile `provider` is `fake` or unset automatically use that default, with no YAML editing required. Editing `llm_providers` and `default_provider` in `config/core.yaml` directly has the same effect. With no provider configured, the `fake` provider exists for offline dry runs and outputs placeholder text prefixed with `[T]`.
 
 ## Development
 

@@ -268,3 +268,24 @@ def test_llm_scripted_provider_needs_no_key(tmp_path: Path) -> None:
     assert report.ok is True
     check = next(c for c in report.checks if "llm provider" in c.name)
     assert check.level == OK
+
+
+def test_pdf_engine_missing_fails(tmp_path: Path) -> None:
+    record = make_record(tmp_path, [StageRecord(type="translate_pdf")])
+    report = run_preflight(record, tmp_path)
+    assert report.ok is False
+    check = next(c for c in report.checks if "pdf engine" in c.name)
+    assert check.level == FAIL
+    assert "settings" in check.message
+
+
+def test_pdf_engine_installed_ok(tmp_path: Path) -> None:
+    venv_bin = tmp_path / "engines" / "pdf" / "venv" / "bin"
+    venv_bin.mkdir(parents=True)
+    (venv_bin / "python").write_text("", encoding="utf-8")
+    (tmp_path / "engines" / "pdf" / ".installed").write_text("{}", encoding="utf-8")
+    record = make_record(tmp_path, [StageRecord(type="translate_pdf")])
+    report = run_preflight(record, tmp_path)
+    assert report.ok is True
+    check = next(c for c in report.checks if "pdf engine" in c.name)
+    assert check.level == OK

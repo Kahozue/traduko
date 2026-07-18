@@ -99,7 +99,7 @@ cd app && pnpm tauri build
 
 ## 使用
 
-首次啟動會在資料目錄產生預設 profile（`av-default`、`subtitle-translate`）、提示詞模板、字幕樣式與計價表。這些都是帶註解的純文字檔，可以直接修改。
+首次啟動會在資料目錄產生預設 profile（`av-default`、`subtitle-translate`、`novel-translate`、`av-dub`、`translate-pdf`）、提示詞模板、字幕樣式與計價表。這些都是帶註解的純文字檔，可以直接修改。
 
 CLI 基本操作：
 
@@ -116,7 +116,7 @@ uv run traduko task show <task-id>
 uv run traduko serve
 ```
 
-接上真實 LLM：在 `config/core.yaml` 的 `llm_providers` 下新增供應商（`base_url` 指向任何 OpenAI 相容端點，`api_key_env` 指定金鑰的環境變數），再把 profile 中 `translate` 與 `proofread` 階段的 `provider` 指向它。預設的 `fake` provider 供離線試跑使用。
+接上真實 LLM：在桌面應用「設定 → 一般」新增供應商（OpenAI 相容端點、Anthropic 或 Gemini），多個供應商時再選一個預設。profile 中 `provider` 為 `fake` 或未指定的階段會自動採用這個預設，不需要改 YAML。也可以直接編輯 `config/core.yaml` 的 `llm_providers` 與 `default_provider`，效果相同。未設定任何供應商時，`fake` provider 供離線試跑使用，輸出為帶 `[T]` 前綴的占位文字。
 
 ## 開發
 

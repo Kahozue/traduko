@@ -63,6 +63,13 @@ def venv_python(data_root: Path) -> Path:
     return engine_dir(data_root) / "venv" / "bin" / "python"
 
 
+def engine_installed(data_root: Path) -> bool:
+    return (
+        venv_python(data_root).exists()
+        and (engine_dir(data_root) / ".installed").exists()
+    )
+
+
 def _dir_size_mb(path: Path) -> float:
     if not path.exists():
         return 0.0
@@ -128,7 +135,7 @@ class PdfManager:
         return {
             "python": find_python(self.python_override, probe=self._probe) or "",
             "venv": py.exists(),
-            "installed": py.exists() and (target / ".installed").exists(),
+            "installed": engine_installed(self.data_root),
             "state": state,
             "installing": state == "installing",
             "error": error,

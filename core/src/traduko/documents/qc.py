@@ -1,6 +1,7 @@
 """Rule-based quality checks for document translations. No LLM calls.
 
-Detections: untranslated blocks (normalized match or high similarity),
+Detections: chunks that never got a translation (status failed or
+pending), untranslated blocks (normalized match or high similarity),
 echoed chunks (whole batch nearly identical to source), and glossary
 violations. When the target is Chinese, kanji-only source text is exempt
 from the untranslated check: without hiragana there is no cheap way to
@@ -74,6 +75,13 @@ def scan(
     flags: list[QcFlag] = []
     for chunk in translation.chunks:
         if chunk.status != "translated":
+            flags.append(
+                QcFlag(
+                    chunk_id=chunk.id,
+                    type="failed",
+                    evidence=f"chunk has no translation (status: {chunk.status})",
+                )
+            )
             continue
         targets = {block.id: block.text for block in chunk.blocks}
         source_join = "\n".join(sources.get(i, "") for i in block_ids.get(chunk.id, []))

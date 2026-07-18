@@ -213,6 +213,18 @@ class TranslateChunksStage:
         artifacts = [path.name, partial_path.name]
         if summary_path.exists():
             artifacts.append(summary_path.name)
+        # The retry round is the last chance to fix failed chunks before
+        # export; letting it complete would let the task finish "green"
+        # while the output silently keeps source text. State is written
+        # first so the editor and a resume see the failed chunks.
+        if ctx.params.get("only_flagged"):
+            bad = sum(1 for c in translation.chunks if c.status != "translated")
+            if bad:
+                raise StageError(
+                    f"{bad} of {len(translation.chunks)} chunks failed "
+                    "translation; check the llm provider in settings or fix "
+                    "them in the text editor, then run again"
+                )
         return StageResult(artifacts=artifacts)
 
 
@@ -244,15 +256,24 @@ class QcScanStage:
 
 
 def _translated_blocks(ctx: StageContext) -> dict[str, str]:
+    """Block id -> translated text. A profile without a translate stage has
+    no translation artifact and exports the source unchanged, but chunks
+    that failed (or were never attempted) block the export: silently
+    falling back to source text would mark an untranslated file done."""
     try:
         raw = ctx.artifacts.read_latest_json("translation.json")
     except FileNotFoundError:
         return {}
     translation = DocTranslationDoc.model_validate(raw)
+    bad = sum(1 for chunk in translation.chunks if chunk.status != "translated")
+    if bad:
+        raise StageError(
+            f"cannot export: {bad} of {len(translation.chunks)} chunks are not "
+            "translated; re-run translation or fix them in the text editor"
+        )
     return {
         block.id: block.text
         for chunk in translation.chunks
-        if chunk.status == "translated"
         for block in chunk.blocks
     }
 

@@ -12,7 +12,7 @@ from pydantic import BaseModel, Field
 
 BlockKind = Literal["heading", "paragraph", "code", "blank", "other"]
 ChunkStatus = Literal["translated", "failed", "pending"]
-QcFlagType = Literal["untranslated", "echo", "glossary"]
+QcFlagType = Literal["untranslated", "echo", "glossary", "failed"]
 
 DocumentFormat = Literal["markdown", "txt", "html", "epub"]
 

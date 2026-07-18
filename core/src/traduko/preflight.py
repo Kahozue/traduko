@@ -23,6 +23,7 @@ from .config import (
 from .events import EventBus
 from .media import ffmpeg_available
 from .models import StageRecord, StageStatus, TaskRecord
+from .pdfengine.setup import engine_installed
 
 OK = "ok"
 WARN = "warn"
@@ -129,6 +130,21 @@ def _check_asr(
         PreflightCheck(
             "asr model", OK,
             f"faster-whisper installed; model '{model_size}' is cached",
+        )
+    ]
+
+
+@register_check("translate_pdf")
+def _check_pdf_engine(
+    stage: StageRecord, root: Path, config: CoreConfig
+) -> list[PreflightCheck]:
+    if engine_installed(root):
+        return [PreflightCheck("pdf engine", OK, "pdf2zh-next engine installed")]
+    return [
+        PreflightCheck(
+            "pdf engine", FAIL,
+            "pdf engine is not installed; install it from the settings "
+            "document tab",
         )
     ]
 

@@ -15,7 +15,8 @@
           "enum": [
             "untranslated",
             "echo",
-            "glossary"
+            "glossary",
+            "failed"
           ],
           "title": "Type",
           "type": "string"

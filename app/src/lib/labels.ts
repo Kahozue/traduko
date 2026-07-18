@@ -39,6 +39,23 @@ export function stageTypeLabel(type: string): string {
   return key ? t(key) : type;
 }
 
+// Pipelines repeat the translate/qc pair for the flagged-retry round; a
+// second occurrence gets a retry suffix so the stage list does not read
+// as an accidental duplicate.
+const RETRY_TYPES = new Set(["translate_chunks", "qc_scan"]);
+
+export function stageListLabels(stages: { type: string }[]): string[] {
+  const seen = new Map<string, number>();
+  return stages.map((stage) => {
+    const count = (seen.get(stage.type) ?? 0) + 1;
+    seen.set(stage.type, count);
+    const label = stageTypeLabel(stage.type);
+    return count > 1 && RETRY_TYPES.has(stage.type)
+      ? label + t("stage.retrySuffix")
+      : label;
+  });
+}
+
 export function stageStatusLabel(status: string): string {
   const key = STAGE_STATUS_KEYS[status];
   return key ? t(key) : status;

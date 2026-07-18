@@ -8,9 +8,9 @@ import { ApiError } from "../lib/api/client";
 import type { PreflightCheck } from "../lib/api/types";
 import { useApi, useConnection } from "../lib/connection";
 import { openArtifact, revealArtifact } from "../lib/shell";
-import { humanizeError } from "../lib/errors";
+import { humanizeError, matchError } from "../lib/errors";
 import { useTaskLive } from "../lib/events/store";
-import { eventTypeLabel, stageStatusLabel, stageTypeLabel } from "../lib/labels";
+import { eventTypeLabel, stageListLabels, stageStatusLabel, stageTypeLabel } from "../lib/labels";
 import styles from "./TaskDetailView.module.css";
 
 const RUNNABLE = new Set(["pending", "paused", "waiting_review", "failed"]);
@@ -182,8 +182,14 @@ export function TaskDetailView({
   );
   const hasSpeakers = (artifacts ?? []).some((item) => item.name === "speakers.json");
   const isDubTask = (task?.stages ?? []).some((stage) => stage.type === "diarize");
+  // Only pipelines that produce a translation artifact get an editor entry;
+  // translate_pdf outputs finished PDFs with nothing to edit in-app.
+  const supportsEditor = task.stages.some((stage) =>
+    ["ingest_subtitle", "asr", "translate", "proofread", "ingest_document", "translate_chunks"].includes(stage.type),
+  );
   const editorKind = isDocumentTask ? "document" : "subtitle";
   const editorLabel = isDocumentTask ? t("task.textEditor") : t("task.subtitleEditor");
+  const stageLabels = stageListLabels(task.stages);
   const outputs = (artifacts ?? []).filter((item) => !item.file.endsWith(".json"));
 
   function artifactPath(file: string): string {
@@ -277,15 +283,17 @@ export function TaskDetailView({
           >
             {t("task.cancel")}
           </button>
-          <button
-            type="button"
-            className={styles.secondary}
-            disabled={!hasTranslation}
-            title={hasTranslation ? undefined : t("task.editorDisabledHint")}
-            onClick={() => onOpenEditor(editorKind)}
-          >
-            {editorLabel}
-          </button>
+          {supportsEditor && (
+            <button
+              type="button"
+              className={styles.secondary}
+              disabled={!hasTranslation}
+              title={hasTranslation ? undefined : t("task.editorDisabledHint")}
+              onClick={() => onOpenEditor(editorKind)}
+            >
+              {editorLabel}
+            </button>
+          )}
           {isDubTask && (
             <button
               type="button"
@@ -387,11 +395,15 @@ export function TaskDetailView({
         <section className={styles.preflight}>
           <h2 className={styles.sectionTitle}>{t("preflight.failed")}</h2>
           <ul className={styles.checkList}>
-            {failedChecks.map((check) => (
-              <li key={check.name}>
-                <strong>{check.name}</strong> {check.message}
-              </li>
-            ))}
+            {failedChecks.map((check) => {
+              const human = matchError(check.message);
+              return (
+                <li key={check.name}>
+                  <strong>{check.name}</strong> {human ? human.summary : check.message}
+                  {human?.hint && <p className={styles.checkHint}>{human.hint}</p>}
+                </li>
+              );
+            })}
           </ul>
           {modelDownload && !modelDownload.error && (
             <p className={styles.modelProgress}>
@@ -444,7 +456,7 @@ export function TaskDetailView({
               <span className={styles.stageDot} />
               <div className={styles.stageBody}>
                 <div className={styles.stageHead}>
-                  <span className={styles.stageType}>{stageTypeLabel(stage.type)}</span>
+                  <span className={styles.stageType}>{stageLabels[index]}</span>
                   <span className={styles.stageStatus}>{stageStatusLabel(stage.status)}</span>
                 </div>
                 {index === runningIndex && live?.stageProgress && (

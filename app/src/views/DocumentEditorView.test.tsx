@@ -115,6 +115,33 @@ describe("DocumentEditorView", () => {
     expect(screen.getByText("未翻譯")).toBeInTheDocument();
   });
 
+  test("failed-chunk qc flag shows the failure badge", async () => {
+    const failedQc = {
+      schema_version: 1,
+      flags: [
+        {
+          chunk_id: "c-0002",
+          block_id: "",
+          type: "failed",
+          evidence: "chunk has no translation (status: failed)",
+        },
+      ],
+    };
+    render(
+      () => {},
+      api({
+        readArtifact: vi.fn(async (_p: string, _t: string, name: string): Promise<unknown> => {
+          if (name === "document.json") return DOCUMENT;
+          if (name === "chunks.json") return CHUNKS;
+          if (name === "translation.json") return TRANSLATION;
+          if (name === "qc.json") return failedQc;
+          throw new Error(`unexpected artifact ${name}`);
+        }) as unknown as ApiClient["readArtifact"],
+      }),
+    );
+    expect(await screen.findByText("翻譯失敗")).toBeInTheDocument();
+  });
+
   test("clicking a row opens the editor; Enter moves to next row", async () => {
     render();
     const field = await activateRow("你好。");

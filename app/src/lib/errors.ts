@@ -45,6 +45,16 @@ const PATTERNS: { pattern: RegExp; summary: MessageKey; hint: MessageKey }[] = [
     summary: "error.inputMissing.summary",
     hint: "error.inputMissing.hint",
   },
+  {
+    pattern: /pdf ?engine is not installed/i,
+    summary: "error.pdfEngine.summary",
+    hint: "error.pdfEngine.hint",
+  },
+  {
+    pattern: /chunks (are not translated|failed translation)/i,
+    summary: "error.docChunks.summary",
+    hint: "error.docChunks.hint",
+  },
 ];
 
 export interface HumanError {
@@ -52,11 +62,15 @@ export interface HumanError {
   hint: string | null;
 }
 
-export function humanizeError(raw: string): HumanError {
+export function matchError(raw: string): HumanError | null {
   for (const { pattern, summary, hint } of PATTERNS) {
     if (pattern.test(raw)) {
       return { summary: t(summary), hint: t(hint) };
     }
   }
-  return { summary: t("error.generic.summary"), hint: null };
+  return null;
+}
+
+export function humanizeError(raw: string): HumanError {
+  return matchError(raw) ?? { summary: t("error.generic.summary"), hint: null };
 }

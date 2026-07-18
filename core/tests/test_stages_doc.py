@@ -3,6 +3,7 @@ from pathlib import Path
 import pytest
 
 from traduko.artifacts import ArtifactStore
+from traduko.config import CoreConfig, save_config
 from traduko.documents.epubdoc import parse_epub
 from traduko.documents.model import ChunksDoc
 from traduko.events import EventBus
@@ -252,6 +253,50 @@ def test_translate_chunks_only_flagged_retranslates_failed_chunks(tmp_path: Path
     assert all(c["status"] == "translated" for c in data["chunks"])
 
 
+def test_translate_chunks_retry_round_fails_when_chunks_stay_failed(
+    tmp_path: Path,
+) -> None:
+    src = tmp_path / "book.md"
+    src.write_text(MD, encoding="utf-8")
+    _ingest_and_chunk(tmp_path, src)
+    save_config(
+        tmp_path,
+        CoreConfig(
+            default_provider="bad",
+            llm_providers={
+                "bad": {"type": "scripted", "responses": ["not json"] * 12}
+            },
+        ),
+    )
+    chunks = ChunksDoc.model_validate(
+        make_ctx(tmp_path, src)[0].artifacts.read_latest_json("chunks.json")
+    )
+    setup_ctx, _ = make_ctx(tmp_path, src, stage_index=2)
+    setup_ctx.artifacts.write_json(
+        3,
+        "translation.json",
+        {
+            "chunks": [
+                {"id": chunk.id, "status": "failed", "blocks": []}
+                for chunk in chunks.chunks
+            ]
+        },
+    )
+    setup_ctx.artifacts.write_json(4, "qc.json", {"flags": []})
+    retry_ctx, _ = make_ctx(
+        tmp_path,
+        src,
+        stage_index=4,
+        params={"target_language": "en", "only_flagged": True},
+    )
+    with pytest.raises(base.StageError, match="1 of 1 chunks failed"):
+        registry.create("translate_chunks").run(retry_ctx)
+    # State is persisted before the gate raises, so the editor and a
+    # later resume see the failed chunks.
+    data = retry_ctx.artifacts.read_latest_json("translation.json")
+    assert all(c["status"] == "failed" for c in data["chunks"])
+
+
 def test_qc_scan_requires_translation(tmp_path: Path) -> None:
     src = tmp_path / "book.md"
     src.write_text(MD, encoding="utf-8")
@@ -310,7 +355,7 @@ def test_export_without_translation_reproduces_source(tmp_path: Path) -> None:
     assert out.read_text(encoding="utf-8") == MD
 
 
-def test_export_applies_translated_chunks_only(tmp_path: Path) -> None:
+def test_export_fails_when_chunks_are_not_translated(tmp_path: Path) -> None:
     src = tmp_path / "book.md"
     src.write_text(MD, encoding="utf-8")
     ctx, _ = make_ctx(tmp_path, src, stage_index=0)
@@ -338,9 +383,9 @@ def test_export_applies_translated_chunks_only(tmp_path: Path) -> None:
         },
     )
     export_ctx, _ = make_ctx(tmp_path, src, stage_index=2)
-    registry.create("export_document").run(export_ctx)
-    out = export_ctx.artifacts.path_for(3, "translated.md").read_text(encoding="utf-8")
-    assert out == "# Title\n\nFirst translated.\n\nPara two.\n"
+    with pytest.raises(base.StageError, match="1 of 2 chunks"):
+        registry.create("export_document").run(export_ctx)
+    assert not export_ctx.artifacts.path_for(3, "translated.md").exists()
 
 
 def test_export_epub_roundtrip(tmp_path: Path) -> None:

@@ -31,6 +31,12 @@ const KIND_EXTENSIONS: Record<TaskKind, string[]> = {
   comic: ["png", "jpg", "jpeg", "webp", "cbz", "zip"],
 };
 
+const KIND_FILTER_LABELS: Record<TaskKind, MessageKey> = {
+  video: "create.fileFilter.video",
+  document: "create.fileFilter.document",
+  comic: "create.fileFilter.comic",
+};
+
 export function CreateTaskDialog({
   onClose,
   onCreated,
@@ -145,7 +151,12 @@ export function CreateTaskDialog({
     const extensions = kind ? KIND_EXTENSIONS[kind] : Object.values(KIND_EXTENSIONS).flat();
     const chosen = await open({
       multiple: false,
-      filters: [{ name: t("create.fileFilter"), extensions }],
+      filters: [
+        {
+          name: t(kind ? KIND_FILTER_LABELS[kind] : "create.fileFilter.any"),
+          extensions,
+        },
+      ],
     });
     if (typeof chosen === "string") setInputPath(chosen);
   }

@@ -1,5 +1,10 @@
 import { describe, expect, test } from "vitest";
-import { eventTypeLabel, stageStatusLabel, stageTypeLabel } from "./labels";
+import {
+  eventTypeLabel,
+  stageListLabels,
+  stageStatusLabel,
+  stageTypeLabel,
+} from "./labels";
 
 describe("stageTypeLabel", () => {
   test("maps built-in stage types to zh-TW", () => {
@@ -11,6 +16,36 @@ describe("stageTypeLabel", () => {
 
   test("falls back to the raw type for unknown stages", () => {
     expect(stageTypeLabel("my_custom_stage")).toBe("my_custom_stage");
+  });
+});
+
+describe("stageListLabels", () => {
+  test("marks repeated translate/qc rounds as retries", () => {
+    const labels = stageListLabels([
+      { type: "ingest_document" },
+      { type: "chunk" },
+      { type: "translate_chunks" },
+      { type: "qc_scan" },
+      { type: "translate_chunks" },
+      { type: "qc_scan" },
+      { type: "export_document" },
+    ]);
+    expect(labels).toEqual([
+      "讀入文件",
+      "分塊",
+      "翻譯文件",
+      "品質檢測",
+      "翻譯文件（重試）",
+      "品質檢測（重試）",
+      "輸出文件",
+    ]);
+  });
+
+  test("repeats of other stage types keep their plain label", () => {
+    expect(stageListLabels([{ type: "translate" }, { type: "translate" }])).toEqual([
+      "翻譯",
+      "翻譯",
+    ]);
   });
 });
 

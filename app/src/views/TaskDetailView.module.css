@@ -483,7 +483,8 @@
   font-weight: 500;
 }
 
-.stageErrorHint {
+.stageErrorHint,
+.checkHint {
   margin: 2px 0 0;
   color: var(--text-secondary);
   font-size: var(--fs-note);

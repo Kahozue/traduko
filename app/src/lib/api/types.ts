@@ -167,7 +167,7 @@ export interface DocTranslationArtifact {
   chunks: DocTranslatedChunk[];
 }
 
-export type QcFlagType = "untranslated" | "echo" | "glossary";
+export type QcFlagType = "untranslated" | "echo" | "glossary" | "failed";
 
 export interface QcFlag {
   chunk_id: string;

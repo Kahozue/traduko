@@ -74,6 +74,35 @@ test("a task type with no profiles is disabled", async () => {
   await waitFor(() => expect(screen.getByRole("button", { name: /漫畫/ })).toBeDisabled());
 });
 
+test("file picker filter name follows the task type", async () => {
+  openMock.mockResolvedValue("/tmp/novel.md");
+  const api: Partial<ApiClient> = {
+    profilesDetailed: vi.fn().mockResolvedValue(DETAILED),
+  };
+  renderWithConnection(<CreateTaskDialog onClose={() => {}} onCreated={() => {}} />, { api });
+
+  // Video is auto-selected first: its filter keeps the subtitle/media name.
+  await waitFor(() => expect(screen.getByRole("combobox")).toBeInTheDocument());
+  await userEvent.click(screen.getByText("選擇檔案"));
+  await waitFor(() =>
+    expect(openMock).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        filters: [expect.objectContaining({ name: "字幕或影音檔" })],
+      }),
+    ),
+  );
+
+  await userEvent.click(screen.getByRole("button", { name: /文檔/ }));
+  await userEvent.click(screen.getByText("選擇檔案"));
+  await waitFor(() =>
+    expect(openMock).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        filters: [expect.objectContaining({ name: "文件檔" })],
+      }),
+    ),
+  );
+});
+
 test("close button calls onClose", async () => {
   const api: Partial<ApiClient> = { profilesDetailed: vi.fn().mockResolvedValue([]) };
   const onClose = vi.fn();

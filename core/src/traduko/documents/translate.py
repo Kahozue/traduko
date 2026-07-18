@@ -7,7 +7,7 @@ translation, and a rolling summary that an LLM refreshes every
 summary_chunks chunks or summary_chars target chars. A chunk whose
 response cannot be parsed is retried once with a correction message,
 then bisected; a single block that still fails marks the whole chunk
-"failed" (export keeps the source text for those blocks).
+"failed" (qc flags it and export refuses to run until it is fixed).
 """
 from __future__ import annotations
 
@@ -202,7 +202,9 @@ def _load_partial(partial_path: Path) -> dict[str, TranslatedChunk]:
         return {}
     items = json.loads(partial_path.read_text(encoding="utf-8"))
     chunks = [TranslatedChunk.model_validate(item) for item in items]
-    return {chunk.id: chunk for chunk in chunks}
+    # The cache exists to avoid re-spending tokens on successes; failed
+    # chunks are dropped so a resumed run re-attempts them.
+    return {chunk.id: chunk for chunk in chunks if chunk.status == "translated"}
 
 
 def _save_partial(partial_path: Path, done: list[TranslatedChunk]) -> None:

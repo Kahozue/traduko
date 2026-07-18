@@ -23,6 +23,7 @@ const QC_LABEL: Record<QcFlagType, MessageKey> = {
   untranslated: "editor.qc.untranslated",
   echo: "editor.qc.echo",
   glossary: "editor.qc.glossary",
+  failed: "editor.qc.failed",
 };
 
 export function DocumentEditorView({

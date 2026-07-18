@@ -95,7 +95,7 @@ def _doc() -> tuple[DocumentDoc, ChunksDoc]:
     return document, chunks
 
 
-def test_scan_flags_untranslated_and_skips_failed_chunks() -> None:
+def test_scan_flags_untranslated_and_failed_chunks() -> None:
     document, chunks = _doc()
     translation = DocTranslationDoc(
         chunks=[
@@ -112,8 +112,28 @@ def test_scan_flags_untranslated_and_skips_failed_chunks() -> None:
     )
     qc = scan(document, chunks, translation, [], "zh-TW")
     assert [(f.chunk_id, f.block_id, f.type) for f in qc.flags] == [
-        ("c-0001", "b-1", "untranslated")
+        ("c-0001", "b-1", "untranslated"),
+        ("c-0002", "", "failed"),
     ]
+
+
+def test_scan_flags_pending_chunk_as_failed() -> None:
+    document, chunks = _doc()
+    translation = DocTranslationDoc(
+        chunks=[
+            TranslatedChunk(
+                id="c-0001",
+                status="translated",
+                blocks=[
+                    {"id": "b-1", "text": "第一段。"},
+                    {"id": "b-2", "text": "第二段。"},
+                ],
+            ),
+            TranslatedChunk(id="c-0002", status="pending", blocks=[]),
+        ]
+    )
+    qc = scan(document, chunks, translation, [], "zh-TW")
+    assert [(f.chunk_id, f.type) for f in qc.flags] == [("c-0002", "failed")]
 
 
 def test_scan_echo_flag_is_chunk_level_and_suppresses_block_flags() -> None:

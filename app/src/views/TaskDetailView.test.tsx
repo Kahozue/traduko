@@ -276,6 +276,82 @@ test("document task checkpoint banner opens the document editor", async () => {
   expect(onOpenEditor).toHaveBeenCalledWith("document");
 });
 
+const pdfTask: TaskRecord = {
+  ...task,
+  profile: "translate-pdf",
+  input_path: "/tmp/in.pdf",
+  stages: [
+    { type: "translate_pdf", status: "pending", params: {}, pause_after: false, artifacts: [], error: null },
+  ],
+};
+
+test("pdf task shows no subtitle or text editor entry", async () => {
+  const api: Partial<ApiClient> = { showTask: vi.fn().mockResolvedValue(pdfTask) };
+  renderWithConnection(
+    <TaskDetailView
+      project="default"
+      taskId="t1"
+      onBack={() => {}}
+      onOpenEditor={() => {}}
+    />,
+    { api },
+  );
+  expect(await screen.findByText("翻譯 PDF")).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "字幕編輯器" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "文本編輯器" })).not.toBeInTheDocument();
+});
+
+test("repeated document rounds are labeled as retries", async () => {
+  const sevenStages = ["ingest_document", "chunk", "translate_chunks", "qc_scan",
+    "translate_chunks", "qc_scan", "export_document"].map((type) => ({
+    type, status: "completed", params: {}, pause_after: false, artifacts: [], error: null,
+  }));
+  const api: Partial<ApiClient> = {
+    showTask: vi.fn().mockResolvedValue({ ...docTask, stages: sevenStages }),
+  };
+  renderWithConnection(
+    <TaskDetailView
+      project="default"
+      taskId="t1"
+      onBack={() => {}}
+      onOpenEditor={() => {}}
+    />,
+    { api },
+  );
+  expect(await screen.findByText("翻譯文件（重試）")).toBeInTheDocument();
+  expect(screen.getByText("品質檢測（重試）")).toBeInTheDocument();
+  expect(screen.getByText("翻譯文件")).toBeInTheDocument();
+});
+
+test("preflight pdf-engine failure shows localized guidance", async () => {
+  const detail = {
+    error: "preflight failed",
+    checks: [{
+      name: "stage 1 (translate_pdf): pdf engine",
+      level: "fail",
+      message: "pdf engine is not installed; install it from the settings document tab",
+    }],
+  };
+  const runTask = vi.fn().mockRejectedValueOnce(new ApiError(409, detail));
+  const api: Partial<ApiClient> = {
+    showTask: vi.fn().mockResolvedValue(pdfTask),
+    runTask,
+  };
+  renderWithConnection(
+    <TaskDetailView
+      project="default"
+      taskId="t1"
+      onBack={() => {}}
+      onOpenEditor={() => {}}
+    />,
+    { api },
+  );
+  await waitFor(() => expect(screen.getByText("執行")).toBeEnabled());
+  await userEvent.click(screen.getByText("執行"));
+  await waitFor(() => expect(screen.getByText("預檢未通過")).toBeInTheDocument());
+  expect(screen.getByText("PDF 引擎尚未安裝")).toBeInTheDocument();
+});
+
 test("renders localized stage labels and named title", async () => {
   const named = { ...task, name: "第三集" };
   const api: Partial<ApiClient> = { showTask: vi.fn().mockResolvedValue(named) };

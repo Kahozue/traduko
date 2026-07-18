@@ -189,6 +189,22 @@ def test_resume_skips_chunks_already_in_partial(tmp_path: Path) -> None:
     assert len(provider.prompts) == 1
 
 
+def test_resume_reattempts_failed_chunks_in_partial(tmp_path: Path) -> None:
+    document, chunks = make_document(["one", "two", "three", "four"])
+    failed = TranslatedChunk(id="c-0001", status="failed", blocks=[])
+    (tmp_path / "translation.partial.json").write_text(
+        json.dumps([failed.model_dump()]), encoding="utf-8"
+    )
+    responses = [
+        response_for({"b-00001": "T1", "b-00002": "T2"}),
+        response_for({"b-00003": "T3", "b-00004": "T4"}),
+    ]
+    result, provider, _ = run(tmp_path, document, chunks, responses)
+    assert [c.status for c in result.chunks] == ["translated", "translated"]
+    assert [b.text for b in result.chunks[0].blocks] == ["T1", "T2"]
+    assert len(provider.prompts) == 2
+
+
 def test_summary_updates_after_chunk_threshold(tmp_path: Path) -> None:
     document, chunks = make_document(["one", "two", "three", "four", "five", "six"])
     settings = DocTranslationSettings(
