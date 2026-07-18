@@ -90,15 +90,28 @@ def write_stubs(stub_dir: Path) -> None:
     (stub_dir / "voxcpm.py").write_text(
         textwrap.dedent(
             """\
+            import os
+
+
+            class _Inner:
+                sample_rate = 48000
+
+
             class VoxCPM:
                 last_kwargs = None
+                tts_model = _Inner()
 
                 @classmethod
-                def from_pretrained(cls, name):
+                def from_pretrained(cls, name, load_denoiser=True):
+                    assert load_denoiser is False, "denoiser must stay off"
                     return cls()
 
                 def generate(self, **kwargs):
                     VoxCPM.last_kwargs = kwargs
+                    if os.environ.get("VOXCPM_STUB_RAW"):
+                        # Real VoxCPM returns a bare array; the rate lives on
+                        # the inner tts_model.
+                        return [0.0] * 9600
                     return 16000, [0.0] * 8000
             """
         ),
@@ -145,6 +158,21 @@ def test_diarize_and_synthesize_with_stubbed_engines(tmp_path: Path) -> None:
     assert synth["path"] == str(out_wav)
     assert synth["duration"] == 0.5
     assert out_wav.read_text() == "8000@16000"
+
+
+def test_synthesize_reads_rate_from_inner_tts_model(tmp_path: Path) -> None:
+    # VoxCPM2 returns a bare array and keeps 48000 on model.tts_model; the
+    # old fallback wrote such audio at 16000 (three times slower).
+    write_stubs(tmp_path)
+    out_wav = tmp_path / "raw.wav"
+    responses = run_lines(
+        [json.dumps({"op": "synthesize", "text": "hello", "out": str(out_wav)})],
+        env={"PYTHONPATH": str(tmp_path), "VOXCPM_STUB_RAW": "1"},
+    )
+    synth = responses[0]
+    assert synth["ok"] is True
+    assert synth["duration"] == 0.2
+    assert out_wav.read_text() == "9600@48000"
 
 
 def test_synthesize_without_prompt_omits_prompt_kwargs(tmp_path: Path) -> None:

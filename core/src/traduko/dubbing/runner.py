@@ -67,7 +67,12 @@ def _synthesize(req: dict) -> dict:
     if _tts_model is None:
         from voxcpm import VoxCPM
 
-        _tts_model = VoxCPM.from_pretrained(req.get("model", "openbmb/VoxCPM2"))
+        # The denoiser is only used to clean reference audio, which the
+        # pipeline does not do; loading it would pull an extra model from
+        # ModelScope on first use.
+        _tts_model = VoxCPM.from_pretrained(
+            req.get("model", "openbmb/VoxCPM2"), load_denoiser=False
+        )
     text = req["text"]
     instruction = req.get("instruction")
     if instruction:
@@ -81,7 +86,16 @@ def _synthesize(req: dict) -> dict:
     if isinstance(result, tuple):
         rate, data = result
     else:
-        rate, data = getattr(_tts_model, "sample_rate", 16000), result
+        # The VoxCPM wrapper keeps the rate on its inner tts_model (48000
+        # on VoxCPM2); a wrong fallback here writes slowed-down audio, so
+        # probe both attribute paths before assuming.
+        inner = getattr(_tts_model, "tts_model", None)
+        rate = (
+            getattr(_tts_model, "sample_rate", None)
+            or getattr(inner, "sample_rate", None)
+            or 16000
+        )
+        data = result
     import soundfile
 
     soundfile.write(req["out"], data, int(rate))
