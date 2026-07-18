@@ -21,26 +21,53 @@ interface Preset {
   label: string;
   baseUrl: string;
   model: string;
+  type: string;
 }
 
 const PRESETS: Preset[] = [
-  { id: "openai", label: "OpenAI", baseUrl: "https://api.openai.com/v1", model: "gpt-4o-mini" },
+  {
+    id: "openai",
+    label: "OpenAI",
+    baseUrl: "https://api.openai.com/v1",
+    model: "gpt-4o-mini",
+    type: "openai_compat",
+  },
   {
     id: "claude",
     label: "Claude",
     baseUrl: "https://api.anthropic.com/v1",
     model: "claude-sonnet-4-5",
+    type: "anthropic",
   },
   {
     id: "gemini",
     label: "Gemini",
-    baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai",
+    baseUrl: "https://generativelanguage.googleapis.com/v1beta",
     model: "gemini-2.5-flash",
+    type: "gemini",
   },
-  { id: "deepseek", label: "DeepSeek", baseUrl: "https://api.deepseek.com/v1", model: "deepseek-chat" },
-  { id: "glm", label: "GLM", baseUrl: "https://open.bigmodel.cn/api/paas/v4", model: "glm-4.5" },
-  { id: "kimi", label: "Kimi", baseUrl: "https://api.moonshot.cn/v1", model: "kimi-k2-0905-preview" },
-  { id: "custom", label: t("settings.provider.custom"), baseUrl: "", model: "" },
+  {
+    id: "deepseek",
+    label: "DeepSeek",
+    baseUrl: "https://api.deepseek.com/v1",
+    model: "deepseek-chat",
+    type: "openai_compat",
+  },
+  {
+    id: "glm",
+    label: "GLM",
+    baseUrl: "https://open.bigmodel.cn/api/paas/v4",
+    model: "glm-4.5",
+    type: "openai_compat",
+  },
+  {
+    id: "kimi",
+    label: "Kimi",
+    baseUrl: "https://api.moonshot.cn/v1",
+    model: "kimi-k2-0905-preview",
+    type: "openai_compat",
+  },
+  { id: "custom", label: t("settings.provider.custom"), baseUrl: "", model: "", type: "openai_compat" },
 ];
 
 // Model suggestions per preset, offered through a datalist so the field
@@ -58,6 +85,10 @@ const MODEL_SUGGESTIONS: Record<string, string[]> = {
 // Which preset a stored row matches, so an edited config re-opens on the
 // right preset instead of always "custom".
 function presetForConfig(config: ProviderConfigDoc): string {
+  const type = String(config.type ?? "openai_compat");
+  // Native adapters map one-to-one onto their preset regardless of base_url.
+  const byType = PRESETS.find((preset) => preset.type === type && type !== "openai_compat");
+  if (byType) return byType.id;
   const baseUrl = String(config.base_url ?? "").replace(/\/$/, "");
   const match = PRESETS.find(
     (preset) => preset.baseUrl !== "" && preset.baseUrl.replace(/\/$/, "") === baseUrl,
@@ -137,8 +168,9 @@ export function ProvidersSection({
     if (!row) return;
     // Fill a field when it is empty or still holds another preset's default
     // (i.e. it was auto-filled, like a fresh row's OpenAI pre-fill), but
-    // never clobber a value the user typed; type stays openai_compat.
-    const config: ProviderConfigDoc = { ...row.config, type: "openai_compat" };
+    // never clobber a value the user typed. type follows the preset so
+    // Claude/Gemini switch to their native adapter.
+    const config: ProviderConfigDoc = { ...row.config, type: preset.type };
     const baseUrl = String(config.base_url ?? "").trim().replace(/\/$/, "");
     if (
       baseUrl === "" ||

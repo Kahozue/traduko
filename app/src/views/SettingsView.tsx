@@ -9,6 +9,7 @@ import { AppearanceSection } from "../components/settings/AppearanceSection";
 import { BasicsSection } from "../components/settings/BasicsSection";
 import { AsrSection } from "../components/settings/AsrSection";
 import { DubbingSection } from "../components/settings/DubbingSection";
+import { PdfEngineSection } from "../components/settings/PdfEngineSection";
 import { ProvidersSection } from "../components/settings/ProvidersSection";
 import { ChannelsSection } from "../components/settings/ChannelsSection";
 import { BotSection } from "../components/settings/BotSection";
@@ -18,13 +19,14 @@ import styles from "../components/settings/settings.module.css";
 // Tabs follow the information architecture in internal/design-language.md:
 // one pipeline domain per tab, future domains (documents, comics, agent)
 // slot in after "video"; integrations and about stay last.
-const TABS = ["general", "video", "agent", "integrations", "about"] as const;
+const TABS = ["general", "video", "document", "agent", "integrations", "about"] as const;
 export type SettingsTab = (typeof TABS)[number];
 type TabId = SettingsTab;
 
 const TAB_LABELS: Record<TabId, MessageKey> = {
   general: "settings.tab.general",
   video: "settings.tab.video",
+  document: "settings.tab.document",
   agent: "settings.tab.agent",
   integrations: "settings.tab.integrations",
   about: "settings.tab.about",
@@ -76,6 +78,7 @@ function normalize(config: CoreConfigDoc): CoreConfigDoc {
   }
   if (!next.skills) next.skills = {};
   if (!next.dubbing) next.dubbing = { hf_token: "", python: "" };
+  if (!next.pdf) next.pdf = { python: "" };
   return next;
 }
 
@@ -308,6 +311,16 @@ export function SettingsView({
             }
           />
         )}
+      </div>
+
+      <div
+        role="tabpanel"
+        id="settings-panel-document"
+        aria-labelledby="settings-tab-document"
+        hidden={tab !== "document"}
+        className={styles.panel}
+      >
+        <PdfEngineSection />
       </div>
 
       <div

@@ -4,6 +4,8 @@ import type {
   AsrTestResult,
   DubbingStatus,
   DubbingTestResult,
+  PdfEngineStatus,
+  PdfEngineTestResult,
   AssistantMessageDoc,
   AssistantReply,
   AssistantSessionRow,
@@ -197,6 +199,18 @@ export class ApiClient {
 
   testDubbingEngine(): Promise<DubbingTestResult> {
     return this.request("/dubbing/test", { method: "POST" });
+  }
+
+  getPdfEngineStatus(): Promise<PdfEngineStatus> {
+    return this.request("/pdf/status");
+  }
+
+  installPdfEngine(): Promise<{ installing: boolean }> {
+    return this.request("/pdf/install", { method: "POST" });
+  }
+
+  testPdfEngine(): Promise<PdfEngineTestResult> {
+    return this.request("/pdf/test", { method: "POST" });
   }
 
   getMcpStatus(): Promise<McpServerStatus[]> {

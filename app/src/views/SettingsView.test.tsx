@@ -34,6 +34,7 @@ const DEFAULT_CONFIG: CoreConfigDoc = {
   mcp_servers: {},
   skills: {},
   dubbing: { hf_token: "", python: "" },
+  pdf: { python: "" },
 };
 
 function setup(
@@ -77,6 +78,7 @@ test("tabs render in order and default to the general tab", async () => {
   expect(tabs.map((el) => el.textContent)).toEqual([
     "一般",
     "影片",
+    "文件",
     "Agent",
     "整合",
     "關於",

@@ -312,6 +312,7 @@ export interface CoreConfigDoc {
   mcp_servers: Record<string, McpServerConfigDoc>;
   skills: Record<string, SkillConfigDoc>;
   dubbing: DubbingConfigDoc;
+  pdf: PdfEngineConfigDoc;
   [key: string]: unknown;
 }
 
@@ -412,6 +413,27 @@ export interface DubbingTestResult {
   voxcpm?: string | null;
   pyannote?: string | null;
   mps?: boolean;
+  error?: string;
+}
+
+export interface PdfEngineConfigDoc {
+  python: string;
+  [key: string]: unknown;
+}
+
+export interface PdfEngineStatus {
+  python: string;
+  venv: boolean;
+  installed: boolean;
+  state: "idle" | "installing" | "done" | "error";
+  installing: boolean;
+  error: string | null;
+  installed_mb: number;
+}
+
+export interface PdfEngineTestResult {
+  ok: boolean;
+  version?: string;
   error?: string;
 }
 

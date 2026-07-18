@@ -130,6 +130,7 @@ test("config endpoints round trip", async () => {
     mcp_servers: {},
     skills: {},
     dubbing: { hf_token: "", python: "" },
+    pdf: { python: "" },
   } as CoreConfigDoc;
   const fetchFn = vi.fn().mockResolvedValue(jsonResponse(200, doc));
   const client = new ApiClient("http://127.0.0.1:8686", "tok", fetchFn);

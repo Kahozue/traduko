@@ -35,8 +35,8 @@ test("switching presets replaces auto-filled base_url and model", async () => {
   await userEvent.type(screen.getByLabelText("名稱"), "g");
   expect(onChange).toHaveBeenLastCalledWith({
     g: {
-      type: "openai_compat",
-      base_url: "https://generativelanguage.googleapis.com/v1beta/openai",
+      type: "gemini",
+      base_url: "https://generativelanguage.googleapis.com/v1beta",
       model: "gemini-2.5-flash",
     },
   });
