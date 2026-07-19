@@ -18,15 +18,28 @@ class ExportTranscriptStage:
     type = "export_transcript"
 
     def run(self, ctx: StageContext) -> StageResult:
-        # Translated transcript when a translation exists, source transcript
-        # otherwise — the same stage closes both the transcribe-only and the
-        # translate pipelines.
+        # Fallback chain segments.diarized.json -> translation.json ->
+        # asr.json: the diarized doc carries speakers (and the translation
+        # when one happened), the translation the target text, the raw asr
+        # the source transcript — the same stage closes every pipeline shape.
+        diarized = None
         translation = None
         try:
-            translation = ctx.artifacts.read_latest_json("translation.json")
+            diarized = ctx.artifacts.read_latest_json("segments.diarized.json")
         except FileNotFoundError:
-            pass
-        if translation is not None:
+            try:
+                translation = ctx.artifacts.read_latest_json("translation.json")
+            except FileNotFoundError:
+                pass
+        if diarized is not None:
+            # Per segment: the translation when present, the source otherwise.
+            segments = [
+                {**seg, "text": seg.get("target") or seg.get("source", "")}
+                for seg in diarized["segments"]
+            ]
+            text_key = "text"
+            has_timestamps = True
+        elif translation is not None:
             segments = translation["segments"]
             text_key = "target"
             has_timestamps = True

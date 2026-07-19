@@ -77,6 +77,59 @@ def test_export_transcript_prefers_translation(tmp_path: Path) -> None:
     assert "こんにちは" not in body
 
 
+def write_diarized(ctx, index=3, with_target=False):
+    segments = [
+        {"id": 1, "start": 1.0, "end": 2.5, "source": "こんにちは", "speaker": "S1"},
+        {"id": 2, "start": 3.0, "end": 4.0, "source": "元気ですか", "speaker": "S2"},
+    ]
+    if with_target:
+        segments[0]["target"] = "你好"
+        segments[1]["target"] = "你好嗎"
+    ctx.artifacts.write_json(
+        index,
+        "segments.diarized.json",
+        {
+            "language": "ja",
+            "target_language": "zh-TW" if with_target else None,
+            "segments": segments,
+        },
+    )
+
+
+def test_export_transcript_prefers_diarized_over_translation(tmp_path: Path) -> None:
+    ctx, _ = make_ctx(tmp_path, tmp_path / "in.wav", stage_index=3)
+    write_asr(ctx)
+    ctx.artifacts.write_json(
+        2,
+        "translation.json",
+        {
+            "source_language": "ja",
+            "target_language": "zh-TW",
+            "segments": [
+                {"id": 1, "start": 1.0, "end": 2.5, "source": "こんにちは", "target": "舊譯"},
+            ],
+        },
+    )
+    write_diarized(ctx, with_target=True)
+    registry.create("export_transcript").run(ctx)
+    body = ctx.artifacts.latest_path("transcript.txt").read_text(encoding="utf-8")
+    assert "S1：你好" in body
+    assert "S2：你好嗎" in body
+    assert "舊譯" not in body
+
+
+def test_export_transcript_diarized_without_target_uses_source(tmp_path: Path) -> None:
+    ctx, _ = make_ctx(
+        tmp_path, tmp_path / "in.wav", stage_index=3, params={"timestamps": "off"}
+    )
+    write_asr(ctx)
+    write_diarized(ctx)
+    registry.create("export_transcript").run(ctx)
+    body = ctx.artifacts.latest_path("transcript.txt").read_text(encoding="utf-8")
+    assert body.splitlines()[0] == "S1：こんにちは"
+    assert "[" not in body
+
+
 def test_export_transcript_markdown_format(tmp_path: Path) -> None:
     ctx, _ = make_ctx(
         tmp_path, tmp_path / "in.wav", stage_index=1, params={"format": "md"}
