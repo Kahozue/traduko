@@ -6,6 +6,7 @@ import { t, type MessageKey } from "../i18n";
 import { ApiError } from "../lib/api/client";
 import type { ProfileInfo, TaskKind } from "../lib/api/types";
 import { useApi } from "../lib/connection";
+import { AUDIO_EXTENSIONS, VIDEO_EXTENSIONS } from "../lib/media";
 import { Icon, type IconName } from "./icons";
 import styles from "./CreateTaskDialog.module.css";
 
@@ -21,14 +22,11 @@ const TASK_TYPES: { kind: TaskKind; label: MessageKey; icon: IconName }[] = [
 
 // File-picker extensions per task type, matching what each kind's pipelines
 // actually ingest; picking a comic/PDF file under the wrong type would only
-// build a task that fails at ingest.
+// build a task that fails at ingest. Media buckets compose from the shared
+// lists in lib/media so the picker and the task player never drift apart.
 const KIND_EXTENSIONS: Record<TaskKind, string[]> = {
-  video: [
-    "srt", "vtt", "ass", "txt",
-    "mp4", "mkv", "mov", "webm", "avi", "flv", "m4v",
-    "mp3", "wav", "m4a", "aac", "flac", "ogg",
-  ],
-  audio: ["mp3", "wav", "m4a", "aac", "flac", "ogg", "opus", "aiff", "wma"],
+  video: ["srt", "vtt", "ass", "txt", ...VIDEO_EXTENSIONS, ...AUDIO_EXTENSIONS],
+  audio: [...AUDIO_EXTENSIONS],
   document: ["txt", "md", "markdown", "epub", "html", "htm", "pdf"],
   comic: ["png", "jpg", "jpeg", "webp", "cbz", "zip"],
 };
