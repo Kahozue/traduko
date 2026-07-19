@@ -2671,3 +2671,15 @@ def test_create_task_without_switchable_stages_leaves_switches_none(
         task_id = create_task(client, headers, tmp_path, profile="subtitle-translate")
         body = client.get(f"/tasks/default/{task_id}", headers=headers).json()
         assert body["switches"] is None
+
+
+def test_dub_engines_endpoint_lists_catalog(tmp_path: Path) -> None:
+    with service(tmp_path) as (client, headers, token):
+        resp = client.get("/dub/engines", headers=headers)
+        assert resp.status_code == 200
+        engines = resp.json()["engines"]
+        by_id = {e["id"]: e for e in engines}
+        assert set(by_id) == {"voxcpm2", "say_preview", "cloud_placeholder"}
+        assert by_id["voxcpm2"]["kind"] == "local"
+        assert by_id["cloud_placeholder"]["kind"] == "placeholder"
+        assert by_id["cloud_placeholder"]["available"] is False

@@ -11,6 +11,7 @@ import json
 from ..config import CoreConfig, load_config
 from ..dubbing import preview
 from ..dubbing import setup as dubsetup
+from ..dubbing.engines import resolve_tts_engine
 from ..dubbing.align import plan_segment
 from ..dubbing.client import DubbingEngineClient, DubbingError
 from ..dubbing.models import (
@@ -289,6 +290,14 @@ class TtsSynthesizeStage:
     type = "tts_synthesize"
 
     def run(self, ctx: StageContext) -> StageResult:
+        # Guard: the studio writes tts_engine into params; a placeholder id
+        # must be rejected here even if the UI's disabled state is bypassed.
+        engine_id = ctx.params.get("tts_engine")
+        if engine_id:
+            try:
+                resolve_tts_engine(engine_id)
+            except DubbingError as error:
+                raise StageError(str(error)) from error
         text_doc = _read_dub_text(ctx)
         dub_text = _dub_text_mode(ctx.params)
         (speakers_doc,) = _read_dub_inputs(ctx, "speakers.json")

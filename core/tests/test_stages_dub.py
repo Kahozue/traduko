@@ -872,3 +872,13 @@ def test_align_regen_uses_dub_text_source(tmp_path: Path, monkeypatch) -> None:
     registry.create("align_duration").run(ctx)
 
     assert [c["text"] for c in client.synth_calls] == ["hi back"]
+
+
+def test_tts_synthesize_rejects_placeholder_engine(tmp_path, fake_client, monkeypatch):
+    import pytest as _pytest
+    from traduko.stages.base import StageError
+    ctx, _progress, _commands = setup_tts(
+        tmp_path, monkeypatch, params={"tts_engine": "cloud_placeholder"}
+    )
+    with _pytest.raises(StageError, match="cloud_placeholder"):
+        registry.create("tts_synthesize").run(ctx)

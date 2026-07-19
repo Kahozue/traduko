@@ -57,6 +57,7 @@ from ..budget import BudgetMeter
 from ..config import CoreConfig, load_config, save_config
 from ..documents.model import DocTranslationDoc
 from ..dubbing.models import SpeakersDoc
+from ..dubbing.engines import TTS_ENGINES
 from ..dubbing.setup import DubbingManager
 from ..eventlog import EventLogger
 from ..executor import reset_stages_after_artifact
@@ -1043,6 +1044,24 @@ def dubbing_model_download(request: Request) -> dict:
 def dubbing_status(request: Request) -> dict:
     manager: DubbingManager = request.app.state.dubbing
     return manager.status()
+
+
+@router.get("/dub/engines")
+def dub_engines() -> dict:
+    # Static catalog backing the dubbing studio's engine menu. Placeholder
+    # engines are listed (with available=False) so the UI can render them as
+    # "coming soon"; the executor rejects them via resolve_tts_engine.
+    return {
+        "engines": [
+            {
+                "id": engine.id,
+                "kind": engine.kind,
+                "voice_modes": list(engine.voice_modes),
+                "available": engine.available,
+            }
+            for engine in TTS_ENGINES
+        ]
+    }
 
 
 @router.post("/dubbing/install", status_code=202)
