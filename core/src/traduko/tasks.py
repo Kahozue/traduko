@@ -7,7 +7,14 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from .fsutil import atomic_write_text
-from .models import StageRecord, TaskRecord, new_task_id, utc_now_iso
+from .models import (
+    StageRecord,
+    StageStatus,
+    TaskRecord,
+    TaskStatus,
+    new_task_id,
+    utc_now_iso,
+)
 
 if TYPE_CHECKING:
     from .index import TaskIndex
@@ -136,6 +143,21 @@ class TaskStore:
             shutil.rmtree(task_dir)
         if self.index is not None:
             self.index.delete(task_id)
+
+    def reset_for_rerun(self, record: TaskRecord) -> None:
+        """Reset a completed task so the whole pipeline runs again.
+
+        Only a COMPLETED task can be rerun; a completed run is finished, so
+        this is not a resume. Every stage goes back to PENDING with its error
+        cleared and the task returns to PENDING. Products stay on disk: the
+        executor overwrites each artifact as its stage re-completes."""
+        if record.status != TaskStatus.COMPLETED:
+            raise ValueError(f"cannot rerun task in status {record.status.value}")
+        for stage in record.stages:
+            stage.status = StageStatus.PENDING
+            stage.error = None
+        record.status = TaskStatus.PENDING
+        self.save(record)
 
     def move(self, record: TaskRecord, new_project: str) -> TaskRecord:
         src = self.task_dir(record.project, record.id)

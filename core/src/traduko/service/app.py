@@ -520,31 +520,62 @@ class RunRequest(BaseModel):
     skip_preflight: bool = False
 
 
+def _gate_preflight(request: Request, record: TaskRecord, skip_preflight: bool) -> None:
+    """Raise 409 with the failing checks unless preflight passes or is skipped.
+    Leaves the record untouched, so a caller may retry after fixing the cause."""
+    if skip_preflight:
+        return
+    ws: Workspace = request.app.state.workspace
+    report = run_preflight(record, ws.root)
+    if not report.ok:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error": "preflight failed",
+                "checks": [asdict(check) for check in report.failures()],
+            },
+        )
+
+
+def _enqueue_or_409(request: Request, record: TaskRecord) -> dict:
+    worker: TaskWorker = request.app.state.worker
+    if not worker.enqueue(record.project, record.id):
+        raise HTTPException(status_code=409, detail="task already queued or running")
+    return {"queued": True}
+
+
 @router.post("/tasks/{project}/{task_id}/run", status_code=202)
 def run_task(
     request: Request, project: str, task_id: str, body: RunRequest | None = None
 ) -> dict:
     ws: Workspace = request.app.state.workspace
-    worker: TaskWorker = request.app.state.worker
     record = _load_task(ws, project, task_id)
     if record.status not in _RUNNABLE:
         raise HTTPException(
             status_code=409,
             detail=f"cannot run task in status {record.status.value}",
         )
-    if not (body and body.skip_preflight):
-        report = run_preflight(record, ws.root)
-        if not report.ok:
-            raise HTTPException(
-                status_code=409,
-                detail={
-                    "error": "preflight failed",
-                    "checks": [asdict(check) for check in report.failures()],
-                },
-            )
-    if not worker.enqueue(project, task_id):
-        raise HTTPException(status_code=409, detail="task already queued or running")
-    return {"queued": True}
+    _gate_preflight(request, record, bool(body and body.skip_preflight))
+    return _enqueue_or_409(request, record)
+
+
+@router.post("/tasks/{project}/{task_id}/rerun", status_code=202)
+def rerun_task(
+    request: Request, project: str, task_id: str, body: RunRequest | None = None
+) -> dict:
+    ws: Workspace = request.app.state.workspace
+    record = _load_task(ws, project, task_id)
+    if record.status != TaskStatus.COMPLETED:
+        raise HTTPException(
+            status_code=409,
+            detail=f"cannot rerun task in status {record.status.value}",
+        )
+    # Preflight before the reset: a failing rerun leaves the completed task as
+    # it was, so the client can restore the input or retry with skip_preflight
+    # through this same endpoint (the task is still COMPLETED).
+    _gate_preflight(request, record, bool(body and body.skip_preflight))
+    ws.store.reset_for_rerun(record)
+    return _enqueue_or_409(request, record)
 
 
 @router.post("/tasks/{project}/{task_id}/cancel", status_code=202)

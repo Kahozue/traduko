@@ -302,6 +302,56 @@ def test_run_rejects_completed_task(tmp_path: Path) -> None:
         assert again.status_code == 409
 
 
+def test_rerun_completed_task_requeues(tmp_path: Path) -> None:
+    write_passthrough(tmp_path)
+    with service(tmp_path) as (client, headers, token):
+        task_id = create_task(client, headers, tmp_path, profile="passthrough")
+        client.post(f"/tasks/default/{task_id}/run", headers=headers)
+        wait_completed(client, headers, "default", task_id)
+        response = client.post(f"/tasks/default/{task_id}/rerun", headers=headers)
+        assert response.status_code == 202, response.text
+        assert response.json() == {"queued": True}
+        shown = wait_completed(client, headers, "default", task_id)
+        assert shown["status"] == "completed"
+
+
+def test_rerun_rejects_non_completed_task(tmp_path: Path) -> None:
+    write_passthrough(tmp_path)
+    with service(tmp_path) as (client, headers, token):
+        task_id = create_task(client, headers, tmp_path, profile="passthrough")
+        denied = client.post(f"/tasks/default/{task_id}/rerun", headers=headers)
+        assert denied.status_code == 409
+        assert "pending" in denied.json()["detail"]
+
+
+def test_rerun_gates_on_preflight_then_skip_resets(tmp_path: Path) -> None:
+    write_passthrough(tmp_path)
+    with service(tmp_path) as (client, headers, token):
+        task_id = create_task(client, headers, tmp_path, profile="passthrough")
+        client.post(f"/tasks/default/{task_id}/run", headers=headers)
+        wait_completed(client, headers, "default", task_id)
+        (tmp_path / "in.srt").unlink()
+
+        denied = client.post(f"/tasks/default/{task_id}/rerun", headers=headers)
+        assert denied.status_code == 409
+        assert denied.json()["detail"]["checks"][0]["name"] == "input"
+        # A failed rerun preflight leaves the completed task untouched, so the
+        # client can retry the same endpoint with skip_preflight.
+        shown = client.get(f"/tasks/default/{task_id}", headers=headers).json()
+        assert shown["status"] == "completed"
+        assert all(s["status"] == "completed" for s in shown["stages"])
+
+        forced = client.post(
+            f"/tasks/default/{task_id}/rerun",
+            json={"skip_preflight": True},
+            headers=headers,
+        )
+        assert forced.status_code == 202
+        assert (
+            wait_completed(client, headers, "default", task_id)["status"] == "completed"
+        )
+
+
 def test_cancel_pending_task(tmp_path: Path) -> None:
     write_passthrough(tmp_path)
     with service(tmp_path) as (client, headers, token):

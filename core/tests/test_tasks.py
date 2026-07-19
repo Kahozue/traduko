@@ -179,3 +179,49 @@ def test_apply_voice_mode_override_targets_dub_stages() -> None:
     apply_voice_mode_override(task, "design", None)
     apply_voice_mode_override(task, None, None)
     assert by_type["tts_synthesize"].params["voice_mode"] == "design"
+
+
+def test_reset_for_rerun_resets_all_stages_and_status(tmp_path: Path) -> None:
+    from traduko.models import StageStatus
+
+    store = make_store(tmp_path)
+    record = store.create(
+        project="default",
+        input_path="in.srt",
+        profile_name="passthrough",
+        stages=[StageRecord(type="a"), StageRecord(type="b")],
+    )
+    record.status = TaskStatus.COMPLETED
+    record.stages[0].status = StageStatus.COMPLETED
+    record.stages[0].artifacts = ["0001-out.json"]
+    record.stages[1].status = StageStatus.FAILED
+    record.stages[1].error = "boom"
+    store.save(record)
+
+    store.reset_for_rerun(record)
+
+    assert record.status == TaskStatus.PENDING
+    for stage in record.stages:
+        assert stage.status == StageStatus.PENDING
+        assert stage.error is None
+    # Products stay on disk; the executor overwrites each artifact on rerun.
+    assert record.stages[0].artifacts == ["0001-out.json"]
+    reloaded = store.load("default", record.id)
+    assert reloaded.status == TaskStatus.PENDING
+    assert all(s.status == StageStatus.PENDING for s in reloaded.stages)
+    assert all(s.error is None for s in reloaded.stages)
+
+
+def test_reset_for_rerun_rejects_non_completed(tmp_path: Path) -> None:
+    import pytest
+
+    store = make_store(tmp_path)
+    record = store.create(
+        project="default",
+        input_path="in.srt",
+        profile_name="passthrough",
+        stages=[StageRecord(type="a")],
+    )
+    assert record.status == TaskStatus.PENDING
+    with pytest.raises(ValueError):
+        store.reset_for_rerun(record)
