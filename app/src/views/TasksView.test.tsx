@@ -218,3 +218,38 @@ test("status filter refetches with filter", async () => {
   await userEvent.selectOptions(screen.getByRole("combobox"), "running");
   await waitFor(() => expect(listTasks).toHaveBeenLastCalledWith({ status: "running" }));
 });
+
+test("the video domain view offers a compose button", async () => {
+  const api: Partial<ApiClient> = { listTasks: vi.fn().mockResolvedValue(rows) };
+  renderWithConnection(<TasksView onOpenTask={() => {}} taskKind="video" />, { api });
+  await waitFor(() =>
+    expect(screen.getByRole("button", { name: "製作影片" })).toBeInTheDocument(),
+  );
+  expect(screen.queryByRole("button", { name: "製作音頻" })).toBeNull();
+});
+
+test("the audio domain view offers its own compose button", async () => {
+  const api: Partial<ApiClient> = { listTasks: vi.fn().mockResolvedValue([]) };
+  renderWithConnection(<TasksView onOpenTask={() => {}} taskKind="audio" />, { api });
+  await waitFor(() =>
+    expect(screen.getByRole("button", { name: "製作音頻" })).toBeInTheDocument(),
+  );
+  expect(screen.queryByRole("button", { name: "製作影片" })).toBeNull();
+});
+
+test("the all-tasks view offers neither compose button", async () => {
+  const api: Partial<ApiClient> = { listTasks: vi.fn().mockResolvedValue(rows) };
+  renderWithConnection(<TasksView onOpenTask={() => {}} />, { api });
+  await screen.findByText("第三集");
+  expect(screen.queryByRole("button", { name: "製作影片" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "製作音頻" })).toBeNull();
+});
+
+test("the document domain view offers neither compose button", async () => {
+  const api: Partial<ApiClient> = { listTasks: vi.fn().mockResolvedValue([]) };
+  renderWithConnection(<TasksView onOpenTask={() => {}} taskKind="document" />, { api });
+  await waitFor(() =>
+    expect(screen.queryByRole("button", { name: "製作影片" })).toBeNull(),
+  );
+  expect(screen.queryByRole("button", { name: "製作音頻" })).toBeNull();
+});

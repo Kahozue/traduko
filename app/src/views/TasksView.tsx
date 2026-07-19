@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { ComposeDialog } from "../components/ComposeDialog";
 import { CreateTaskDialog } from "../components/CreateTaskDialog";
 import { Icon } from "../components/icons";
 import { StatusBadge } from "../components/StatusBadge";
-import { t } from "../i18n";
+import { t, type MessageKey } from "../i18n";
 import { useApi } from "../lib/connection";
 import { formatDateTime } from "../lib/time";
 import { ApiError } from "../lib/api/client";
@@ -96,6 +97,7 @@ export function TasksView({
   const queryClient = useQueryClient();
   const [statusFilter, setStatusFilter] = useState("");
   const [creating, setCreating] = useState(false);
+  const [composing, setComposing] = useState(false);
   const [collapsed, setCollapsed] = useState<Set<string>>(loadCollapsed);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [moveMenuOpen, setMoveMenuOpen] = useState(false);
@@ -327,6 +329,15 @@ export function TasksView({
               </option>
             ))}
           </select>
+          {(taskKind === "video" || taskKind === "audio") && (
+            <button
+              type="button"
+              className={styles.secondary}
+              onClick={() => setComposing(true)}
+            >
+              {t(`tasks.compose.${taskKind}` as MessageKey)}
+            </button>
+          )}
           <button type="button" className={styles.primary} onClick={() => setCreating(true)}>
             {t("tasks.create")}
           </button>
@@ -558,6 +569,17 @@ export function TasksView({
             </div>
           </div>
         </div>
+      )}
+
+      {composing && (taskKind === "video" || taskKind === "audio") && (
+        <ComposeDialog
+          kind={taskKind}
+          onClose={() => setComposing(false)}
+          onCreated={(project, taskId) => {
+            setComposing(false);
+            onOpenTask(project, taskId);
+          }}
+        />
       )}
 
       {creating && (

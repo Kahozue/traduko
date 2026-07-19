@@ -46,6 +46,24 @@
   transform: translateY(1px);
 }
 
+/* Compose entry, paired with the primary new-task button on the same row
+   (design language exception of 2026-07-19: one primary, one secondary). */
+.secondary {
+  padding: 8px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-s);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font-size: var(--fs-note);
+  font-weight: 500;
+  cursor: pointer;
+  transition: background var(--transition);
+}
+
+.secondary:hover {
+  background: var(--bg-inset);
+}
+
 .empty {
   padding: 56px 0;
   border-radius: var(--radius-m);

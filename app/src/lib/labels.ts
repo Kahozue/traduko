@@ -5,6 +5,7 @@ import { t, type MessageKey } from "../i18n";
 // raw identifier so nothing renders blank.
 const STAGE_TYPE_KEYS: Record<string, MessageKey> = {
   ingest_subtitle: "stage.ingest_subtitle",
+  ingest_transcript: "stage.ingest_transcript",
   extract_audio: "stage.extract_audio",
   asr: "stage.asr",
   segment: "stage.segment",

@@ -50,8 +50,17 @@ export class ApiError extends Error {
   }
 }
 
+// Where a compose task's ingest_transcript stage reads its transcript: a
+// file the user picked, or an artifact of an existing task (which the app
+// only knows by name, so the server resolves it to a path).
+export type TranscriptSource =
+  | { kind: "file"; path: string }
+  | { kind: "task"; project: string; task_id: string; file: string };
+
 export interface TaskCreateBody {
-  input_path: string;
+  // Omitted only by an audio compose task, whose input is the transcript
+  // itself; the server fills it in from the resolved transcript.
+  input_path?: string;
   profile: string;
   project?: string;
   name?: string;
@@ -64,6 +73,10 @@ export interface TaskCreateBody {
   // voice description, written into the dub stages' params.
   voice_mode?: string;
   voice_instruction?: string;
+  // Compose input: the transcript source, plus an optional replacement mix
+  // bed for a video compose task.
+  transcript?: TranscriptSource;
+  base_audio?: string;
 }
 
 export class ApiClient {
