@@ -1,5 +1,5 @@
 import { expect, test, vi } from "vitest";
-import { screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { renderWithConnection } from "../test/helpers";
 import type { ApiClient } from "../lib/api/client";
@@ -178,4 +178,63 @@ test("the dubbed audio track is unavailable without a dub mix", async () => {
   expect(
     Array.from((select as HTMLSelectElement).options).find((o) => o.value === "dub"),
   ).toBeDisabled();
+});
+
+const COMPOSE_STAGES = [
+  {
+    type: "ingest_transcript",
+    status: "completed" as const,
+    params: {},
+    pause_after: false,
+    artifacts: ["01-segments.json"],
+    error: null,
+  },
+  {
+    type: "mix_audio",
+    status: "completed" as const,
+    params: {},
+    pause_after: false,
+    artifacts: ["dub-mix.wav"],
+    error: null,
+  },
+  {
+    type: "export_audio",
+    status: "completed" as const,
+    params: {},
+    pause_after: false,
+    artifacts: ["06-dubbed.m4a"],
+    error: null,
+  },
+];
+
+function composeTask() {
+  return task({
+    input_path: "/tmp/lines.srt",
+    profile: "audio-compose",
+    stages: COMPOSE_STAGES,
+  });
+}
+
+test("a compose task lands in the audio panel despite its transcript input", async () => {
+  render(api({ showTask: vi.fn().mockResolvedValue(composeTask()) }));
+  await screen.findByText("匯出工作室");
+  expect(await screen.findByLabelText("格式")).toBeInTheDocument();
+  expect(screen.queryByLabelText("容器")).not.toBeInTheDocument();
+});
+
+test("a compose task cannot export the original audio it never had", async () => {
+  render(api({ showTask: vi.fn().mockResolvedValue(composeTask()) }));
+  await screen.findByText("匯出工作室");
+  const sourceSelect = await screen.findByLabelText("來源");
+  const original = within(sourceSelect).getByRole("option", { name: "原始音訊" });
+  expect(original).toBeDisabled();
+  expect(sourceSelect).toHaveValue("dub");
+});
+
+test("a compose task shows no source preview", async () => {
+  render(api({ showTask: vi.fn().mockResolvedValue(composeTask()) }));
+  await screen.findByText("匯出工作室");
+  await screen.findByLabelText("格式");
+  // Nothing to play: the input is a transcript, not a recording.
+  expect(screen.queryByText("預覽")).toBeNull();
 });

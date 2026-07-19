@@ -937,3 +937,87 @@ test("the translation settings entry only appears for tasks with a translate sta
   await waitFor(() => expect(screen.getAllByText("t1").length).toBeGreaterThan(0));
   expect(screen.queryByRole("button", { name: "翻譯設定" })).toBeNull();
 });
+
+test("the export studio entry stays for a video task with no export stage", async () => {
+  // Regression guard: keying the entry off produced stages alone would hide
+  // it for av-default, where a video goes in and only subtitles come out.
+  const avDefault: TaskRecord = {
+    ...task,
+    input_path: "/tmp/in.mp4",
+    profile: "av-default",
+    stages: [
+      {
+        type: "extract_audio",
+        status: "completed",
+        params: {},
+        pause_after: false,
+        artifacts: [],
+        error: null,
+      },
+      {
+        type: "export_subtitles",
+        status: "completed",
+        params: {},
+        pause_after: false,
+        artifacts: [],
+        error: null,
+      },
+    ],
+  };
+  const api: Partial<ApiClient> = {
+    showTask: vi.fn().mockResolvedValue(avDefault),
+    listArtifacts: vi.fn().mockResolvedValue([]),
+  };
+  renderWithConnection(
+    <TaskDetailView
+      project="default"
+      taskId="t1"
+      onBack={() => {}}
+      onOpenEditor={() => {}}
+      onOpenExport={() => {}}
+    />,
+    { api },
+  );
+  expect(await screen.findByRole("button", { name: /匯出工作室/ })).toBeInTheDocument();
+});
+
+test("the export studio entry appears for a compose task", async () => {
+  const composeTask: TaskRecord = {
+    ...task,
+    input_path: "/tmp/lines.srt",
+    profile: "audio-compose",
+    stages: [
+      {
+        type: "ingest_transcript",
+        status: "completed",
+        params: {},
+        pause_after: false,
+        artifacts: [],
+        error: null,
+      },
+      {
+        type: "export_audio",
+        status: "completed",
+        params: {},
+        pause_after: false,
+        artifacts: [],
+        error: null,
+      },
+    ],
+  };
+  const api: Partial<ApiClient> = {
+    showTask: vi.fn().mockResolvedValue(composeTask),
+    listArtifacts: vi.fn().mockResolvedValue([]),
+  };
+  renderWithConnection(
+    <TaskDetailView
+      project="default"
+      taskId="t1"
+      onBack={() => {}}
+      onOpenEditor={() => {}}
+      onOpenExport={() => {}}
+    />,
+    { api },
+  );
+  expect(await screen.findByRole("button", { name: /匯出工作室/ })).toBeInTheDocument();
+});

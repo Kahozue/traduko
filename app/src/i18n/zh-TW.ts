@@ -658,6 +658,7 @@ export const zhTW = {
   "task.export.studio.channels.source": "同來源",
   "task.export.studio.source": "來源",
   "task.export.studio.source.dub": "配音混音",
+  "task.export.studio.noMedia": "這個任務沒有可匯出的媒體",
   "task.export.studio.source.original": "原始音訊",
   "task.export.studio.format": "格式",
   "task.export.studio.bitrate": "碼率 kbps",

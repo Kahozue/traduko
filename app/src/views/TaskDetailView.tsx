@@ -11,7 +11,7 @@ import type { PreflightCheck } from "../lib/api/types";
 import { useApi, useConnection } from "../lib/connection";
 import { openArtifact, revealArtifact } from "../lib/shell";
 import { humanizeError, matchError } from "../lib/errors";
-import { mediaKindOf } from "../lib/media";
+import { exportKindOf, mediaKindOf } from "../lib/media";
 import { formatDateTime } from "../lib/time";
 import { useTaskLive } from "../lib/events/store";
 import { eventTypeLabel, stageListLabels, stageStatusLabel, stageTypeLabel } from "../lib/labels";
@@ -378,6 +378,9 @@ export function TaskDetailView({
   // Player classification goes by the input file itself, not the task's
   // domain; subtitle/text/document inputs stay null and render no player.
   const mediaKind = mediaKindOf(task.input_path);
+  // The export studio works on the input when it is media, and otherwise on
+  // what the pipeline produces: a compose task's input is its transcript.
+  const exportKind = exportKindOf(task);
 
   // Effective LLM choice for the model chip, mirroring the core's
   // resolve_provider_name: explicit override wins, then the configured
@@ -580,7 +583,7 @@ export function TaskDetailView({
               {t("task.dub.studio.entry")}
             </button>
           )}
-          {mediaKind !== null && onOpenExport && (
+          {exportKind !== null && onOpenExport && (
             <button
               type="button"
               className={styles.secondary}

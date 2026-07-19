@@ -2841,10 +2841,24 @@ def test_redub_without_dub_group_422(tmp_path: Path) -> None:
 
 
 def _export_task(client, headers, tmp_path: Path) -> str:
+    # A media input: the export studio encodes the task's own input file, so
+    # a subtitle-only task has nothing for the video panel to work on.
     create_profile(tmp_path, "with-export", ["ingest_subtitle", "translate"])
     resp = client.post(
         "/tasks",
-        json={"input_path": str(make_input(tmp_path)), "profile": "with-export"},
+        json={"input_path": str(make_video(tmp_path)), "profile": "with-export"},
+        headers=headers,
+    )
+    assert resp.status_code == 201, resp.text
+    return resp.json()["id"]
+
+
+def _subtitle_input_task(client, headers, tmp_path: Path) -> str:
+    """A task whose input is not media at all, like an audio compose task."""
+    create_profile(tmp_path, "no-media", ["ingest_subtitle", "translate"])
+    resp = client.post(
+        "/tasks",
+        json={"input_path": str(make_input(tmp_path)), "profile": "no-media"},
         headers=headers,
     )
     assert resp.status_code == 201, resp.text
@@ -2926,7 +2940,7 @@ def test_post_export_while_running_409(tmp_path: Path) -> None:
 def test_post_export_with_missing_input_422(tmp_path: Path) -> None:
     with service(tmp_path) as (client, headers, token):
         task_id = _export_task(client, headers, tmp_path)
-        (tmp_path / "in.srt").unlink()
+        (tmp_path / "clip.mp4").unlink()
         resp = client.post(
             f"/tasks/default/{task_id}/exports",
             json={"kind": "video", "params": {}},
@@ -3548,3 +3562,43 @@ def test_task_without_an_input_path_is_still_rejected(tmp_path: Path) -> None:
             "/tasks", json={"profile": "subtitle-translate"}, headers=headers
         )
         assert response.status_code == 400, response.text
+
+
+def test_video_export_on_a_non_video_task_is_rejected(tmp_path: Path) -> None:
+    with service(tmp_path) as (client, headers, token):
+        task_id = _subtitle_input_task(client, headers, tmp_path)
+        client.app.state.worker.enqueue = lambda project, task_id: True
+        resp = client.post(
+            f"/tasks/default/{task_id}/exports",
+            json={"kind": "video", "params": {"container": "mp4"}},
+            headers=headers,
+        )
+        assert resp.status_code == 422, resp.text
+        assert "video" in resp.json()["detail"]
+
+
+def test_audio_export_from_the_original_needs_a_media_input(tmp_path: Path) -> None:
+    with service(tmp_path) as (client, headers, token):
+        task_id = _subtitle_input_task(client, headers, tmp_path)
+        client.app.state.worker.enqueue = lambda project, task_id: True
+        resp = client.post(
+            f"/tasks/default/{task_id}/exports",
+            json={"kind": "audio", "params": {"format": "mp3", "source": "original"}},
+            headers=headers,
+        )
+        assert resp.status_code == 422, resp.text
+        assert "original" in resp.json()["detail"]
+
+
+def test_audio_export_of_the_dub_works_without_a_media_input(tmp_path: Path) -> None:
+    with service(tmp_path) as (client, headers, token):
+        task_id = _subtitle_input_task(client, headers, tmp_path)
+        client.app.state.worker.enqueue = lambda project, task_id: True
+        resp = client.post(
+            f"/tasks/default/{task_id}/exports",
+            json={"kind": "audio", "params": {"format": "mp3", "source": "dub"}},
+            headers=headers,
+        )
+        assert resp.status_code == 202, resp.text
+        rec = client.app.state.workspace.store.load("default", task_id)
+        assert rec.stages[-1].type == "export_audio_custom"

@@ -4,7 +4,7 @@ import { convertFileSrc } from "@tauri-apps/api/core";
 import { t } from "../i18n";
 import { useApi } from "../lib/connection";
 import { alignmentToFlex, assStyleToCss } from "../lib/ass/preview";
-import { mediaKindOf } from "../lib/media";
+import { exportKindOf, mediaKindOf } from "../lib/media";
 import type { ExportEstimate, ExportParams, SubtitleStylePreset } from "../lib/api/types";
 import styles from "./ExportStudioView.module.css";
 
@@ -65,7 +65,10 @@ export function ExportStudioView({
     queryFn: () => api.getStyles(),
   });
 
-  const kind = task ? (mediaKindOf(task.input_path) ?? "video") : "video";
+  const kind = task ? exportKindOf(task) : null;
+  // A compose task has no source recording, so neither the original-audio
+  // source nor the source preview has anything behind it.
+  const hasSourceMedia = task ? mediaKindOf(task.input_path) !== null : false;
   const hasDubMix =
     task?.stages.some((stage) => stage.artifacts.includes("dub-mix.wav")) ?? false;
 
@@ -93,8 +96,9 @@ export function ExportStudioView({
   // The dubbed track is only offered once a dub mix exists.
   useEffect(() => {
     if (!hasDubMix && audioTrack === "dub") setAudioTrack("original");
-    if (!hasDubMix && source === "dub") setSource("original");
-  }, [hasDubMix, audioTrack, source]);
+    if (!hasDubMix && source === "dub" && hasSourceMedia) setSource("original");
+    if (!hasSourceMedia && source === "original") setSource("dub");
+  }, [hasDubMix, audioTrack, source, hasSourceMedia]);
 
   const params = useMemo<ExportParams>(() => {
     if (kind === "audio") {
@@ -140,6 +144,7 @@ export function ExportStudioView({
 
   // Debounced so dragging the quality slider does not hammer ffprobe.
   useEffect(() => {
+    if (kind === null) return;
     let cancelled = false;
     const timer = setTimeout(() => {
       api
@@ -163,7 +168,12 @@ export function ExportStudioView({
   }, [paramKey, kind, project, taskId]);
 
   const start = useMutation({
-    mutationFn: () => api.createExport(project, taskId, kind, params),
+    mutationFn: () => {
+      // Unreachable: the panels below refuse to render without a kind, and
+      // the task page never opens the studio for such a task.
+      if (kind === null) throw new Error("this task has nothing to export");
+      return api.createExport(project, taskId, kind, params);
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["task", project, taskId] });
       onBack();
@@ -181,12 +191,13 @@ export function ExportStudioView({
   const running = task?.status === "running";
   const blocked = estimate !== null && !estimate.disk_ok;
 
-  if (!task) {
+  if (!task || kind === null) {
     return (
       <div className={styles.wrap}>
         <button type="button" className={styles.back} onClick={onBack}>
           {t("task.back")}
         </button>
+        {task && <p className={styles.hint}>{t("task.export.studio.noMedia")}</p>}
       </div>
     );
   }
@@ -431,7 +442,9 @@ export function ExportStudioView({
                 <option value="dub" disabled={!hasDubMix}>
                   {t("task.export.studio.source.dub")}
                 </option>
-                <option value="original">{t("task.export.studio.source.original")}</option>
+                <option value="original" disabled={!hasSourceMedia}>
+                  {t("task.export.studio.source.original")}
+                </option>
               </select>
             </label>
             <label className={styles.field}>
@@ -489,37 +502,39 @@ export function ExportStudioView({
         </section>
       )}
 
-      <section className={styles.block}>
-        <h2 className={styles.sectionTitle}>{t("task.export.studio.preview")}</h2>
-        <div className={styles.canvas}>
-          {kind === "video" ? (
-            <div className={styles.stage}>
-              <video className={styles.video} controls src={sourceUrl} />
-              {subtitles !== "none" && (
-                <div
-                  className={styles.overlay}
-                  style={{
-                    justifyContent: overlayFlex.justifyContent,
-                    alignItems: overlayFlex.alignItems,
-                  }}
-                >
-                  <span
-                    data-testid="subtitle-overlay"
-                    style={{ ...overlayCss, textAlign: overlayFlex.textAlign }}
+      {hasSourceMedia && (
+        <section className={styles.block}>
+          <h2 className={styles.sectionTitle}>{t("task.export.studio.preview")}</h2>
+          <div className={styles.canvas}>
+            {kind === "video" ? (
+              <div className={styles.stage}>
+                <video className={styles.video} controls src={sourceUrl} />
+                {subtitles !== "none" && (
+                  <div
+                    className={styles.overlay}
+                    style={{
+                      justifyContent: overlayFlex.justifyContent,
+                      alignItems: overlayFlex.alignItems,
+                    }}
                   >
-                    {t("task.export.studio.sampleText")}
-                  </span>
-                </div>
-              )}
-            </div>
-          ) : (
-            <audio className={styles.audio} controls src={sourceUrl} />
+                    <span
+                      data-testid="subtitle-overlay"
+                      style={{ ...overlayCss, textAlign: overlayFlex.textAlign }}
+                    >
+                      {t("task.export.studio.sampleText")}
+                    </span>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <audio className={styles.audio} controls src={sourceUrl} />
+            )}
+          </div>
+          {kind === "video" && (
+            <p className={styles.hint}>{t("task.export.studio.previewNote")}</p>
           )}
-        </div>
-        {kind === "video" && (
-          <p className={styles.hint}>{t("task.export.studio.previewNote")}</p>
-        )}
-      </section>
+        </section>
+      )}
 
       <section className={styles.block}>
         <h2 className={styles.sectionTitle}>{t("task.export.studio.estimate")}</h2>

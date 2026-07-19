@@ -928,6 +928,25 @@ def create_export(
             status_code=422,
             detail=f"task input file is missing: {record.input_path}",
         )
+    # Both panels encode from the task input, so a task whose input is not
+    # the right kind of media (a compose task's input is its transcript) has
+    # to be turned away here rather than failing inside the stage.
+    input_kind = media_kind_of(Path(record.input_path))
+    if body.kind == "video" and input_kind != "video":
+        raise HTTPException(
+            status_code=422,
+            detail=f"this task has no video to export: {record.input_path}",
+        )
+    if (
+        body.kind == "audio"
+        and body.params.get("source", "dub") == "original"
+        and input_kind is None
+    ):
+        raise HTTPException(
+            status_code=422,
+            detail="the original audio source needs a media input; "
+            f"this task's input is {record.input_path}",
+        )
     worker: TaskWorker = request.app.state.worker
     if worker.is_active(project, task_id):
         raise HTTPException(status_code=409, detail="task is queued or running")

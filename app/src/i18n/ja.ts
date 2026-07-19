@@ -652,6 +652,7 @@ export const ja: Record<MessageKey, string> = {
   "task.export.studio.channels.source": "ソースと同じ",
   "task.export.studio.source": "ソース",
   "task.export.studio.source.dub": "吹き替えミックス",
+  "task.export.studio.noMedia": "このタスクに書き出せるメディアはありません",
   "task.export.studio.source.original": "元の音声",
   "task.export.studio.format": "形式",
   "task.export.studio.bitrate": "ビットレート kbps",

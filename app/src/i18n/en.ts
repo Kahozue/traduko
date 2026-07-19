@@ -652,6 +652,7 @@ export const en: Record<MessageKey, string> = {
   "task.export.studio.channels.source": "Same as source",
   "task.export.studio.source": "Source",
   "task.export.studio.source.dub": "Dub mix",
+  "task.export.studio.noMedia": "This task has no media to export",
   "task.export.studio.source.original": "Original audio",
   "task.export.studio.format": "Format",
   "task.export.studio.bitrate": "Bitrate kbps",
