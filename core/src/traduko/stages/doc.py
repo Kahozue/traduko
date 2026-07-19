@@ -169,6 +169,7 @@ class TranslateChunksStage:
             source_language=source_language,
             target_language=target_language,
             model=model,
+            style=ctx.params.get("style", ""),
             context_tail=int(ctx.params.get("context_tail", 5)),
             summary_chunks=int(ctx.params.get("summary_chunks", 10)),
             summary_chars=int(ctx.params.get("summary_chars", 16000)),

@@ -37,6 +37,7 @@ class DocTranslationSettings:
     source_language: str
     target_language: str
     model: str
+    style: str = ""
     context_tail: int = 5
     summary_chunks: int = 10
     summary_chars: int = 16000
@@ -142,6 +143,7 @@ class _Engine:
             {
                 "source_language": self.settings.source_language,
                 "target_language": self.settings.target_language,
+                "style": self.settings.style or "(none)",
                 "glossary": format_for_prompt(entries),
                 "summary": summary or "(none)",
                 "context": context or "(none)",

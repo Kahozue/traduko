@@ -274,3 +274,52 @@ def test_retry_ids_translates_only_flagged_and_carries_prior(tmp_path: Path) -> 
     assert len(provider.prompts) == 1
     # Retry context comes from the carried prior chunk's tail.
     assert "OLD2" in provider.prompts[0]
+
+
+def test_style_reaches_the_translate_prompt(tmp_path: Path) -> None:
+    document, chunks = make_document(["one", "two"])
+    settings = DocTranslationSettings(
+        source_language="en",
+        target_language="zh-TW",
+        model="fake-model",
+        style="keep honorifics",
+    )
+    _, provider, _ = run(
+        tmp_path,
+        document,
+        chunks,
+        [response_for({"b-00001": "T1", "b-00002": "T2"})],
+        settings=settings,
+    )
+    assert "Style notes: keep honorifics" in provider.prompts[0]
+
+
+def test_style_defaults_to_none_marker_when_unset(tmp_path: Path) -> None:
+    document, chunks = make_document(["one", "two"])
+    _, provider, _ = run(
+        tmp_path,
+        document,
+        chunks,
+        [response_for({"b-00001": "T1", "b-00002": "T2"})],
+    )
+    assert "Style notes: (none)" in provider.prompts[0]
+
+
+def test_custom_doc_template_without_style_still_renders(tmp_path: Path) -> None:
+    """Existing prompts/doc-translate.txt overrides predate the style
+    variable; an unused key in the mapping must not break them."""
+    from traduko.prompts import render
+
+    rendered = render(
+        "To ${target_language}: ${blocks_json}",
+        {
+            "source_language": "en",
+            "target_language": "zh-TW",
+            "glossary": "",
+            "summary": "",
+            "context": "",
+            "style": "keep honorifics",
+            "blocks_json": "[]",
+        },
+    )
+    assert rendered == "To zh-TW: []"

@@ -68,6 +68,8 @@ Rules:
 - Return ONLY a JSON array, one object per input block, in the same order: [{"id": "b-00001", "text": "translated"}]
 - Keep the same ids. Do not merge, split, or drop blocks.
 
+Style notes: ${style}
+
 Glossary (source -> target):
 ${glossary}
 

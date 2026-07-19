@@ -47,12 +47,14 @@ def test_doc_translate_template_renders() -> None:
         template,
         {
             "source_language": "en", "target_language": "zh-TW",
+            "style": "terse",
             "glossary": "(none)", "summary": "(none)", "context": "(none)",
             "blocks_json": '[{"id": "b-00001", "text": "hello"}]',
         },
     )
     assert "BLOCKS:" in out
     assert '"b-00001"' in out
+    assert "Style notes: terse" in out
 
 
 def test_doc_summary_template_renders() -> None:
