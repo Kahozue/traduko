@@ -24,7 +24,7 @@ from ..media import (
     ffmpeg_available,
 )
 from ..media import run as run_media
-from ..prompts import load_template
+from ..prompts import PromptError
 from ..segmenting import refine_segments
 from ..styles import SubtitleStyle, serialize_ass
 from ..subtitles import (
@@ -44,7 +44,7 @@ from ..translate import (
 )
 from . import registry
 from .base import PauseRequested, StageContext, StageError, StageResult
-from .common import resolve_llm
+from .common import resolve_llm, translate_template_for, translation_prompt_error
 
 
 @registry.register
@@ -249,6 +249,7 @@ class TranslateStage:
             ctx.stage_index + 1, "translation.partial.json"
         )
         partial_path.parent.mkdir(parents=True, exist_ok=True)
+        template, overridden = translate_template_for(ctx, "translate")
         try:
             translated = translate_segments(
                 data["segments"],
@@ -256,7 +257,7 @@ class TranslateStage:
                 provider,
                 meter,
                 resolve_effective_glossary(ctx.data_root, ctx.task),
-                load_template(ctx.data_root, "translate"),
+                template,
                 project=ctx.task.project,
                 task_id=ctx.task.id,
                 partial_path=partial_path,
@@ -267,6 +268,8 @@ class TranslateStage:
             raise PauseRequested(str(error)) from error
         except TranslationPaused as error:
             raise PauseRequested(str(error)) from error
+        except PromptError as error:
+            raise translation_prompt_error(error, overridden) from error
         except (TranslationError, LLMError) as error:
             raise StageError(str(error)) from error
 

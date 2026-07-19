@@ -3145,3 +3145,190 @@ def test_cli_create_task_does_not_apply_domain_defaults(tmp_path: Path) -> None:
     )
     translate = next(s for s in record["stages"] if s["type"] == "translate")
     assert translate["params"]["target_language"] == "en"
+
+
+# --- task translation settings and retranslate (v3_5-08) --------------------
+
+
+def test_get_translation_reports_effective_task_values(tmp_path: Path) -> None:
+    with service(tmp_path) as (client, headers, token):
+        task_id = create_task(client, headers, tmp_path, profile="subtitle-translate")
+
+        body = client.get(
+            f"/tasks/default/{task_id}/translation", headers=headers
+        ).json()
+
+        assert body["target_language"] == "zh-TW"
+        assert body["style"] == ""
+        assert body["prompt_override"] == ""
+        assert body["stage_type"] == "translate"
+
+
+def test_patch_translation_writes_every_translate_stage(tmp_path: Path) -> None:
+    with service(tmp_path) as (client, headers, token):
+        response = client.post(
+            "/tasks",
+            json={
+                "input_path": str(make_input(tmp_path)),
+                "profile": "novel-translate",
+            },
+            headers=headers,
+        )
+        task_id = response.json()["id"]
+
+        patched = client.patch(
+            f"/tasks/default/{task_id}/translation",
+            json={
+                "target_language": "ja",
+                "style": "formal",
+                "prompt_override": "To ${target_language}: ${blocks_json}",
+            },
+            headers=headers,
+        )
+
+        assert patched.status_code == 200, patched.text
+        assert patched.json()["target_language"] == "ja"
+        assert patched.json()["stage_type"] == "translate_chunks"
+        stages = _stages_of(client, headers, task_id)
+        chunk_stages = [s for s in stages if s["type"] == "translate_chunks"]
+        assert len(chunk_stages) == 2
+        for stage in chunk_stages:
+            assert stage["params"]["target_language"] == "ja"
+            assert stage["params"]["style"] == "formal"
+            assert stage["params"]["prompt_override"].startswith("To ")
+        assert all(
+            s["params"]["target_language"] == "ja"
+            for s in stages
+            if s["type"] == "qc_scan"
+        )
+
+
+def test_patch_translation_empty_string_clears_overrides(tmp_path: Path) -> None:
+    with service(tmp_path) as (client, headers, token):
+        task_id = create_task(client, headers, tmp_path, profile="subtitle-translate")
+        url = f"/tasks/default/{task_id}/translation"
+        client.patch(
+            url, json={"style": "formal", "prompt_override": "x"}, headers=headers
+        )
+
+        cleared = client.patch(
+            url, json={"style": "", "prompt_override": ""}, headers=headers
+        )
+
+        assert cleared.status_code == 200, cleared.text
+        assert cleared.json()["style"] == ""
+        assert cleared.json()["prompt_override"] == ""
+        translate = next(
+            s for s in _stages_of(client, headers, task_id) if s["type"] == "translate"
+        )
+        assert "style" not in translate["params"]
+        assert "prompt_override" not in translate["params"]
+
+
+def test_translation_endpoints_reject_active_and_untranslatable_tasks(
+    tmp_path: Path, monkeypatch
+) -> None:
+    with service(tmp_path) as (client, headers, token):
+        create_profile(tmp_path, "no-translate", ["noop"])
+        plain = create_task(client, headers, tmp_path, profile="no-translate")
+        assert (
+            client.get(f"/tasks/default/{plain}/translation", headers=headers).status_code
+            == 422
+        )
+        assert (
+            client.post(
+                f"/tasks/default/{plain}/retranslate", headers=headers
+            ).status_code
+            == 422
+        )
+
+        task_id = create_task(client, headers, tmp_path, profile="subtitle-translate")
+        monkeypatch.setattr(client.app.state.worker, "is_active", lambda p, t: True)
+        assert (
+            client.patch(
+                f"/tasks/default/{task_id}/translation",
+                json={"target_language": "ja"},
+                headers=headers,
+            ).status_code
+            == 409
+        )
+        assert (
+            client.post(
+                f"/tasks/default/{task_id}/retranslate", headers=headers
+            ).status_code
+            == 409
+        )
+
+
+def test_retranslate_resets_translate_stage_onward(
+    tmp_path: Path, monkeypatch
+) -> None:
+    with service(tmp_path) as (client, headers, token):
+        create_profile(
+            tmp_path,
+            "video-with-dub",
+            [
+                "ingest_subtitle",
+                "translate",
+                "proofread",
+                "export_subtitles",
+                "diarize",
+                "tts_synthesize",
+                "mux",
+            ],
+        )
+        task_id = create_task(client, headers, tmp_path, profile="video-with-dub")
+        mark_task_completed(client, "default", task_id)
+        # Freeze the queue so the reset state is what the record shows.
+        monkeypatch.setattr(client.app.state.worker, "enqueue", lambda p, t: True)
+
+        response = client.post(
+            f"/tasks/default/{task_id}/retranslate", headers=headers
+        )
+
+        assert response.status_code == 202, response.text
+        assert response.json() == {"queued": True, "reset_from": "translate"}
+        by_type = {
+            s["type"]: s for s in _stages_of(client, headers, task_id)
+        }
+        # Upstream is untouched; the translate stage and every downstream
+        # stage, dub group included, goes back to pending.
+        assert by_type["ingest_subtitle"]["status"] == "completed"
+        for stage_type in (
+            "translate",
+            "proofread",
+            "export_subtitles",
+            "diarize",
+            "tts_synthesize",
+            "mux",
+        ):
+            assert by_type[stage_type]["status"] == "pending", stage_type
+            assert by_type[stage_type]["error"] is None
+        assert (
+            client.get(f"/tasks/default/{task_id}", headers=headers).json()["status"]
+            == "pending"
+        )
+
+
+def test_retranslate_on_document_task_starts_at_translate_chunks(
+    tmp_path: Path,
+) -> None:
+    with service(tmp_path) as (client, headers, token):
+        create_profile(
+            tmp_path,
+            "doc-like",
+            ["ingest_document", "chunk", "translate_chunks", "qc_scan"],
+        )
+        resp = client.post(
+            "/tasks",
+            json={"input_path": str(make_input(tmp_path)), "profile": "doc-like"},
+            headers=headers,
+        )
+        task_id = resp.json()["id"]
+
+        response = client.post(
+            f"/tasks/default/{task_id}/retranslate", headers=headers
+        )
+
+        assert response.status_code == 202, response.text
+        assert response.json()["reset_from"] == "translate_chunks"

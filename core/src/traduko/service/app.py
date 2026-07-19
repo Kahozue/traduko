@@ -113,6 +113,7 @@ from ..tasks import (
     apply_voice_mode_override,
     dub_group_stages,
     ensure_glossary_proofread_stage,
+    TRANSLATE_STAGE_TYPES,
     initial_switches_for_new_task,
     recalc_stages_for_switches,
     task_domain,
@@ -1078,9 +1079,96 @@ def put_task_glossary_entries(
 # --- task glossary reapply ---------------------------------------------------
 
 
-_TRANSLATE_STAGE_TYPES = frozenset({"translate", "translate_chunks"})
-
 _VALID_REAPPLY_MODES = frozenset({"asr", "proofread", "translate"})
+
+
+def _translate_stages_or_422(record: TaskRecord) -> list[StageRecord]:
+    stages = [s for s in record.stages if s.type in TRANSLATE_STAGE_TYPES]
+    if not stages:
+        raise HTTPException(status_code=422, detail="task has no translate stage")
+    return stages
+
+
+def _translation_payload(record: TaskRecord) -> dict:
+    """Task-level translation settings, read off the first translate stage.
+    A PATCH writes every translate stage, so the first one speaks for all."""
+    first = _translate_stages_or_422(record)[0]
+    return {
+        "stage_type": first.type,
+        "target_language": first.params.get("target_language") or "",
+        "style": first.params.get("style") or "",
+        "prompt_override": first.params.get("prompt_override") or "",
+    }
+
+
+class TranslationRequest(BaseModel):
+    # None leaves the field as is; "" clears style / prompt_override.
+    target_language: str | None = None
+    style: str | None = None
+    prompt_override: str | None = None
+
+
+@router.get("/tasks/{project}/{task_id}/translation")
+def get_translation(request: Request, project: str, task_id: str) -> dict:
+    ws: Workspace = request.app.state.workspace
+    return _translation_payload(_load_task(ws, project, task_id))
+
+
+@router.patch("/tasks/{project}/{task_id}/translation")
+def patch_translation(
+    request: Request, project: str, task_id: str, body: TranslationRequest
+) -> dict:
+    ws: Workspace = request.app.state.workspace
+    record = _load_task(ws, project, task_id)
+    stages = _translate_stages_or_422(record)
+    worker: TaskWorker = request.app.state.worker
+    if worker.is_active(project, task_id):
+        raise HTTPException(status_code=409, detail="task is queued or running")
+    if body.target_language is not None and not body.target_language.strip():
+        raise HTTPException(
+            status_code=422, detail="target_language cannot be empty"
+        )
+    for stage in stages:
+        if body.target_language is not None:
+            stage.params["target_language"] = body.target_language
+        for name in ("style", "prompt_override"):
+            value = getattr(body, name)
+            if value is None:
+                continue
+            if value:
+                stage.params[name] = value
+            else:
+                stage.params.pop(name, None)
+    if body.target_language is not None:
+        # qc_scan reads the same language for its untranslated heuristic.
+        for stage in record.stages:
+            if stage.type == "qc_scan":
+                stage.params["target_language"] = body.target_language
+    ws.store.save(record)
+    return _translation_payload(record)
+
+
+@router.post("/tasks/{project}/{task_id}/retranslate", status_code=202)
+def retranslate(request: Request, project: str, task_id: str) -> dict:
+    """Reset the translate stage and everything after it, then run. Every
+    downstream artifact and edit is regenerated; the UI confirms first."""
+    ws: Workspace = request.app.state.workspace
+    record = _load_task(ws, project, task_id)
+    start = _translate_stages_or_422(record)[0]
+    worker: TaskWorker = request.app.state.worker
+    if worker.is_active(project, task_id):
+        raise HTTPException(status_code=409, detail="task is queued or running")
+    resetting = False
+    for stage in record.stages:
+        if stage is start:
+            resetting = True
+        if resetting and stage.status != StageStatus.RUNNING:
+            stage.status = StageStatus.PENDING
+            stage.error = None
+    if record.status == TaskStatus.COMPLETED:
+        record.status = TaskStatus.PENDING
+    ws.store.save(record)
+    return {**_enqueue_or_409(request, record), "reset_from": start.type}
 
 
 class ReapplyRequest(BaseModel):
@@ -1134,7 +1222,7 @@ def reapply_glossary(
             (
                 i
                 for i, s in enumerate(record.stages)
-                if s.type in _TRANSLATE_STAGE_TYPES
+                if s.type in TRANSLATE_STAGE_TYPES
             ),
             None,
         )

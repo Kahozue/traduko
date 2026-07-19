@@ -447,3 +447,52 @@ def test_asr_stage_pauses_when_budget_is_spent(tmp_path: Path, monkeypatch) -> N
     )
     with pytest.raises(base.PauseRequested, match="budget"):
         registry.create("asr").run(ctx)
+
+
+def _write_translate_template_override(tmp_path: Path, body: str) -> None:
+    directory = tmp_path / "prompts"
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / "translate.txt").write_text(body, encoding="utf-8")
+
+
+def test_translate_stage_prompt_override_bypasses_template_file(
+    tmp_path: Path,
+) -> None:
+    # A template file that can never render: reaching for it would fail.
+    _write_translate_template_override(tmp_path, "${no_such_variable}")
+    ctx, _ = make_ctx(
+        tmp_path,
+        tmp_path / "in.srt",
+        stage_index=1,
+        params={
+            "provider": "fake",
+            "target_language": "zh-TW",
+            "prompt_override": "Translate to ${target_language}: ${segments_json}",
+        },
+    )
+    write_segments_artifact(ctx)
+
+    result = registry.create("translate").run(ctx)
+
+    assert "02-translation.json" in result.artifacts
+
+
+def test_translate_stage_prompt_override_missing_variable_names_the_override(
+    tmp_path: Path,
+) -> None:
+    ctx, _ = make_ctx(
+        tmp_path,
+        tmp_path / "in.srt",
+        stage_index=1,
+        params={
+            "provider": "fake",
+            "target_language": "zh-TW",
+            "prompt_override": "${no_such_variable}",
+        },
+    )
+    write_segments_artifact(ctx)
+
+    with pytest.raises(base.StageError) as error:
+        registry.create("translate").run(ctx)
+
+    assert "prompt override" in str(error.value).lower()

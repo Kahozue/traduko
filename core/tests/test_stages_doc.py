@@ -453,3 +453,46 @@ def test_export_html_applies_translation(tmp_path: Path) -> None:
     )
     assert "Translated hello." in out
     assert "Keep me." in out
+
+
+def test_translate_chunks_prompt_override_bypasses_template_file(
+    tmp_path: Path,
+) -> None:
+    src = tmp_path / "book.md"
+    src.write_text(MD, encoding="utf-8")
+    _ingest_and_chunk(tmp_path, src)
+    prompts = tmp_path / "prompts"
+    prompts.mkdir(parents=True, exist_ok=True)
+    (prompts / "doc-translate.txt").write_text("${no_such_variable}", encoding="utf-8")
+    ctx, _ = make_ctx(
+        tmp_path,
+        src,
+        stage_index=2,
+        params={
+            "target_language": "en",
+            "prompt_override": "To ${target_language}: ${blocks_json}",
+        },
+    )
+
+    result = registry.create("translate_chunks").run(ctx)
+
+    assert "03-translation.json" in result.artifacts
+
+
+def test_translate_chunks_prompt_override_missing_variable_names_the_override(
+    tmp_path: Path,
+) -> None:
+    src = tmp_path / "book.md"
+    src.write_text(MD, encoding="utf-8")
+    _ingest_and_chunk(tmp_path, src)
+    ctx, _ = make_ctx(
+        tmp_path,
+        src,
+        stage_index=2,
+        params={"target_language": "en", "prompt_override": "${no_such_variable}"},
+    )
+
+    with pytest.raises(base.StageError) as error:
+        registry.create("translate_chunks").run(ctx)
+
+    assert "prompt override" in str(error.value).lower()

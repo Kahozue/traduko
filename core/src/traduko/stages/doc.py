@@ -27,11 +27,11 @@ from ..documents.translate import (
 )
 from ..glossary import resolve_effective_glossary
 from ..llm import LLMError
-from ..prompts import load_template
+from ..prompts import PromptError, load_template
 from ..translate import TranslationError, TranslationPaused
 from . import registry
 from .base import PauseRequested, StageContext, StageError, StageResult
-from .common import resolve_llm
+from .common import resolve_llm, translate_template_for, translation_prompt_error
 
 _EXTENSIONS = {
     ".md": "markdown",
@@ -179,6 +179,7 @@ class TranslateChunksStage:
         )
         summary_path = ctx.artifacts.path_for(ctx.stage_index + 1, "summary.json")
         partial_path.parent.mkdir(parents=True, exist_ok=True)
+        template, overridden = translate_template_for(ctx, "doc-translate")
         try:
             translation = translate_document_chunks(
                 doc,
@@ -187,7 +188,7 @@ class TranslateChunksStage:
                 provider,
                 meter,
                 resolve_effective_glossary(ctx.data_root, ctx.task),
-                load_template(ctx.data_root, "doc-translate"),
+                template,
                 load_template(ctx.data_root, "doc-summary"),
                 project=ctx.task.project,
                 task_id=ctx.task.id,
@@ -202,6 +203,8 @@ class TranslateChunksStage:
             raise PauseRequested(str(error)) from error
         except TranslationPaused as error:
             raise PauseRequested(str(error)) from error
+        except PromptError as error:
+            raise translation_prompt_error(error, overridden) from error
         except (TranslationError, LLMError) as error:
             raise StageError(str(error)) from error
 
