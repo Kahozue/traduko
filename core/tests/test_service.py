@@ -2683,3 +2683,155 @@ def test_dub_engines_endpoint_lists_catalog(tmp_path: Path) -> None:
         assert by_id["voxcpm2"]["kind"] == "local"
         assert by_id["cloud_placeholder"]["kind"] == "placeholder"
         assert by_id["cloud_placeholder"]["available"] is False
+
+
+def _dub_task(client, headers, tmp_path, profile="with-dub"):
+    create_profile(
+        tmp_path,
+        "with-dub",
+        ["diarize", "tts_synthesize", "align_duration", "mix_audio"],
+    )
+    resp = client.post(
+        "/tasks",
+        json={"input_path": str(make_input(tmp_path)), "profile": "with-dub"},
+        headers=headers,
+    )
+    assert resp.status_code == 201, resp.text
+    return resp.json()["id"]
+
+
+def test_get_dub_params_aggregates_stage_params(tmp_path: Path) -> None:
+    with service(tmp_path) as (client, headers, token):
+        task_id = _dub_task(client, headers, tmp_path)
+        # Seed params via the existing voice_mode patch path.
+        client.patch(
+            f"/tasks/default/{task_id}",
+            json={"voice_mode": "design", "voice_instruction": "沉穩男聲"},
+            headers=headers,
+        )
+        resp = client.get(f"/tasks/default/{task_id}/dub/params", headers=headers)
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["engine_id"] is None
+        assert body["voice_mode"] == "design"
+        assert body["instruction"] == "沉穩男聲"
+        assert body["dub_text"] in (None, "auto")
+
+
+def test_patch_dub_params_writes_engine_and_voice(tmp_path: Path) -> None:
+    with service(tmp_path) as (client, headers, token):
+        task_id = _dub_task(client, headers, tmp_path)
+        resp = client.patch(
+            f"/tasks/default/{task_id}/dub/params",
+            json={"engine_id": "voxcpm2", "voice_mode": "preview",
+                  "preview_voice": "Mei-Jia", "preview_rate": 180},
+            headers=headers,
+        )
+        assert resp.status_code == 200, resp.text
+        # GET reflects the write.
+        got = client.get(f"/tasks/default/{task_id}/dub/params", headers=headers).json()
+        assert got["engine_id"] == "voxcpm2"
+        assert got["voice_mode"] == "preview"
+        assert got["preview_voice"] == "Mei-Jia"
+        assert got["preview_rate"] == 180
+
+
+def test_patch_dub_params_rejects_placeholder_engine(tmp_path: Path) -> None:
+    with service(tmp_path) as (client, headers, token):
+        task_id = _dub_task(client, headers, tmp_path)
+        resp = client.patch(
+            f"/tasks/default/{task_id}/dub/params",
+            json={"engine_id": "cloud_placeholder"},
+            headers=headers,
+        )
+        assert resp.status_code == 422
+        assert "cloud_placeholder" in resp.json()["detail"]
+
+
+def test_dub_params_404_without_dub_group(tmp_path: Path) -> None:
+    with service(tmp_path) as (client, headers, token):
+        create_profile(tmp_path, "sub", ["ingest_subtitle", "translate"])
+        resp = client.post(
+            "/tasks",
+            json={"input_path": str(make_input(tmp_path)), "profile": "sub"},
+            headers=headers,
+        )
+        task_id = resp.json()["id"]
+        get = client.get(f"/tasks/default/{task_id}/dub/params", headers=headers)
+        assert get.status_code == 422
+
+
+def test_redub_from_synthesize_resets_tts_onward(tmp_path: Path) -> None:
+    with service(tmp_path) as (client, headers, token):
+        task_id = _dub_task(client, headers, tmp_path)
+        # Mark dub stages completed to simulate prior run.
+        ws = client.app.state.workspace
+        rec = ws.store.load("default", task_id)
+        for st in rec.stages:
+            from traduko.models import StageStatus
+            st.status = StageStatus.COMPLETED
+        ws.store.save(rec)
+        resp = client.post(
+            f"/tasks/default/{task_id}/dub/redub",
+            json={"from": "synthesize"},
+            headers=headers,
+        )
+        assert resp.status_code == 202, resp.text
+        rec = ws.store.load("default", task_id)
+        by_type = {s.type: s.status for s in rec.stages}
+        assert by_type["diarize"] == "completed"
+        assert by_type["tts_synthesize"] == "pending"
+        assert by_type["align_duration"] == "pending"
+        assert by_type["mix_audio"] == "pending"
+
+
+def test_redub_from_diarize_resets_diarize_onward(tmp_path: Path) -> None:
+    with service(tmp_path) as (client, headers, token):
+        task_id = _dub_task(client, headers, tmp_path)
+        ws = client.app.state.workspace
+        rec = ws.store.load("default", task_id)
+        for st in rec.stages:
+            from traduko.models import StageStatus
+            st.status = StageStatus.COMPLETED
+        ws.store.save(rec)
+        resp = client.post(
+            f"/tasks/default/{task_id}/dub/redub",
+            json={"from": "diarize"},
+            headers=headers,
+        )
+        assert resp.status_code == 202
+        rec = ws.store.load("default", task_id)
+        by_type = {s.type: s.status for s in rec.stages}
+        assert by_type["diarize"] == "pending"
+        assert by_type["tts_synthesize"] == "pending"
+        assert by_type["mix_audio"] == "pending"
+
+
+def test_redub_running_409(tmp_path: Path) -> None:
+    with service(tmp_path) as (client, headers, token):
+        task_id = _dub_task(client, headers, tmp_path)
+        from traduko.executor import CancelToken
+        client.app.state.worker._cancels[("default", task_id)] = CancelToken()
+        resp = client.post(
+            f"/tasks/default/{task_id}/dub/redub",
+            json={"from": "synthesize"},
+            headers=headers,
+        )
+        assert resp.status_code == 409
+
+
+def test_redub_without_dub_group_422(tmp_path: Path) -> None:
+    with service(tmp_path) as (client, headers, token):
+        create_profile(tmp_path, "sub", ["ingest_subtitle", "translate"])
+        resp = client.post(
+            "/tasks",
+            json={"input_path": str(make_input(tmp_path)), "profile": "sub"},
+            headers=headers,
+        )
+        task_id = resp.json()["id"]
+        resp = client.post(
+            f"/tasks/default/{task_id}/dub/redub",
+            json={"from": "synthesize"},
+            headers=headers,
+        )
+        assert resp.status_code == 422

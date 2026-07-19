@@ -209,6 +209,27 @@ def initial_switches_for_new_task(
 # Tail stage closing the appended dub group, per domain.
 DUB_GROUP_TAIL = {"video": "mux", "audio": "export_audio"}
 
+# Every stage type that belongs to a dub group (diarize through the domain
+# tail). Used by the dub-studio params API and the redub reset range.
+DUB_GROUP_TYPES = frozenset(
+    {"diarize", "tts_synthesize", "align_duration", "mix_audio", "mux", "export_audio"}
+)
+
+
+def dub_group_stages(record: TaskRecord) -> list[StageRecord]:
+    """The dub group stages on a task, in order. The dub group is the
+    contiguous tail of dub-type stages (append_dub_stages extends to the
+    end, and seeded dub profiles keep the group at the tail). Returns an
+    empty list when the task has no dub group."""
+    stages: list[StageRecord] = []
+    for stage in reversed(record.stages):
+        if stage.type in DUB_GROUP_TYPES:
+            stages.append(stage)
+        elif stages:
+            break
+    stages.reverse()
+    return stages
+
 
 def append_dub_stages(record: TaskRecord, domain: str) -> list[StageRecord]:
     """Append the full dub group to a task that has none, mirroring the

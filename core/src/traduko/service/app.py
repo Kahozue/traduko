@@ -34,7 +34,7 @@ from fastapi import (
 )
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, Field, ValidationError
 
 import yaml
 
@@ -57,7 +57,7 @@ from ..budget import BudgetMeter
 from ..config import CoreConfig, load_config, save_config
 from ..documents.model import DocTranslationDoc
 from ..dubbing.models import SpeakersDoc
-from ..dubbing.engines import TTS_ENGINES
+from ..dubbing.engines import TTS_ENGINES, resolve_tts_engine
 from ..dubbing.setup import DubbingManager
 from ..eventlog import EventLogger
 from ..executor import reset_stages_after_artifact
@@ -92,6 +92,7 @@ from ..styles import SubtitleStyle
 from ..styles_render import render_style_frame
 from ..tasks import (
     DUB_GROUP_TAIL,
+    DUB_GROUP_TYPES,
     DUB_TEXT_MODES,
     VOICE_MODES,
     append_dub_stages,
@@ -99,6 +100,7 @@ from ..tasks import (
     apply_dub_text_override,
     apply_model_override,
     apply_voice_mode_override,
+    dub_group_stages,
     ensure_glossary_proofread_stage,
     initial_switches_for_new_task,
     recalc_stages_for_switches,
@@ -617,6 +619,159 @@ def patch_task_switches(
     recalc_stages_for_switches(record, TaskSwitches(**changed))
     ws.store.save(record)
     return record.model_dump()
+
+
+class DubParamsRequest(BaseModel):
+    # Each field: a value applies it, omitted (None) leaves it as is. Empty
+    # string clears engine_id / voice_mode / instruction / dub_text overrides.
+    engine_id: str | None = None
+    voice_mode: str | None = None
+    instruction: str | None = None
+    cfg: float | None = None
+    timesteps: int | None = None
+    seed: int | None = None
+    denoise: float | None = None
+    preview_voice: str | None = None
+    preview_rate: int | None = None
+    dub_text: str | None = None
+
+
+def _dub_group_or_422(record: TaskRecord) -> list:
+    stages = dub_group_stages(record)
+    if not stages:
+        raise HTTPException(
+            status_code=422, detail="task has no dub group"
+        )
+    return stages
+
+
+def _dub_stage(record: TaskRecord, stage_type: str):
+    for stage in record.stages:
+        if stage.type == stage_type:
+            return stage
+    return None
+
+
+def _dub_params_payload(record: TaskRecord) -> dict:
+    tts = _dub_stage(record, "tts_synthesize")
+    diarize = _dub_stage(record, "diarize")
+    tts_params = tts.params if tts else {}
+    diarize_params = diarize.params if diarize else {}
+    return {
+        "engine_id": tts_params.get("tts_engine"),
+        "voice_mode": tts_params.get("voice_mode") or "clone",
+        "instruction": tts_params.get("voice_instruction"),
+        "cfg": tts_params.get("cfg"),
+        "timesteps": tts_params.get("timesteps"),
+        "seed": tts_params.get("seed"),
+        "denoise": tts_params.get("denoise"),
+        "preview_voice": tts_params.get("preview_voice"),
+        "preview_rate": tts_params.get("preview_rate"),
+        "dub_text": diarize_params.get("dub_text") or tts_params.get("dub_text") or "auto",
+    }
+
+
+@router.get("/tasks/{project}/{task_id}/dub/params")
+def get_dub_params(request: Request, project: str, task_id: str) -> dict:
+    ws: Workspace = request.app.state.workspace
+    record = _load_task(ws, project, task_id)
+    _dub_group_or_422(record)
+    return _dub_params_payload(record)
+
+
+@router.patch("/tasks/{project}/{task_id}/dub/params")
+def patch_dub_params(
+    request: Request, project: str, task_id: str, body: DubParamsRequest
+) -> dict:
+    ws: Workspace = request.app.state.workspace
+    record = _load_task(ws, project, task_id)
+    _dub_group_or_422(record)
+    worker: TaskWorker = request.app.state.worker
+    if worker.is_active(project, task_id):
+        raise HTTPException(status_code=409, detail="task is queued or running")
+    # Validate engine_id and voice_mode before writing.
+    if body.engine_id is not None and body.engine_id != "":
+        try:
+            resolve_tts_engine(body.engine_id)
+        except Exception as error:  # DubbingError
+            raise HTTPException(
+                status_code=422, detail=str(error)
+            ) from error
+    if body.voice_mode is not None and body.voice_mode != "":
+        if body.voice_mode not in VOICE_MODES:
+            raise HTTPException(
+                status_code=422,
+                detail=f"voice_mode must be one of: {', '.join(VOICE_MODES)}",
+            )
+    if body.dub_text is not None and body.dub_text != "":
+        if body.dub_text not in DUB_TEXT_MODES:
+            raise HTTPException(
+                status_code=422,
+                detail=f"dub_text must be one of: {', '.join(DUB_TEXT_MODES)}",
+            )
+    tts = _dub_stage(record, "tts_synthesize")
+    if tts is not None:
+        if body.engine_id is not None:
+            if body.engine_id == "":
+                tts.params.pop("tts_engine", None)
+            else:
+                tts.params["tts_engine"] = body.engine_id
+        if body.cfg is not None:
+            tts.params["cfg"] = body.cfg
+        if body.timesteps is not None:
+            tts.params["timesteps"] = body.timesteps
+        if body.seed is not None:
+            tts.params["seed"] = body.seed
+        if body.denoise is not None:
+            tts.params["denoise"] = body.denoise
+        if body.preview_voice is not None:
+            if body.preview_voice == "":
+                tts.params.pop("preview_voice", None)
+            else:
+                tts.params["preview_voice"] = body.preview_voice
+        if body.preview_rate is not None:
+            tts.params["preview_rate"] = body.preview_rate
+    # voice_mode / instruction / dub_text ride on the dub stages via the
+    # existing override helpers so the same normalization rules apply.
+    apply_voice_mode_override(record, body.voice_mode, body.instruction)
+    apply_dub_text_override(record, body.dub_text)
+    ws.store.save(record)
+    return _dub_params_payload(record)
+
+
+class DubRedubRequest(BaseModel):
+    from_: str = Field(alias="from", default="synthesize")
+
+    model_config = {"populate_by_name": True}
+
+
+@router.post("/tasks/{project}/{task_id}/dub/redub", status_code=202)
+def dub_redub(
+    request: Request, project: str, task_id: str, body: DubRedubRequest
+) -> dict:
+    ws: Workspace = request.app.state.workspace
+    record = _load_task(ws, project, task_id)
+    group = _dub_group_or_422(record)
+    worker: TaskWorker = request.app.state.worker
+    if worker.is_active(project, task_id):
+        raise HTTPException(status_code=409, detail="task is queued or running")
+    start_type = "diarize" if body.from_ == "diarize" else "tts_synthesize"
+    if not any(stage.type == start_type for stage in group):
+        raise HTTPException(
+            status_code=422,
+            detail=f"dub group has no {start_type} stage to reset from",
+        )
+    resetting = False
+    for stage in group:
+        if stage.type == start_type:
+            resetting = True
+        if resetting and stage.status != StageStatus.RUNNING:
+            stage.status = StageStatus.PENDING
+            stage.error = None
+    if record.status == TaskStatus.COMPLETED:
+        record.status = TaskStatus.PENDING
+    ws.store.save(record)
+    return _enqueue_or_409(request, record)
 
 
 @router.delete("/tasks/{project}/{task_id}")
