@@ -46,6 +46,17 @@
   --info-soft: #e4edf7;
   --neutral-soft: #eceeea;
 
+  /* Categorical data-viz palette (budget charts). Fixed slot order — a
+     CVD-validated set (colorblind-safe on this surface, passes the dataviz
+     validator in both themes); assigned in order, never cycled. Overflow
+     folds into --chart-other, a neutral gray that is not a categorical hue. */
+  --chart-1: #2a78d6;
+  --chart-2: #008300;
+  --chart-3: #e87ba4;
+  --chart-4: #eda100;
+  --chart-5: #1baf7a;
+  --chart-other: #b4b8b0;
+
   /* Editing-venue canvas: strictly neutral (zero chroma) in both themes so
      the UI never biases color perception of the user's media. */
   --bg-canvas: #1a1a1a;
@@ -88,6 +99,14 @@
   --info: #7aa7dc;
   --info-soft: #223349;
   --neutral-soft: #2c302b;
+
+  /* Same eight-hue set stepped for the dark surface (validated as a set). */
+  --chart-1: #3987e5;
+  --chart-2: #008300;
+  --chart-3: #d55181;
+  --chart-4: #c98500;
+  --chart-5: #199e70;
+  --chart-other: #565b54;
 
   --scrim: rgba(0, 0, 0, 0.6);
 

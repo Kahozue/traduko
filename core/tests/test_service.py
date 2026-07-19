@@ -72,7 +72,32 @@ def test_budget_endpoint_reports_usage_and_limits(tmp_path: Path) -> None:
             "task_usd_limit": None,
             "monthly_usd_limit": None,
             "tasks": [],
+            "models": [],
         }
+
+
+def test_budget_endpoint_aggregates_spend_by_model(tmp_path: Path) -> None:
+    from datetime import datetime, timezone
+
+    ledger_dir = tmp_path / "budget"
+    ledger_dir.mkdir(parents=True, exist_ok=True)
+    month = datetime.now(timezone.utc).strftime("%Y-%m")
+    rows = [
+        {"task_id": "t-1", "project": "p", "kind": "chat", "model": "gpt-4o", "cost_usd": 0.02},
+        {"task_id": "t-2", "project": "p", "kind": "chat", "model": "gpt-4o", "cost_usd": 0.03},
+        {"task_id": "t-1", "project": "p", "kind": "asr", "model": "whisper-1", "cost_usd": 0.006},
+    ]
+    with (ledger_dir / f"ledger-{month}.jsonl").open("w", encoding="utf-8") as f:
+        for row in rows:
+            f.write(json.dumps(row) + "\n")
+
+    with service(tmp_path) as (client, headers, token):
+        models = client.get("/budget", headers=headers).json()["models"]
+        # Aggregated per model and ranked by spend descending.
+        assert models == [
+            {"model": "gpt-4o", "usd": 0.05},
+            {"model": "whisper-1", "usd": 0.006},
+        ]
 
 
 def test_cors_allows_browser_based_clients(tmp_path: Path) -> None:

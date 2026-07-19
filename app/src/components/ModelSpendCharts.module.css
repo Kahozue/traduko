@@ -1,0 +1,148 @@
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.card {
+  padding: 20px;
+  border-radius: var(--radius-m);
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-1);
+}
+
+.cardTitle {
+  margin: 0 0 16px;
+  color: var(--text-secondary);
+  font-size: var(--fs-note);
+  font-weight: 500;
+}
+
+/* Donut + legend */
+.donutRow {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+.donutWrap {
+  position: relative;
+  flex: 0 0 auto;
+  width: 128px;
+  height: 128px;
+}
+
+.donut {
+  width: 128px;
+  height: 128px;
+}
+
+.arc {
+  fill: none;
+  stroke-width: 5;
+  transition: stroke-dasharray var(--transition);
+}
+
+.donutCenter {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  pointer-events: none;
+}
+
+.donutTotalLabel {
+  color: var(--text-secondary);
+  font-size: var(--fs-note);
+}
+
+.donutTotal {
+  color: var(--text-primary);
+  font-size: var(--fs-section);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.legend {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.legendRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  font-size: var(--fs-note);
+}
+
+.swatch {
+  flex: 0 0 auto;
+  width: 10px;
+  height: 10px;
+  border-radius: var(--radius-s);
+}
+
+.legendName {
+  flex: 1 1 auto;
+  overflow: hidden;
+  color: var(--text-primary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.legendPct {
+  flex: 0 0 auto;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Ranking bars */
+.bars {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.barRow {
+  display: grid;
+  grid-template-columns: minmax(72px, 30%) 1fr auto;
+  align-items: center;
+  gap: 12px;
+  font-size: var(--fs-note);
+}
+
+.barName {
+  overflow: hidden;
+  color: var(--text-primary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.barTrack {
+  height: 8px;
+  border-radius: var(--radius-full);
+  background: var(--bg-inset);
+}
+
+.barFill {
+  height: 100%;
+  min-width: 4px;
+  border-radius: var(--radius-full);
+  transition: width var(--transition);
+}
+
+.barValue {
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}

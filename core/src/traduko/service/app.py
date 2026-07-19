@@ -137,31 +137,39 @@ async def ws_events(websocket: WebSocket) -> None:
 def get_budget(request: Request) -> dict:
     ws: Workspace = request.app.state.workspace
     meter = BudgetMeter(ws.root, ws.bus, ws.config)
-    # Lifetime per-task spend across all ledgers, with names joined from the
-    # index; tasks whose records are gone still show up under their raw id.
+    # Lifetime per-task and per-model spend across all ledgers, with task
+    # names joined from the index; tasks whose records are gone still show up
+    # under their raw id.
     spent: dict[str, dict] = {}
+    by_model: dict[str, float] = {}
     for path in sorted((ws.root / "budget").glob("ledger-*.jsonl")):
         for line in path.read_text(encoding="utf-8").splitlines():
             if not line.strip():
                 continue
             row = json.loads(line)
+            cost = float(row.get("cost_usd", 0.0))
             task_id = row.get("task_id", "")
             entry = spent.setdefault(
                 task_id,
                 {"task_id": task_id, "project": row.get("project", ""), "usd": 0.0},
             )
-            entry["usd"] += float(row.get("cost_usd", 0.0))
+            entry["usd"] += cost
+            model = row.get("model") or "unknown"
+            by_model[model] = by_model.get(model, 0.0) + cost
     names = {row["id"]: row.get("name") for row in ws.index.list()}
     tasks = [
         {**entry, "name": names.get(entry["task_id"]), "usd": round(entry["usd"], 6)}
         for entry in spent.values()
     ]
     tasks.sort(key=lambda entry: entry["usd"], reverse=True)
+    models = [{"model": model, "usd": round(usd, 6)} for model, usd in by_model.items()]
+    models.sort(key=lambda entry: entry["usd"], reverse=True)
     return {
         "month_usd": meter.month_usage_usd(),
         "task_usd_limit": ws.config.budget.task_usd_limit,
         "monthly_usd_limit": ws.config.budget.monthly_usd_limit,
         "tasks": tasks[:50],
+        "models": models,
     }
 
 

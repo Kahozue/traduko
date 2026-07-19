@@ -67,11 +67,18 @@ export interface BudgetTaskSpend {
   usd: number;
 }
 
+export interface BudgetModelSpend {
+  model: string;
+  usd: number;
+}
+
 export interface BudgetInfo {
   month_usd: number;
   task_usd_limit: number | null;
   monthly_usd_limit: number | null;
   tasks: BudgetTaskSpend[];
+  // An older core may not send the per-model breakdown yet.
+  models?: BudgetModelSpend[];
 }
 
 export interface PersistedEvent {

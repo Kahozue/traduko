@@ -1,5 +1,6 @@
 import type { CSSProperties } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { ModelSpendCharts } from "../components/ModelSpendCharts";
 import { ProgressBar } from "../components/ProgressBar";
 import { t } from "../i18n";
 import { useApi } from "../lib/connection";
@@ -55,9 +56,12 @@ export function BudgetView() {
             value={budget.month_usd}
             max={budget.monthly_usd_limit}
             label={t("budget.month")}
+            count={`${usd(budget.month_usd)} / ${usd(budget.monthly_usd_limit)}`}
           />
         </div>
       )}
+
+      <ModelSpendCharts models={budget.models ?? []} />
 
       <section className={styles.spendSection}>
         <h2 className={styles.spendTitle}>{t("budget.taskSpend")}</h2>
