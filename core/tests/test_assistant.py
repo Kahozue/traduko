@@ -563,17 +563,32 @@ def test_default_provider_setting_wins_over_sorted_order(tmp_path: Path) -> None
 
 def test_max_rounds_summary_becomes_reply_not_canned_failure(tmp_path: Path) -> None:
     # With max_rounds=1, a model that closes its round with a real summary
-    # has answered; the canned failure text must not replace it.
+    # has answered: the reply is that summary (not the canned failure), and
+    # the assistant reports it as answered even though the raw runner reason
+    # is still max_rounds.
     ws = scripted_ws(
         tmp_path,
         ['{"tool": "end_round", "arguments": {"summary": "掃描完成，一切正常。"}}'],
     )
     result = run_assistant_message(ws, "check the system")
-    assert result["converged"] is False
+    assert result["converged"] is True
     assert result["reason"] == "max_rounds"
     assert result["reply"] == "掃描完成，一切正常。"
     messages = read_active_messages(ws)
     assert messages[-1]["text"] == "掃描完成，一切正常。"
+
+
+def test_max_rounds_empty_summary_still_reports_not_converged(tmp_path: Path) -> None:
+    # An end_round with neither summary nor narrative genuinely produced no
+    # answer: that stays a canned non-converged reply.
+    ws = scripted_ws(
+        tmp_path,
+        ['{"tool": "end_round", "arguments": {"summary": ""}}'],
+    )
+    result = run_assistant_message(ws, "check the system")
+    assert result["converged"] is False
+    assert result["reason"] == "max_rounds"
+    assert "max_rounds" in result["reply"]
 
 
 def test_system_prompt_follows_ui_language(tmp_path: Path) -> None:

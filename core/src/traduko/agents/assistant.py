@@ -747,16 +747,20 @@ def run_assistant_message(
         # can classify it; the turn is not persisted to history because no
         # assistant reply exists.
         raise AssistantLLMError(str(error)) from error
-    if result.converged:
-        reply = result.summary
-    elif result.reason == "max_rounds" and result.summary.strip():
-        # The model closed its (only) round with a real summary: that summary
-        # IS the answer it meant to give — assistants run with max_rounds=1,
-        # so end_round and done are morally the same move. Dropping it for a
-        # canned failure threw away finished replies.
-        reply = result.summary
-    else:
-        reply = _not_converged_reply(result.reason)
+    # The assistant is a single-round Q&A agent (max_rounds=1). "round" and
+    # "turn" are convergence machinery the shared runner inherits from the
+    # proofread agent, which genuinely loops scan/fix passes; a conversational
+    # assistant does not. So when the model closes its one round with
+    # end_round instead of the near-synonymous done, the runner reports
+    # reason="max_rounds" — but the closing summary (or the prose it wrote
+    # ahead of the end_round call) IS the answer. Treat that as answered, not
+    # as the truncation it looks like. max_turns is different: it fires at the
+    # top of the loop before any final answer exists, so there is nothing to
+    # salvage and the canned "couldn't finish" reply is correct.
+    answered = result.converged or (
+        result.reason == "max_rounds" and result.summary.strip() != ""
+    )
+    reply = result.summary if answered else _not_converged_reply(result.reason)
 
     user_message = {
         "role": "user",
@@ -793,6 +797,10 @@ def run_assistant_message(
         "reply": reply,
         "proposal_ids": proposal_ids,
         "created_task_ids": created_task_ids,
-        "converged": result.converged,
+        # `answered`, not the raw runner verdict: a single-round end_round that
+        # produced a summary counts as a real answer for the UI. `reason`
+        # stays the raw runner reason for diagnostics (the run record already
+        # logged it too).
+        "converged": answered,
         "reason": result.reason,
     }
