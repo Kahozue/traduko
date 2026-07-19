@@ -445,12 +445,20 @@ def update_task(
 
 
 @router.delete("/tasks/{project}/{task_id}")
-def delete_task(request: Request, project: str, task_id: str) -> dict:
+def delete_task(
+    request: Request, project: str, task_id: str, force: bool = False
+) -> dict:
     ws: Workspace = request.app.state.workspace
     _load_task(ws, project, task_id)
     worker: TaskWorker = request.app.state.worker
     if worker.is_active(project, task_id):
-        raise HTTPException(status_code=409, detail="task is queued or running")
+        if not force:
+            raise HTTPException(status_code=409, detail="task is queued or running")
+        # Signal the executor to stop at its next checkpoint, then remove the
+        # task directory. The running stage may still write briefly before it
+        # sees the token; those writes hit a deleted path and are logged
+        # harmlessly by the worker's exception handler.
+        worker.cancel(project, task_id)
     ws.store.delete(project, task_id)
     return {"deleted": True}
 

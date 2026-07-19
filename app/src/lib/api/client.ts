@@ -217,8 +217,13 @@ export class ApiClient {
     });
   }
 
-  deleteTask(project: string, taskId: string): Promise<{ deleted: boolean }> {
-    return this.request(`/tasks/${project}/${taskId}`, { method: "DELETE" });
+  deleteTask(
+    project: string,
+    taskId: string,
+    force = false,
+  ): Promise<{ deleted: boolean }> {
+    const query = force ? "?force=true" : "";
+    return this.request(`/tasks/${project}/${taskId}${query}`, { method: "DELETE" });
   }
 
   getAsrStatus(model: string): Promise<AsrStatus> {

@@ -707,6 +707,25 @@ def test_delete_and_move_reject_active_task(tmp_path: Path) -> None:
         assert client.delete(url, headers=headers).status_code == 200
 
 
+def test_force_delete_removes_active_task(tmp_path: Path) -> None:
+    ServiceGateStage.gate = threading.Event()
+    ServiceGateStage.started = threading.Event()
+    with service(tmp_path) as (client, headers, token):
+        create_profile(tmp_path, "gated", ["svc-gate", "noop"])
+        task_id = create_task(client, headers, tmp_path, profile="gated")
+        url = f"/tasks/default/{task_id}"
+        assert client.post(f"{url}/run", headers=headers).status_code == 202
+        assert ServiceGateStage.started.wait(timeout=5)
+        # Without force the running task is protected.
+        assert client.delete(url, headers=headers).status_code == 409
+        # force stops the task and removes it in one call.
+        assert client.delete(f"{url}?force=true", headers=headers).status_code == 200
+        assert client.get(url, headers=headers).status_code == 404
+        assert not (tmp_path / "projects" / "default" / "tasks" / task_id).exists()
+        # Release the gate so the worker thread can unwind cleanly.
+        ServiceGateStage.gate.set()
+
+
 def test_move_task_to_new_project(tmp_path: Path) -> None:
     with service(tmp_path) as (client, headers, token):
         task_id = create_task(client, headers, tmp_path)

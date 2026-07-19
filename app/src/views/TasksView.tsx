@@ -6,6 +6,7 @@ import { StatusBadge } from "../components/StatusBadge";
 import { t } from "../i18n";
 import { useApi } from "../lib/connection";
 import { formatDateTime } from "../lib/time";
+import { ApiError } from "../lib/api/client";
 import type { TaskIndexRow, TaskKind, TaskStatus } from "../lib/api/types";
 import styles from "./TasksView.module.css";
 
@@ -100,6 +101,10 @@ export function TasksView({
   const [moveMenuOpen, setMoveMenuOpen] = useState(false);
   const [newCategory, setNewCategory] = useState("");
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  // Second-confirmation targets: tasks that were queued or running when the
+  // first delete pass ran. They stay until the user explicitly confirms a
+  // stop-and-delete, keeping active tasks off the one-click path.
+  const [forceTargets, setForceTargets] = useState<TaskIndexRow[]>([]);
   const [bulkNote, setBulkNote] = useState<string | null>(null);
   // Pointer-based drag: Tauri's file drag-drop interception swallows HTML5
   // drag events inside the webview, so rows are moved with pointer events.
@@ -189,16 +194,47 @@ export function TasksView({
 
   const bulkDelete = useMutation({
     mutationFn: async () => {
+      const rows = selectionRows();
       const results = await Promise.allSettled(
-        selectionRows().map((row) => api.deleteTask(row.project, row.id)),
+        rows.map((row) => api.deleteTask(row.project, row.id)),
+      );
+      // Queued/running tasks come back as 409; collect them for a second
+      // confirmation instead of silently skipping. Anything else is a real
+      // failure.
+      const active: TaskIndexRow[] = [];
+      let failedCount = 0;
+      results.forEach((result, index) => {
+        if (result.status === "rejected") {
+          if (result.reason instanceof ApiError && result.reason.status === 409) {
+            active.push(rows[index]);
+          } else {
+            failedCount += 1;
+          }
+        }
+      });
+      return { active, failedCount };
+    },
+    onSuccess: ({ active, failedCount }) => {
+      queryClient.invalidateQueries({ queryKey: ["tasks"] });
+      setConfirmingDelete(false);
+      setForceTargets(active);
+      setSelected(new Set(active.map(rowKey)));
+      setBulkNote(failedCount > 0 ? t("tasks.bulkFailed") : null);
+    },
+  });
+
+  const forceDelete = useMutation({
+    mutationFn: async () => {
+      const results = await Promise.allSettled(
+        forceTargets.map((row) => api.deleteTask(row.project, row.id, true)),
       );
       return results.filter((result) => result.status === "rejected").length;
     },
     onSuccess: (failedCount) => {
       queryClient.invalidateQueries({ queryKey: ["tasks"] });
+      setForceTargets([]);
       setSelected(new Set());
-      setConfirmingDelete(false);
-      setBulkNote(failedCount > 0 ? t("tasks.bulkPartial") : null);
+      setBulkNote(failedCount > 0 ? t("tasks.bulkFailed") : null);
     },
   });
 
@@ -475,6 +511,49 @@ export function TasksView({
                 onClick={() => bulkDelete.mutate()}
               >
                 {t("tasks.deleteApply")}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {forceTargets.length > 0 && (
+        <div className={styles.scrim}>
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label={t("tasks.deleteActiveTitle")}
+            className={styles.confirm}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") {
+                setForceTargets([]);
+                setBulkNote(t("tasks.bulkPartial"));
+              }
+            }}
+          >
+            <p className={styles.confirmMessage}>
+              {t("tasks.deleteActiveConfirm1")} {forceTargets.length}{" "}
+              {t("tasks.deleteActiveConfirm2")}
+            </p>
+            <div className={styles.confirmActions}>
+              <button
+                type="button"
+                autoFocus
+                className={styles.bulkButton}
+                onClick={() => {
+                  setForceTargets([]);
+                  setBulkNote(t("tasks.bulkPartial"));
+                }}
+              >
+                {t("tasks.deleteCancel")}
+              </button>
+              <button
+                type="button"
+                className={styles.confirmDelete}
+                disabled={forceDelete.isPending}
+                onClick={() => forceDelete.mutate()}
+              >
+                {t("tasks.deleteActiveApply")}
               </button>
             </div>
           </div>

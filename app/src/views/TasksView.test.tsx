@@ -1,7 +1,7 @@
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, expect, test, vi } from "vitest";
-import type { ApiClient } from "../lib/api/client";
+import { ApiError, type ApiClient } from "../lib/api/client";
 import { renderWithConnection } from "../test/helpers";
 import { TasksView } from "./TasksView";
 
@@ -79,6 +79,39 @@ test("bulk delete asks for confirmation then deletes selected", async () => {
   await waitFor(() => expect(deleteTask).toHaveBeenCalledTimes(2));
   expect(deleteTask).toHaveBeenCalledWith("default", "20260716-0001");
   expect(deleteTask).toHaveBeenCalledWith("anime", "20260716-0002");
+});
+
+test("queued or running tasks need a second confirmation to force delete", async () => {
+  const deleteTask = vi.fn((_project: string, id: string, force?: boolean) => {
+    if (!force && id === "20260716-0002") {
+      return Promise.reject(new ApiError(409, "task is queued or running"));
+    }
+    return Promise.resolve({ deleted: true });
+  });
+  const api: Partial<ApiClient> = {
+    listTasks: vi.fn().mockResolvedValue(rows),
+    deleteTask,
+  };
+  renderWithConnection(<TasksView onOpenTask={() => {}} />, { api });
+  await screen.findByText("第三集");
+  await userEvent.click(screen.getByRole("checkbox", { name: "選取 第三集" }));
+  await userEvent.click(screen.getByRole("checkbox", { name: "選取 第四集" }));
+  await userEvent.click(screen.getByRole("button", { name: "刪除" }));
+  await userEvent.click(
+    within(screen.getByRole("dialog")).getByRole("button", { name: "永久刪除" }),
+  );
+  // First pass attempts both without force; the active one comes back 409.
+  await waitFor(() =>
+    expect(deleteTask).toHaveBeenCalledWith("default", "20260716-0001"),
+  );
+  // A second confirmation appears only for the queued/running task.
+  const dialog = await screen.findByRole("dialog", {
+    name: "停止並刪除進行中的任務？",
+  });
+  await userEvent.click(within(dialog).getByRole("button", { name: "停止並刪除" }));
+  await waitFor(() =>
+    expect(deleteTask).toHaveBeenCalledWith("anime", "20260716-0002", true),
+  );
 });
 
 test("move menu moves selection to an existing project", async () => {
