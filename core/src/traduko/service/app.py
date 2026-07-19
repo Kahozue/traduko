@@ -66,12 +66,21 @@ from ..glossary import (
     GlossaryTableMeta,
     task_glossary_for_new_task,
 )
+from ..glossary.store import _render_csv, _parse_csv
 from ..events import Event
 from ..media import MediaError, ffmpeg_available
 from ..pdfengine.setup import PdfManager
 from .. import mcphub
 from ..mcphub import MCPManager
-from ..models import InvalidTransition, TaskRecord, TaskStatus, transition
+from ..models import (
+    InvalidTransition,
+    StageRecord,
+    StageStatus,
+    TaskGlossary,
+    TaskRecord,
+    TaskStatus,
+    transition,
+)
 from ..notify import Notifier, NotifyError, create_channel
 from ..preflight import run_preflight
 from ..profiles import load_profile, profile_kind, stage_records_from
@@ -417,6 +426,8 @@ class TaskUpdateRequest(BaseModel):
     # Per-task dubbing voice mode; ""/"clone" removes the override.
     voice_mode: str | None = None
     voice_instruction: str | None = None
+    # Per-task glossary config; None leaves as is.
+    glossary: TaskGlossary | None = None
 
 
 @router.patch("/tasks/{project}/{task_id}")
@@ -433,11 +444,12 @@ def update_task(
         and body.asr_engine is None
         and body.voice_mode is None
         and body.voice_instruction is None
+        and body.glossary is None
     ):
         raise HTTPException(
             status_code=422,
             detail="name, project, provider, model, asr_engine, "
-            "voice_mode or voice_instruction required",
+            "voice_mode, voice_instruction or glossary required",
         )
     _validate_voice_mode(body.voice_mode)
     name_changed = False
@@ -454,6 +466,7 @@ def update_task(
         or body.asr_engine is not None
         or body.voice_mode is not None
         or body.voice_instruction is not None
+        or body.glossary is not None
     ):
         worker: TaskWorker = request.app.state.worker
         if worker.is_active(project, task_id):
@@ -461,6 +474,8 @@ def update_task(
         apply_model_override(record, body.provider, body.model)
         apply_asr_engine_override(record, body.asr_engine)
         apply_voice_mode_override(record, body.voice_mode, body.voice_instruction)
+        if body.glossary is not None:
+            record.glossary = body.glossary
         model_changed = True
     if body.project is not None:
         new_project = body.project.strip()
@@ -606,6 +621,133 @@ def pause_task(request: Request, project: str, task_id: str) -> dict:
     if not worker.pause(project, task_id):
         raise HTTPException(status_code=409, detail="task not queued or running")
     return {"pausing": True}
+
+
+# --- task glossary entries ---------------------------------------------------
+
+
+def _task_glossary_csv_path(ws: Workspace, project: str, task_id: str) -> Path:
+    return ws.store.task_dir(project, task_id) / "glossary.csv"
+
+
+@router.get("/tasks/{project}/{task_id}/glossary/entries")
+def get_task_glossary_entries(
+    request: Request, project: str, task_id: str
+) -> dict:
+    ws: Workspace = request.app.state.workspace
+    _load_task(ws, project, task_id)
+    path = _task_glossary_csv_path(ws, project, task_id)
+    if not path.exists():
+        return {"entries": []}
+    entries = [
+        {"source": e.source, "target": e.target, "notes": e.notes, "category": e.category}
+        for e in _parse_csv(path.read_text(encoding="utf-8"))
+    ]
+    return {"entries": entries}
+
+
+@router.put("/tasks/{project}/{task_id}/glossary/entries")
+def put_task_glossary_entries(
+    request: Request, project: str, task_id: str, body: GlossaryEntriesRequest
+) -> dict:
+    ws: Workspace = request.app.state.workspace
+    _load_task(ws, project, task_id)
+    entries = [
+        GlossaryEntry(
+            source=e.source.strip(),
+            target=e.target.strip(),
+            notes=e.notes.strip(),
+            category=e.category.strip(),
+        )
+        for e in body.entries
+        if e.source.strip() and e.target.strip()
+    ]
+    path = _task_glossary_csv_path(ws, project, task_id)
+    from ..fsutil import atomic_write_text
+    atomic_write_text(path, _render_csv(entries))
+    return {"saved": True, "count": len(entries)}
+
+
+# --- task glossary reapply ---------------------------------------------------
+
+
+_TRANSLATE_STAGE_TYPES = frozenset({"translate", "translate_chunks"})
+
+_VALID_REAPPLY_MODES = frozenset({"asr", "proofread", "translate"})
+
+
+class ReapplyRequest(BaseModel):
+    mode: str
+
+
+@router.post("/tasks/{project}/{task_id}/glossary/reapply", status_code=202)
+def reapply_glossary(
+    request: Request, project: str, task_id: str, body: ReapplyRequest
+) -> dict:
+    ws: Workspace = request.app.state.workspace
+    record = _load_task(ws, project, task_id)
+    if body.mode not in _VALID_REAPPLY_MODES:
+        raise HTTPException(status_code=422, detail=f"invalid mode: {body.mode}")
+    worker: TaskWorker = request.app.state.worker
+    if worker.is_active(project, task_id):
+        raise HTTPException(status_code=409, detail="task is queued or running")
+
+    reset_from_type: str | None = None
+
+    if body.mode == "asr":
+        asr_index = next(
+            (i for i, s in enumerate(record.stages) if s.type == "asr"), None
+        )
+        if asr_index is None:
+            raise HTTPException(
+                status_code=409, detail="no asr stage to reapply"
+            )
+        # Synchronize glossary_proofread presence with current asr_mode/bias.
+        ensure_glossary_proofread_stage(record, ws.config)
+        reset_from_type = "asr"
+
+    elif body.mode == "proofread":
+        asr_index = next(
+            (i for i, s in enumerate(record.stages) if s.type == "asr"), None
+        )
+        if asr_index is None:
+            raise HTTPException(
+                status_code=409, detail="no asr stage to reapply"
+            )
+        # Ensure glossary_proofread exists right after asr.
+        gp = next(
+            (s for s in record.stages if s.type == "glossary_proofread"), None
+        )
+        if gp is None:
+            record.stages.insert(asr_index + 1, StageRecord(type="glossary_proofread"))
+        reset_from_type = "glossary_proofread"
+
+    elif body.mode == "translate":
+        trans_index = next(
+            (
+                i
+                for i, s in enumerate(record.stages)
+                if s.type in _TRANSLATE_STAGE_TYPES
+            ),
+            None,
+        )
+        if trans_index is None:
+            raise HTTPException(
+                status_code=409, detail="no translate stage to reapply"
+            )
+        reset_from_type = record.stages[trans_index].type
+
+    # Reset stages from the identified point onward.
+    assert reset_from_type is not None
+    reset_index = next(
+        i for i, s in enumerate(record.stages) if s.type == reset_from_type
+    )
+    for stage in record.stages[reset_index:]:
+        stage.status = StageStatus.PENDING
+        stage.error = None
+    record.status = TaskStatus.PENDING
+    ws.store.save(record)
+    return {**_enqueue_or_409(request, record), "reset_from": reset_from_type}
 
 
 class AsrModelRequest(BaseModel):

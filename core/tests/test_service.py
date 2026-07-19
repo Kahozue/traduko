@@ -201,6 +201,44 @@ def create_asr_profile(
     )
 
 
+def create_reapply_profile(tmp_path: Path, name: str, engine: str) -> None:
+    (tmp_path / "profiles").mkdir(exist_ok=True)
+    (tmp_path / "profiles" / f"{name}.yaml").write_text(
+        "\n".join(
+            [
+                "schema_version: 1",
+                f"name: {name}",
+                "kind: video",
+                "stages:",
+                "  - type: extract_audio",
+                "  - type: asr",
+                "    params:",
+                f"      engine: {engine}",
+                "  - type: segment",
+                "  - type: translate",
+                "    params:",
+                "      provider: fake",
+                "      target_language: en",
+                "  - type: export_subtitles",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+
+def mark_task_completed(client, project: str, task_id: str) -> None:
+    from traduko.models import StageStatus, TaskStatus
+
+    store = client.app.state.workspace.store
+    record = store.load(project, task_id)
+    record.status = TaskStatus.COMPLETED
+    for stage in record.stages:
+        stage.status = StageStatus.COMPLETED
+        stage.error = "old error"
+    store.save(record)
+
+
 def test_create_show_list_roundtrip(tmp_path: Path) -> None:
     with service(tmp_path) as (client, headers, token):
         task_id = create_task(client, headers, tmp_path)
@@ -287,6 +325,197 @@ def test_create_document_task_sets_glossary_without_asr_proofread(
         body = response.json()
         assert body["glossary"]["global_ids"] == [general.id, document.id]
         assert "glossary_proofread" not in [stage["type"] for stage in body["stages"]]
+
+
+def test_patch_task_glossary_persists_and_rejects_active_task(
+    tmp_path: Path, monkeypatch
+) -> None:
+    with service(tmp_path) as (client, headers, token):
+        table = GlossaryStore(tmp_path).create_table("Terms", "general")
+        task_id = create_task(client, headers, tmp_path)
+        url = f"/tasks/default/{task_id}"
+        glossary = {
+            "global_ids": [table.id],
+            "use_task": True,
+            "asr_mode": "force",
+        }
+
+        response = client.patch(url, json={"glossary": glossary}, headers=headers)
+
+        assert response.status_code == 200, response.text
+        assert response.json()["glossary"] == glossary
+        assert client.get(url, headers=headers).json()["glossary"] == glossary
+
+        monkeypatch.setattr(client.app.state.worker, "is_active", lambda p, t: True)
+        blocked = client.patch(
+            url,
+            json={
+                "glossary": {
+                    "global_ids": [],
+                    "use_task": False,
+                    "asr_mode": "off",
+                }
+            },
+            headers=headers,
+        )
+        assert blocked.status_code == 409
+
+
+def test_task_glossary_entries_round_trip(tmp_path: Path) -> None:
+    with service(tmp_path) as (client, headers, token):
+        task_id = create_task(client, headers, tmp_path)
+        url = f"/tasks/default/{task_id}/glossary/entries"
+        entries = [
+            {
+                "source": "Traduko",
+                "target": "特拉杜科",
+                "notes": "product",
+                "category": "名稱",
+            }
+        ]
+
+        saved = client.put(url, json={"entries": entries}, headers=headers)
+
+        assert saved.status_code == 200, saved.text
+        assert saved.json() == {"saved": True, "count": 1}
+        assert client.get(url, headers=headers).json() == {"entries": entries}
+        assert (
+            tmp_path
+            / "projects"
+            / "default"
+            / "tasks"
+            / task_id
+            / "glossary.csv"
+        ).exists()
+
+
+def test_reapply_asr_inserts_forced_proofread_and_resets_from_asr(
+    tmp_path: Path, monkeypatch
+) -> None:
+    with service(tmp_path) as (client, headers, token):
+        create_reapply_profile(tmp_path, "reapply-asr", "faster_whisper")
+        task_id = create_task(client, headers, tmp_path, profile="reapply-asr")
+        url = f"/tasks/default/{task_id}"
+        assert client.patch(
+            url,
+            json={
+                "glossary": {
+                    "global_ids": [],
+                    "use_task": False,
+                    "asr_mode": "force",
+                }
+            },
+            headers=headers,
+        ).status_code == 200
+        mark_task_completed(client, "default", task_id)
+        queued: list[tuple[str, str]] = []
+        monkeypatch.setattr(
+            client.app.state.worker,
+            "enqueue",
+            lambda project, current_id: not queued.append((project, current_id)),
+        )
+
+        response = client.post(
+            f"{url}/glossary/reapply", json={"mode": "asr"}, headers=headers
+        )
+
+        assert response.status_code == 202, response.text
+        assert response.json() == {"queued": True, "reset_from": "asr"}
+        shown = client.get(url, headers=headers).json()
+        types = [stage["type"] for stage in shown["stages"]]
+        assert types == [
+            "extract_audio",
+            "asr",
+            "glossary_proofread",
+            "segment",
+            "translate",
+            "export_subtitles",
+        ]
+        assert shown["stages"][0]["status"] == "completed"
+        assert all(stage["status"] == "pending" for stage in shown["stages"][1:])
+        assert all(stage["error"] is None for stage in shown["stages"][1:])
+        assert shown["status"] == "pending"
+        assert queued == [("default", task_id)]
+
+
+def test_reapply_proofread_inserts_stage_without_resetting_asr(
+    tmp_path: Path, monkeypatch
+) -> None:
+    with service(tmp_path) as (client, headers, token):
+        create_reapply_profile(tmp_path, "reapply-proof", "faster_whisper")
+        task_id = create_task(client, headers, tmp_path, profile="reapply-proof")
+        mark_task_completed(client, "default", task_id)
+        monkeypatch.setattr(client.app.state.worker, "enqueue", lambda p, t: True)
+
+        response = client.post(
+            f"/tasks/default/{task_id}/glossary/reapply",
+            json={"mode": "proofread"},
+            headers=headers,
+        )
+
+        assert response.status_code == 202, response.text
+        assert response.json()["reset_from"] == "glossary_proofread"
+        shown = client.get(f"/tasks/default/{task_id}", headers=headers).json()
+        by_type = {stage["type"]: stage for stage in shown["stages"]}
+        assert by_type["asr"]["status"] == "completed"
+        assert by_type["glossary_proofread"]["status"] == "pending"
+        assert by_type["segment"]["status"] == "pending"
+
+
+@pytest.mark.parametrize(
+    ("profile", "expected_type"),
+    [("subtitle-translate", "translate"), ("novel-translate", "translate_chunks")],
+)
+def test_reapply_translate_resets_first_translation_stage_only(
+    tmp_path: Path, monkeypatch, profile: str, expected_type: str
+) -> None:
+    with service(tmp_path) as (client, headers, token):
+        task_id = create_task(client, headers, tmp_path, profile=profile)
+        mark_task_completed(client, "default", task_id)
+        monkeypatch.setattr(client.app.state.worker, "enqueue", lambda p, t: True)
+
+        response = client.post(
+            f"/tasks/default/{task_id}/glossary/reapply",
+            json={"mode": "translate"},
+            headers=headers,
+        )
+
+        assert response.status_code == 202, response.text
+        assert response.json()["reset_from"] == expected_type
+        stages = client.get(
+            f"/tasks/default/{task_id}", headers=headers
+        ).json()["stages"]
+        reset_index = next(
+            index for index, stage in enumerate(stages) if stage["type"] == expected_type
+        )
+        assert all(stage["status"] == "completed" for stage in stages[:reset_index])
+        assert all(stage["status"] == "pending" for stage in stages[reset_index:])
+
+
+def test_reapply_rejects_missing_stage_invalid_mode_and_active_task(
+    tmp_path: Path, monkeypatch
+) -> None:
+    with service(tmp_path) as (client, headers, token):
+        create_profile(tmp_path, "noop-only", ["noop"])
+        task_id = create_task(client, headers, tmp_path, profile="noop-only")
+        url = f"/tasks/default/{task_id}/glossary/reapply"
+
+        assert client.post(
+            url, json={"mode": "asr"}, headers=headers
+        ).status_code == 409
+        assert client.post(
+            url, json={"mode": "proofread"}, headers=headers
+        ).status_code == 409
+        assert client.post(
+            url, json={"mode": "translate"}, headers=headers
+        ).status_code == 409
+        assert client.post(
+            url, json={"mode": "invalid"}, headers=headers
+        ).status_code == 422
+
+        monkeypatch.setattr(client.app.state.worker, "is_active", lambda p, t: True)
+        active = client.post(url, json={"mode": "translate"}, headers=headers)
+        assert active.status_code == 409
 
 
 def test_show_unknown_task_is_404(tmp_path: Path) -> None:
