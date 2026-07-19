@@ -76,3 +76,49 @@ def test_audio_profiles_seeded_with_audio_kind(tmp_path):
     dub = load_profile(tmp_path, "audio-dub")
     assert dub.stages[-1].type == "export_audio"
     assert any(stage.pause_after for stage in dub.stages)
+
+
+def test_compose_profiles_seeded(tmp_path: Path) -> None:
+    from traduko.profiles import profile_kind
+
+    ensure_defaults(tmp_path)
+
+    video = load_profile(tmp_path, "video-compose")
+    assert profile_kind(video) == "video"
+    assert [s.type for s in video.stages] == [
+        "ingest_transcript", "diarize", "tts_synthesize", "align_duration",
+        "mix_audio", "mux",
+    ]
+
+    audio = load_profile(tmp_path, "audio-compose")
+    assert profile_kind(audio) == "audio"
+    assert [s.type for s in audio.stages] == [
+        "ingest_transcript", "diarize", "tts_synthesize", "align_duration",
+        "mix_audio", "export_audio",
+    ]
+
+
+def test_compose_profiles_speak_the_transcript_as_is(tmp_path: Path) -> None:
+    # The transcript is the dub text: there is no translation stage to wait
+    # for, so the dub stages must not go looking for one.
+    ensure_defaults(tmp_path)
+    for name in ("video-compose", "audio-compose"):
+        profile = load_profile(tmp_path, name)
+        dub_stages = [
+            s for s in profile.stages
+            if s.type in ("diarize", "tts_synthesize", "align_duration")
+        ]
+        assert dub_stages
+        for stage in dub_stages:
+            assert stage.params.get("dub_text") == "original", (name, stage.type)
+
+
+def test_audio_compose_defaults_to_designed_voices(tmp_path: Path) -> None:
+    # Nothing to clone from: the input is a transcript, not a recording.
+    ensure_defaults(tmp_path)
+    profile = load_profile(tmp_path, "audio-compose")
+    for stage in profile.stages:
+        if stage.type in ("diarize", "tts_synthesize", "align_duration"):
+            assert stage.params.get("voice_mode") == "design", stage.type
+    video = load_profile(tmp_path, "video-compose")
+    assert "voice_mode" not in video.stages[1].params

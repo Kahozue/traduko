@@ -197,7 +197,14 @@ def initial_switches_for_new_task(
         if types & SWITCH_STAGE_TYPES["diarize"]:
             switches.diarize = config.audio.diarize_enabled
         if types & SWITCH_STAGE_TYPES["dub"]:
-            switches.dub = config.audio.dub_enabled
+            # A compose task is nothing but its dub group, so the audio
+            # domain's "dubbing off by default" would skip away the whole
+            # point of it. The switch stays visible, just on.
+            switches.dub = (
+                True
+                if "ingest_transcript" in types
+                else config.audio.dub_enabled
+            )
     elif domain == "video":
         if types & SWITCH_STAGE_TYPES["diarize"]:
             switches.diarize = config.dubbing.diarize_enabled

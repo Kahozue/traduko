@@ -3332,3 +3332,157 @@ def test_retranslate_on_document_task_starts_at_translate_chunks(
 
         assert response.status_code == 202, response.text
         assert response.json()["reset_from"] == "translate_chunks"
+
+
+def make_transcript(tmp_path: Path, name: str = "lines.srt") -> Path:
+    path = tmp_path / name
+    path.write_text(SRT, encoding="utf-8")
+    return path
+
+
+def make_video(tmp_path: Path) -> Path:
+    path = tmp_path / "clip.mp4"
+    path.write_bytes(b"fake video")
+    return path
+
+
+def test_create_audio_compose_task_from_a_transcript(tmp_path: Path) -> None:
+    with service(tmp_path) as (client, headers, token):
+        transcript = make_transcript(tmp_path)
+        response = client.post(
+            "/tasks",
+            json={
+                "input_path": str(transcript),
+                "profile": "audio-compose",
+                "transcript": {"kind": "file", "path": str(transcript)},
+            },
+            headers=headers,
+        )
+
+        assert response.status_code == 201, response.text
+        task = response.json()
+        by_type = {s["type"]: s for s in task["stages"]}
+        assert by_type["ingest_transcript"]["params"]["transcript"] == {
+            "kind": "file", "path": str(transcript)
+        }
+        assert by_type["diarize"]["params"]["voice_mode"] == "design"
+        for stage in task["stages"]:
+            assert stage["status"] == "pending", stage["type"]
+
+
+def test_create_compose_task_from_another_tasks_artifact(tmp_path: Path) -> None:
+    with service(tmp_path) as (client, headers, token):
+        transcript = make_transcript(tmp_path)
+        source = {
+            "kind": "task",
+            "project": "default",
+            "task_id": "t-source",
+            "file": "06-subtitles.srt",
+        }
+        response = client.post(
+            "/tasks",
+            json={
+                "input_path": str(transcript),
+                "profile": "audio-compose",
+                "transcript": source,
+            },
+            headers=headers,
+        )
+
+        assert response.status_code == 201, response.text
+        by_type = {s["type"]: s for s in response.json()["stages"]}
+        assert by_type["ingest_transcript"]["params"]["transcript"] == source
+
+
+def test_create_compose_task_without_a_transcript_is_rejected(tmp_path: Path) -> None:
+    with service(tmp_path) as (client, headers, token):
+        response = client.post(
+            "/tasks",
+            json={
+                "input_path": str(make_transcript(tmp_path)),
+                "profile": "audio-compose",
+            },
+            headers=headers,
+        )
+
+        assert response.status_code == 422, response.text
+        assert "transcript" in response.json()["detail"]
+
+
+def test_create_video_compose_task_carries_the_optional_base_audio(
+    tmp_path: Path,
+) -> None:
+    with service(tmp_path) as (client, headers, token):
+        transcript = make_transcript(tmp_path)
+        bed = tmp_path / "bed.wav"
+        bed.write_bytes(b"RIFFfake")
+        response = client.post(
+            "/tasks",
+            json={
+                "input_path": str(make_video(tmp_path)),
+                "profile": "video-compose",
+                "transcript": {"kind": "file", "path": str(transcript)},
+                "base_audio": str(bed),
+            },
+            headers=headers,
+        )
+
+        assert response.status_code == 201, response.text
+        by_type = {s["type"]: s for s in response.json()["stages"]}
+        assert by_type["mix_audio"]["params"]["base_audio"] == str(bed)
+        assert by_type["diarize"]["params"]["dub_text"] == "original"
+
+
+def test_create_video_compose_task_needs_a_video_input(tmp_path: Path) -> None:
+    with service(tmp_path) as (client, headers, token):
+        transcript = make_transcript(tmp_path)
+        response = client.post(
+            "/tasks",
+            json={
+                "input_path": str(transcript),
+                "profile": "video-compose",
+                "transcript": {"kind": "file", "path": str(transcript)},
+            },
+            headers=headers,
+        )
+
+        assert response.status_code == 422, response.text
+        assert "video" in response.json()["detail"]
+
+
+def test_compose_task_keeps_the_dub_group_switched_on(tmp_path: Path) -> None:
+    # The audio domain ships with dubbing off by default; a compose task is
+    # nothing but its dub group, so that default must not skip it away.
+    with service(tmp_path) as (client, headers, token):
+        transcript = make_transcript(tmp_path)
+        response = client.post(
+            "/tasks",
+            json={
+                "input_path": str(transcript),
+                "profile": "audio-compose",
+                "transcript": {"kind": "file", "path": str(transcript)},
+            },
+            headers=headers,
+        )
+
+        task = response.json()
+        assert task["switches"]["dub"] is True
+        by_type = {s["type"]: s for s in task["stages"]}
+        assert by_type["export_audio"]["status"] == "pending"
+
+
+def test_create_compose_task_rejects_a_bad_transcript_source(tmp_path: Path) -> None:
+    with service(tmp_path) as (client, headers, token):
+        transcript = make_transcript(tmp_path)
+        response = client.post(
+            "/tasks",
+            json={
+                "input_path": str(transcript),
+                "profile": "audio-compose",
+                "transcript": {"kind": "file"},
+            },
+            headers=headers,
+        )
+
+        assert response.status_code == 422, response.text
+        assert "path" in response.json()["detail"]

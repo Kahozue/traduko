@@ -78,6 +78,7 @@ from ..media import (
     check_disk_space,
     estimate_export,
     ffmpeg_available,
+    media_kind_of,
     probe_media,
 )
 from ..pdfengine.setup import PdfManager
@@ -95,7 +96,7 @@ from ..models import (
 )
 from ..notify import Notifier, NotifyError, create_channel
 from ..preflight import run_preflight
-from ..profiles import load_profile, profile_kind, stage_records_from
+from ..profiles import Profile, load_profile, profile_kind, stage_records_from
 from .. import proposals, skillhub
 from ..skillhub import SkillsManager, SkillValidationError
 from ..styles import SubtitleStyle
@@ -359,6 +360,90 @@ class TaskCreateRequest(BaseModel):
     voice_instruction: str | None = None
     # Optional dub text source (auto/translation/original) for the dub stages.
     dub_text: str | None = None
+    # Compose input: where a compose profile's ingest_transcript stage reads
+    # its transcript, plus an optional replacement mix bed for video-compose.
+    transcript: dict | None = None
+    base_audio: str | None = None
+
+
+def _compose_transcript_params(source: dict | None) -> dict:
+    """Validated params.transcript for an ingest_transcript stage. Kept next
+    to the stage's own contract in stages/av.py: rejecting a malformed source
+    at creation beats failing the first run."""
+    if not source:
+        raise HTTPException(
+            status_code=422,
+            detail="transcript is required for a compose profile",
+        )
+    kind = source.get("kind")
+    if kind == "file":
+        if not source.get("path"):
+            raise HTTPException(
+                status_code=422, detail="transcript.path is required for kind=file"
+            )
+        path = Path(str(source["path"]))
+        if not path.exists():
+            raise HTTPException(
+                status_code=422, detail=f"transcript not found: {path}"
+            )
+        return {"kind": "file", "path": str(path.resolve())}
+    if kind == "task":
+        for field in ("project", "task_id", "file"):
+            if not source.get(field):
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"transcript.{field} is required for kind=task",
+                )
+        file = str(source["file"])
+        if Path(file).name != file:
+            raise HTTPException(
+                status_code=422,
+                detail=f"transcript.file must be a bare artifact name: {file}",
+            )
+        return {
+            "kind": "task",
+            "project": str(source["project"]),
+            "task_id": str(source["task_id"]),
+            "file": file,
+        }
+    raise HTTPException(
+        status_code=422, detail=f"transcript.kind must be file or task, got: {kind}"
+    )
+
+
+def _compose_inputs(
+    profile: Profile, body: TaskCreateRequest, input_path: Path
+) -> dict | None:
+    """Validated compose inputs, or None for a profile that ingests no
+    transcript. Runs before the task is created so a rejected request leaves
+    nothing on disk. A compose task's input is the media being dubbed, so a
+    profile that muxes back into video has to be given a video."""
+    types = {stage.type for stage in profile.stages}
+    if "ingest_transcript" not in types:
+        return None
+    transcript = _compose_transcript_params(body.transcript)
+    if types & {"mux", "hardburn"} and media_kind_of(input_path) != "video":
+        raise HTTPException(
+            status_code=422,
+            detail=f"this profile needs a video file as input: {input_path}",
+        )
+    base_audio = None
+    if body.base_audio:
+        bed = Path(body.base_audio)
+        if not bed.exists():
+            raise HTTPException(status_code=422, detail=f"base audio not found: {bed}")
+        base_audio = str(bed.resolve())
+    return {"transcript": transcript, "base_audio": base_audio}
+
+
+def _apply_compose_inputs(record: TaskRecord, inputs: dict | None) -> None:
+    if inputs is None:
+        return
+    for stage in record.stages:
+        if stage.type == "ingest_transcript":
+            stage.params["transcript"] = inputs["transcript"]
+        elif stage.type == "mix_audio" and inputs["base_audio"]:
+            stage.params["base_audio"] = inputs["base_audio"]
 
 
 def _validate_voice_mode(mode: str | None) -> None:
@@ -408,6 +493,7 @@ def create_task(request: Request, body: TaskCreateRequest) -> dict:
         ) from None
     _validate_voice_mode(body.voice_mode)
     _validate_dub_text(body.dub_text)
+    compose = _compose_inputs(profile, body, input_path)
     record = ws.store.create(
         project=body.project or ws.config.default_project,
         input_path=str(input_path.resolve()),
@@ -416,6 +502,7 @@ def create_task(request: Request, body: TaskCreateRequest) -> dict:
         name=body.name,
     )
     kind = profile_kind(profile)
+    _apply_compose_inputs(record, compose)
     record.glossary = task_glossary_for_new_task(ws.root, kind)
     apply_translation_defaults(record, kind, ws.config)
     apply_asr_engine_override(record, body.asr_engine or None)

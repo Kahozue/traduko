@@ -224,6 +224,62 @@ stages:
   - type: export_audio
 """
 
+_PROFILE_VIDEO_COMPOSE = """\
+# Compose a dubbed video: video file in, transcript in (as a stage param,
+# not as the task input), dubbed video out. No ASR and no translation --
+# the transcript is the dub text, so dub_text is pinned to original.
+# The transcript source is set when the task is created; a plain-text
+# transcript with no timestamps makes align_duration lay the clips end to
+# end instead of fitting them to the original timing.
+# Needs the dubbing engine from the settings video tab, plus a Hugging Face
+# token there when cloning the original speakers.
+schema_version: 1
+name: video-compose
+kind: video
+stages:
+  - type: ingest_transcript
+  - type: diarize
+    params:
+      dub_text: original
+    pause_after: true
+  - type: tts_synthesize
+    params:
+      dub_text: original
+  - type: align_duration
+    params:
+      dub_text: original
+  - type: mix_audio
+  - type: mux
+"""
+
+_PROFILE_AUDIO_COMPOSE = """\
+# Compose an audio file from a transcript: transcript in, dubbed audio out.
+# Pure synthesis, so there is no source recording to clone a voice from or
+# to mix under the dub: voice_mode is design and the dub is laid over
+# silence. Supply reference audio per speaker in the dubbing studio to clone
+# a voice anyway. Needs the dubbing engine from the settings video tab.
+schema_version: 1
+name: audio-compose
+kind: audio
+stages:
+  - type: ingest_transcript
+  - type: diarize
+    params:
+      dub_text: original
+      voice_mode: design
+    pause_after: true
+  - type: tts_synthesize
+    params:
+      dub_text: original
+      voice_mode: design
+  - type: align_duration
+    params:
+      dub_text: original
+      voice_mode: design
+  - type: mix_audio
+  - type: export_audio
+"""
+
 _STYLES_DEFAULT = """\
 # Named subtitle style presets (ASS-based), referenced by style_preset.
 default:
@@ -258,6 +314,8 @@ def ensure_defaults(root: Path) -> None:
         "profiles/audio-transcribe.yaml": _PROFILE_AUDIO_TRANSCRIBE,
         "profiles/audio-translate.yaml": _PROFILE_AUDIO_TRANSLATE,
         "profiles/audio-dub.yaml": _PROFILE_AUDIO_DUB,
+        "profiles/video-compose.yaml": _PROFILE_VIDEO_COMPOSE,
+        "profiles/audio-compose.yaml": _PROFILE_AUDIO_COMPOSE,
         "prompts/translate.txt": DEFAULT_TRANSLATE_TEMPLATE,
         "prompts/proofread.txt": DEFAULT_PROOFREAD_TEMPLATE,
         "prompts/glossary_proofread.txt": DEFAULT_GLOSSARY_PROOFREAD_TEMPLATE,
