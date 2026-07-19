@@ -186,6 +186,9 @@ function renderView(
           onOpenGlossary={() =>
             setView({ name: "task-glossary", project: view.project, taskId: view.taskId })
           }
+          onOpenDub={() =>
+            setView({ name: "dubbing-studio", project: view.project, taskId: view.taskId })
+          }
         />
       );
     case "task-glossary":

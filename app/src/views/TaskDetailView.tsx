@@ -104,6 +104,7 @@ export function TaskDetailView({
   onOpenSettings,
   onOpenEditor,
   onOpenGlossary,
+  onOpenDub,
 }: {
   project: string;
   taskId: string;
@@ -111,6 +112,7 @@ export function TaskDetailView({
   onOpenSettings?: () => void;
   onOpenEditor: (kind: "subtitle" | "document" | "speakers") => void;
   onOpenGlossary?: () => void;
+  onOpenDub?: () => void;
 }) {
   const api = useApi();
   const { dataRoot } = useConnection();
@@ -346,6 +348,14 @@ export function TaskDetailView({
   );
   const hasSpeakers = (artifacts ?? []).some((item) => item.name === "speakers.json");
   const isDubTask = (task?.stages ?? []).some((stage) => stage.type === "diarize");
+  // The dubbing studio needs a transcript to voice; asr/segments/translation
+  // all qualify. Until one exists the button stays disabled with a hint.
+  const transcriptReady = (artifacts ?? []).some(
+    (item) =>
+      item.name === "asr.json" ||
+      item.name === "segments.json" ||
+      item.name === "translation.json",
+  );
   // Only pipelines that produce a translation artifact get an editor entry;
   // translate_pdf outputs finished PDFs with nothing to edit in-app.
   const supportsEditor = task.stages.some((stage) =>
@@ -548,6 +558,17 @@ export function TaskDetailView({
               onClick={() => onOpenEditor("speakers")}
             >
               {t("task.speakerReview")}
+            </button>
+          )}
+          {isDubTask && onOpenDub && (
+            <button
+              type="button"
+              className={styles.secondary}
+              disabled={!transcriptReady}
+              title={transcriptReady ? undefined : t("task.dub.studio.disabledHint")}
+              onClick={onOpenDub}
+            >
+              {t("task.dub.studio.entry")}
             </button>
           )}
           {onOpenGlossary && (

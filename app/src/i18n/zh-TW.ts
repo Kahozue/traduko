@@ -588,6 +588,8 @@ export const zhTW = {
   "task.dub.studio.mix": "整體試聽",
   "task.dub.studio.apply": "套用並重新合成",
   "task.dub.studio.redubFromDiarize": "從說話人分離重來",
+  "task.dub.studio.entry": "配音工作室",
+  "task.dub.studio.disabledHint": "完成轉錄後可配音",
   "task.model.title": "此任務的翻譯模型，點擊切換",
   "task.model.auto": "（自動）",
   "task.model.unset": "尚未設定供應商",

@@ -582,6 +582,8 @@ export const en: Record<MessageKey, string> = {
   "task.dub.studio.mix": "Full mix",
   "task.dub.studio.apply": "Apply and resynthesize",
   "task.dub.studio.redubFromDiarize": "Restart from speaker diarize",
+  "task.dub.studio.entry": "Dubbing Studio",
+  "task.dub.studio.disabledHint": "Complete transcription to enable dubbing",
   "task.model.title": "This task's translation model; click to switch",
   "task.model.auto": " (auto)",
   "task.model.unset": "No provider configured",

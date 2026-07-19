@@ -582,6 +582,8 @@ export const ja: Record<MessageKey, string> = {
   "task.dub.studio.mix": "全体試聴",
   "task.dub.studio.apply": "適用して再合成",
   "task.dub.studio.redubFromDiarize": "話者分離からやり直す",
+  "task.dub.studio.entry": "ダビングスタジオ",
+  "task.dub.studio.disabledHint": "文字起こし完了後にダビング可能",
   "task.model.title": "このタスクの翻訳モデル。クリックで切り替え",
   "task.model.auto": "（自動）",
   "task.model.unset": "プロバイダ未設定",

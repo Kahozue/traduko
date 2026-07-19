@@ -804,3 +804,58 @@ test("a subtitle input renders no player", async () => {
   expect(document.querySelector("video")).toBeNull();
   expect(document.querySelector("audio")).toBeNull();
 });
+
+test("dub button stays disabled until a transcript artifact exists", async () => {
+  const dubTask: TaskRecord = {
+    ...task,
+    profile: "av-dub",
+    input_path: "/tmp/in.mp4",
+    stages: [
+      { type: "extract_audio", status: "completed", params: {}, pause_after: false, artifacts: [], error: null },
+      { type: "asr", status: "completed", params: {}, pause_after: false, artifacts: [], error: null },
+      { type: "diarize", status: "pending", params: {}, pause_after: false, artifacts: [], error: null },
+      { type: "tts_synthesize", status: "pending", params: {}, pause_after: false, artifacts: [], error: null },
+    ],
+  };
+  const onOpenDub = vi.fn();
+  const api: Partial<ApiClient> = {
+    showTask: vi.fn().mockResolvedValue(dubTask),
+    listArtifacts: vi.fn().mockResolvedValue([]),
+  };
+  renderWithConnection(
+    <TaskDetailView project="default" taskId="t1" onBack={() => {}} onOpenEditor={() => {}} onOpenDub={onOpenDub} />,
+    { api },
+  );
+  const btn = await screen.findByRole("button", { name: /配音工作室/ });
+  expect(btn).toBeDisabled();
+  expect(btn.getAttribute("title")).toMatch(/完成轉錄/);
+});
+
+test("dub button enables and opens the studio once asr artifact exists", async () => {
+  const dubTask: TaskRecord = {
+    ...task,
+    profile: "av-dub",
+    input_path: "/tmp/in.mp4",
+    stages: [
+      { type: "extract_audio", status: "completed", params: {}, pause_after: false, artifacts: [], error: null },
+      { type: "asr", status: "completed", params: {}, pause_after: false, artifacts: [], error: null },
+      { type: "diarize", status: "pending", params: {}, pause_after: false, artifacts: [], error: null },
+      { type: "tts_synthesize", status: "pending", params: {}, pause_after: false, artifacts: [], error: null },
+    ],
+  };
+  const onOpenDub = vi.fn();
+  const api: Partial<ApiClient> = {
+    showTask: vi.fn().mockResolvedValue(dubTask),
+    listArtifacts: vi.fn().mockResolvedValue([
+      { file: "05-asr.json", index: 5, name: "asr.json", schema_version: 1, size: 1024, mtime: 1 },
+    ]),
+  };
+  renderWithConnection(
+    <TaskDetailView project="default" taskId="t1" onBack={() => {}} onOpenEditor={() => {}} onOpenDub={onOpenDub} />,
+    { api },
+  );
+  const btn = await screen.findByRole("button", { name: /配音工作室/ });
+  await waitFor(() => expect(btn).toBeEnabled());
+  await userEvent.click(btn);
+  expect(onOpenDub).toHaveBeenCalled();
+});
