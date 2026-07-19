@@ -238,6 +238,19 @@ export class ApiClient {
     });
   }
 
+  // Pipeline switches: the core recalcs the governed stages (SKIPPED or
+  // back to PENDING) and appends the dub group when dubbing turns on.
+  patchTaskSwitches(
+    project: string,
+    taskId: string,
+    switches: { translate?: boolean; diarize?: boolean; dub?: boolean },
+  ): Promise<TaskRecord> {
+    return this.request(`/tasks/${project}/${taskId}/switches`, {
+      method: "PATCH",
+      body: JSON.stringify(switches),
+    });
+  }
+
   // Task-local glossary entries (tasks/<id>/glossary.csv).
   getTaskGlossaryEntries(
     project: string,

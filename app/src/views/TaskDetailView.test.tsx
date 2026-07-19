@@ -692,3 +692,88 @@ test("voice chip reflects the preview mode and resets to clone", async () => {
     expect(setTaskVoiceMode).toHaveBeenCalledWith("default", "t1", "", ""),
   );
 });
+
+// --- pipeline switches (v3_5-04) --------------------------------------------
+
+function stageOf(type: string, status: TaskRecord["stages"][number]["status"] = "pending") {
+  return { type, status, params: {}, pause_after: false, artifacts: [], error: null };
+}
+
+const audioTask: TaskRecord = {
+  ...task,
+  profile: "audio-translate",
+  stages: [
+    stageOf("extract_audio"),
+    stageOf("asr"),
+    stageOf("segment"),
+    stageOf("translate"),
+    stageOf("proofread"),
+    stageOf("export_transcript"),
+    stageOf("export_subtitles"),
+  ],
+  switches: { translate: true, diarize: null, dub: null },
+};
+
+function renderTask(record: TaskRecord, api: Partial<ApiClient> = {}) {
+  const merged: Partial<ApiClient> = {
+    showTask: vi.fn().mockResolvedValue(record),
+    ...api,
+  };
+  renderWithConnection(
+    <TaskDetailView project="default" taskId="t1" onBack={() => {}} onOpenEditor={() => {}} />,
+    { api: merged },
+  );
+  return merged;
+}
+
+test("audio task renders its applicable pipeline switches", async () => {
+  renderTask(audioTask);
+  const group = await screen.findByRole("group", { name: "管線開關" });
+  expect(within(group).getByRole("button", { name: /翻譯/ })).toBeInTheDocument();
+  expect(within(group).getByRole("button", { name: /配音/ })).toBeInTheDocument();
+  // No diarize stage in this pipeline: the diarize switch does not render.
+  expect(within(group).queryByRole("button", { name: /說話人分離/ })).toBeNull();
+});
+
+test("toggling a switch PATCHes the switches endpoint", async () => {
+  const patchTaskSwitches = vi
+    .fn()
+    .mockResolvedValue({ ...audioTask, switches: { translate: false, diarize: null, dub: null } });
+  renderTask(audioTask, { patchTaskSwitches });
+  const group = await screen.findByRole("group", { name: "管線開關" });
+  await userEvent.click(within(group).getByRole("button", { name: /翻譯/ }));
+  await waitFor(() =>
+    expect(patchTaskSwitches).toHaveBeenCalledWith("default", "t1", { translate: false }),
+  );
+});
+
+test("skipped stages hide behind the expand button", async () => {
+  const record: TaskRecord = {
+    ...audioTask,
+    stages: [
+      stageOf("extract_audio", "completed"),
+      stageOf("asr", "completed"),
+      stageOf("segment", "completed"),
+      stageOf("translate", "skipped"),
+      stageOf("proofread", "skipped"),
+      stageOf("export_transcript", "completed"),
+      stageOf("export_subtitles", "skipped"),
+    ],
+    switches: { translate: false, diarize: null, dub: null },
+  };
+  renderTask(record);
+  await screen.findByRole("group", { name: "管線開關" });
+  const stageList = screen.getByRole("list", { name: "階段" });
+  expect(within(stageList).queryByText("AI 校對")).toBeNull();
+  const expand = screen.getByRole("button", { name: "含 3 步已跳過" });
+  await userEvent.click(expand);
+  expect(within(stageList).getByText("AI 校對")).toBeInTheDocument();
+  expect(within(stageList).getAllByText("已略過").length).toBe(3);
+});
+
+test("switches lock while the task runs", async () => {
+  renderTask({ ...audioTask, status: "running" });
+  const group = await screen.findByRole("group", { name: "管線開關" });
+  expect(within(group).getByRole("button", { name: /翻譯/ })).toBeDisabled();
+  expect(within(group).getByRole("button", { name: /配音/ })).toBeDisabled();
+});

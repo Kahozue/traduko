@@ -598,3 +598,91 @@
   color: var(--text-secondary);
   font-size: var(--fs-note);
 }
+
+/* Pipeline switch chips in the stages section head: quiet secondary
+   controls in the model-chip family; state reads from the dot plus the
+   on/off text, never color alone. */
+.switchRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.switchGroup {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.switchChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-s);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: var(--fs-note);
+  cursor: pointer;
+  transition: background var(--transition), color var(--transition);
+}
+
+.switchChip:hover:not(:disabled) {
+  background: var(--bg-inset);
+  color: var(--text-primary);
+}
+
+.switchChip:disabled {
+  cursor: default;
+  opacity: 0.7;
+}
+
+.switchChip[data-on] {
+  color: var(--text-primary);
+}
+
+.switchDot {
+  width: 7px;
+  height: 7px;
+  border-radius: var(--radius-full);
+  background: var(--border);
+}
+
+.switchChip[data-on] .switchDot {
+  background: var(--accent);
+}
+
+.switchState {
+  color: var(--text-secondary);
+  opacity: 0.85;
+}
+
+.skippedToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 6px;
+  border: none;
+  border-radius: var(--radius-s);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: var(--fs-note);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--transition), color var(--transition);
+}
+
+.skippedToggle:hover {
+  background: var(--bg-inset);
+  color: var(--text-primary);
+}
+
+.switchErrorText {
+  margin: 0 0 12px;
+  color: var(--danger);
+  font-size: var(--fs-note);
+}

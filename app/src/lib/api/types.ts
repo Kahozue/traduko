@@ -18,6 +18,14 @@ export interface StageRecord {
   error: string | null;
 }
 
+// Pipeline switches; null means no explicit choice (the stages stand as the
+// profile made them). The record field is absent on tasks from older cores.
+export interface TaskSwitches {
+  translate: boolean | null;
+  diarize: boolean | null;
+  dub: boolean | null;
+}
+
 export interface TaskRecord {
   schema_version: number;
   id: string;
@@ -28,6 +36,7 @@ export interface TaskRecord {
   status: TaskStatus;
   stages: StageRecord[];
   glossary: TaskGlossary;
+  switches?: TaskSwitches | null;
   created_at: string;
   updated_at: string;
 }

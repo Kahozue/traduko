@@ -39,6 +39,29 @@ const ASR_ENGINE_LABELS: Record<string, string> = {
 };
 const ASR_ENGINE_IDS = Object.keys(ASR_ENGINE_LABELS);
 
+// Pipeline switches (v3_5-04), mirroring the core's tasks.SWITCH_STAGE_TYPES
+// mapping and its stage-marker domain inference.
+type SwitchName = "translate" | "diarize" | "dub";
+const SWITCH_STAGE_TYPES: Record<SwitchName, string[]> = {
+  translate: ["translate", "proofread", "export_subtitles"],
+  diarize: ["diarize"],
+  dub: ["tts_synthesize", "align_duration", "mix_audio", "mux", "export_audio"],
+};
+const SWITCH_LABELS: Record<SwitchName, Parameters<typeof t>[0]> = {
+  translate: "task.switches.translate",
+  diarize: "task.switches.diarize",
+  dub: "task.switches.dub",
+};
+const AUDIO_DOMAIN_STAGES = ["export_transcript", "export_audio"];
+const DOCUMENT_STAGES = [
+  "ingest_document",
+  "chunk",
+  "translate_chunks",
+  "export_document",
+  "translate_pdf",
+];
+const COMIC_STAGES = ["ingest_comic", "bubble_detect", "ocr", "inpaint", "typeset"];
+
 // One-line human summary for an event's payload; the raw JSON stays in the
 // row's tooltip instead of being dumped into the timeline.
 function summarizeEventData(data: Record<string, unknown>): string {
@@ -196,6 +219,23 @@ export function TaskDetailView({
       queryClient.invalidateQueries({ queryKey: ["task", project, taskId] });
     },
   });
+  const [showSkipped, setShowSkipped] = useState(false);
+  const [switchError, setSwitchError] = useState<string | null>(null);
+  const setSwitch = useMutation({
+    mutationFn: ({ name, value }: { name: SwitchName; value: boolean }) =>
+      api.patchTaskSwitches(project, taskId, { [name]: value }),
+    onSuccess: () => {
+      setSwitchError(null);
+      queryClient.invalidateQueries({ queryKey: ["task", project, taskId] });
+    },
+    onError: (error) => {
+      const raw =
+        error instanceof ApiError && typeof error.detail === "string"
+          ? error.detail
+          : String(error);
+      setSwitchError(humanizeError(raw).summary);
+    },
+  });
   const [modelDownload, setModelDownload] = useState<
     null | { model: string; mb: number; error?: string }
   >(null);
@@ -244,6 +284,47 @@ export function TaskDetailView({
 
   const completed = task.stages.filter((stage) => stage.status === "completed").length;
   const runningIndex = task.stages.findIndex((stage) => stage.status === "running");
+
+  // Domain and switch applicability from the stage makeup, like the core:
+  // translate is audio-only, diarize needs its stage, dub renders for any
+  // media task (turning it on appends the group when missing).
+  const stageTypes = new Set(task.stages.map((stage) => stage.type));
+  const domain = COMIC_STAGES.some((type) => stageTypes.has(type))
+    ? "comic"
+    : AUDIO_DOMAIN_STAGES.some((type) => stageTypes.has(type))
+      ? "audio"
+      : DOCUMENT_STAGES.some((type) => stageTypes.has(type))
+        ? "document"
+        : "video";
+  const switchNames: SwitchName[] = [];
+  if (domain === "audio" || domain === "video") {
+    if (
+      domain === "audio" &&
+      SWITCH_STAGE_TYPES.translate.some((type) => stageTypes.has(type))
+    ) {
+      switchNames.push("translate");
+    }
+    if (stageTypes.has("diarize")) switchNames.push("diarize");
+    switchNames.push("dub");
+  }
+  const switchValue = (name: SwitchName): boolean => {
+    const explicit = task.switches?.[name];
+    if (explicit !== null && explicit !== undefined) return explicit;
+    const governed = task.stages.filter((stage) =>
+      SWITCH_STAGE_TYPES[name].includes(stage.type),
+    );
+    if (governed.length === 0) return false;
+    return governed.some((stage) => stage.status !== "skipped");
+  };
+  const switchesLocked = task.status === "running";
+
+  // Skipped stages stay out of the list and the progress math until the
+  // user expands them; a switch flipped off must not read as lost progress.
+  const skippedCount = task.stages.filter((stage) => stage.status === "skipped").length;
+  const visibleStages = task.stages
+    .map((stage, index) => ({ stage, index }))
+    .filter(({ stage }) => showSkipped || stage.status !== "skipped");
+  const stageTotal = task.stages.length - skippedCount;
 
   // Persisted log first, then live WS events; dedupe the overlap window
   // between the initial fetch and the socket subscription.
@@ -821,12 +902,62 @@ export function TaskDetailView({
         <div className={styles.sectionHead}>
           <h2 className={styles.sectionTitle}>{t("task.stages")}</h2>
           <span className={styles.stageCount}>
-            {completed} / {task.stages.length}
+            {completed} / {stageTotal}
           </span>
         </div>
-        <ProgressBar value={completed} max={task.stages.length} />
-        <ol className={styles.stages}>
-          {task.stages.map((stage, index) => (
+        {(switchNames.length > 0 || skippedCount > 0) && (
+          <div className={styles.switchRow}>
+            {switchNames.length > 0 && (
+              <div
+                role="group"
+                aria-label={t("task.switches.label")}
+                className={styles.switchGroup}
+              >
+                {switchNames.map((name) => {
+                  const on = switchValue(name);
+                  return (
+                    <button
+                      key={name}
+                      type="button"
+                      className={styles.switchChip}
+                      data-on={on || undefined}
+                      aria-pressed={on}
+                      disabled={switchesLocked || setSwitch.isPending}
+                      onClick={() => setSwitch.mutate({ name, value: !on })}
+                    >
+                      <span className={styles.switchDot} aria-hidden="true" />
+                      {t(SWITCH_LABELS[name])}
+                      <span className={styles.switchState}>
+                        {on ? t("task.switches.on") : t("task.switches.off")}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+            {skippedCount > 0 && (
+              <button
+                type="button"
+                className={styles.skippedToggle}
+                aria-expanded={showSkipped}
+                onClick={() => setShowSkipped((open) => !open)}
+              >
+                {t("task.switches.skipped.prefix")}
+                {skippedCount}
+                {t("task.switches.skipped.suffix")}
+                <span
+                  className={`${styles.metaChevron} ${showSkipped ? styles.metaChevronOpen : ""}`}
+                >
+                  <Icon name="chevron-down" size={13} />
+                </span>
+              </button>
+            )}
+          </div>
+        )}
+        {switchError && <p className={styles.switchErrorText}>{switchError}</p>}
+        <ProgressBar value={completed} max={Math.max(stageTotal, 1)} />
+        <ol className={styles.stages} aria-label={t("task.stages")}>
+          {visibleStages.map(({ stage, index }) => (
             <li key={`${stage.type}-${index}`} className={styles.stage} data-status={stage.status}>
               <span className={styles.stageDot} />
               <div className={styles.stageBody}>

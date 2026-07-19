@@ -55,6 +55,11 @@ const PATTERNS: { pattern: RegExp; summary: MessageKey; hint: MessageKey }[] = [
     summary: "error.docChunks.summary",
     hint: "error.docChunks.hint",
   },
+  {
+    pattern: /dub requires a timestamped transcript/i,
+    summary: "error.dubTimestamps.summary",
+    hint: "error.dubTimestamps.hint",
+  },
 ];
 
 export interface HumanError {
