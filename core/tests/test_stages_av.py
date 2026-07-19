@@ -85,6 +85,217 @@ def test_ingest_rejects_unknown_format(tmp_path: Path) -> None:
         registry.create("ingest_subtitle").run(ctx)
 
 
+def test_ingest_transcript_from_srt_file_keeps_timestamps(tmp_path: Path) -> None:
+    src = tmp_path / "transcript.srt"
+    src.write_text(
+        "1\n00:00:01,000 --> 00:00:02,000\nhello\n\n"
+        "2\n00:00:03,000 --> 00:00:04,500\nthere\n",
+        encoding="utf-8",
+    )
+    ctx, progress = make_ctx(
+        tmp_path,
+        tmp_path / "movie.mp4",
+        params={"transcript": {"kind": "file", "path": str(src)}},
+    )
+
+    result = registry.create("ingest_transcript").run(ctx)
+
+    assert result.artifacts == ["01-segments.json"]
+    data = ctx.artifacts.read_latest_json("segments.json")
+    assert data["timestamps"] is True
+    assert data["segments"] == [
+        {"id": 1, "start": 1.0, "end": 2.0, "text": "hello"},
+        {"id": 2, "start": 3.0, "end": 4.5, "text": "there"},
+    ]
+    assert progress == [(1, 1)]
+
+
+def test_ingest_transcript_from_txt_file_has_no_timestamps(tmp_path: Path) -> None:
+    src = tmp_path / "transcript.txt"
+    src.write_text("first line\nsecond line\n", encoding="utf-8")
+    ctx, _ = make_ctx(
+        tmp_path,
+        src,
+        params={"transcript": {"kind": "file", "path": str(src)}},
+    )
+
+    registry.create("ingest_transcript").run(ctx)
+
+    data = ctx.artifacts.read_latest_json("segments.json")
+    assert data["timestamps"] is False
+    assert data["segments"] == [
+        {"id": 1, "start": None, "end": None, "text": "first line"},
+        {"id": 2, "start": None, "end": None, "text": "second line"},
+    ]
+
+
+def test_ingest_transcript_from_task_artifact(tmp_path: Path) -> None:
+    artifact = (
+        tmp_path / "projects" / "default" / "tasks" / "t-src" / "artifacts"
+        / "06-subtitles.srt"
+    )
+    artifact.parent.mkdir(parents=True, exist_ok=True)
+    artifact.write_text(
+        "1\n00:00:00,500 --> 00:00:01,500\nfrom task\n", encoding="utf-8"
+    )
+    ctx, _ = make_ctx(
+        tmp_path,
+        tmp_path / "movie.mp4",
+        params={
+            "transcript": {
+                "kind": "task",
+                "project": "default",
+                "task_id": "t-src",
+                "file": "06-subtitles.srt",
+            }
+        },
+    )
+
+    registry.create("ingest_transcript").run(ctx)
+
+    data = ctx.artifacts.read_latest_json("segments.json")
+    assert data["timestamps"] is True
+    assert data["segments"] == [
+        {"id": 1, "start": 0.5, "end": 1.5, "text": "from task"}
+    ]
+
+
+def test_ingest_transcript_missing_file_names_the_source(tmp_path: Path) -> None:
+    missing = tmp_path / "gone.srt"
+    ctx, _ = make_ctx(
+        tmp_path,
+        tmp_path / "movie.mp4",
+        params={"transcript": {"kind": "file", "path": str(missing)}},
+    )
+
+    with pytest.raises(base.StageError) as error:
+        registry.create("ingest_transcript").run(ctx)
+
+    message = str(error.value)
+    assert "gone.srt" in message
+    assert "file" in message
+
+
+def test_ingest_transcript_missing_task_artifact_names_the_source(
+    tmp_path: Path,
+) -> None:
+    ctx, _ = make_ctx(
+        tmp_path,
+        tmp_path / "movie.mp4",
+        params={
+            "transcript": {
+                "kind": "task",
+                "project": "default",
+                "task_id": "t-src",
+                "file": "06-subtitles.srt",
+            }
+        },
+    )
+
+    with pytest.raises(base.StageError) as error:
+        registry.create("ingest_transcript").run(ctx)
+
+    message = str(error.value)
+    assert "task artifact" in message
+    assert "t-src" in message
+
+
+def test_ingest_transcript_rejects_unsupported_format(tmp_path: Path) -> None:
+    src = tmp_path / "transcript.docx"
+    src.write_text("x", encoding="utf-8")
+    ctx, _ = make_ctx(
+        tmp_path,
+        tmp_path / "movie.mp4",
+        params={"transcript": {"kind": "file", "path": str(src)}},
+    )
+
+    with pytest.raises(base.StageError) as error:
+        registry.create("ingest_transcript").run(ctx)
+
+    assert "transcript.docx" in str(error.value)
+
+
+def test_ingest_transcript_rejects_empty_transcript(tmp_path: Path) -> None:
+    src = tmp_path / "transcript.txt"
+    src.write_text("\n  \n", encoding="utf-8")
+    ctx, _ = make_ctx(
+        tmp_path,
+        tmp_path / "movie.mp4",
+        params={"transcript": {"kind": "file", "path": str(src)}},
+    )
+
+    with pytest.raises(base.StageError) as error:
+        registry.create("ingest_transcript").run(ctx)
+
+    assert "no transcript lines" in str(error.value)
+
+
+def test_ingest_transcript_requires_the_transcript_param(tmp_path: Path) -> None:
+    ctx, _ = make_ctx(tmp_path, tmp_path / "movie.mp4")
+
+    with pytest.raises(base.StageError) as error:
+        registry.create("ingest_transcript").run(ctx)
+
+    assert "params.transcript" in str(error.value)
+
+
+def test_ingest_transcript_rejects_unknown_source_kind(tmp_path: Path) -> None:
+    ctx, _ = make_ctx(
+        tmp_path,
+        tmp_path / "movie.mp4",
+        params={"transcript": {"kind": "url", "path": "http://example.com/a.srt"}},
+    )
+
+    with pytest.raises(base.StageError) as error:
+        registry.create("ingest_transcript").run(ctx)
+
+    assert "transcript.kind" in str(error.value)
+
+
+def test_ingest_transcript_file_source_requires_a_path(tmp_path: Path) -> None:
+    ctx, _ = make_ctx(
+        tmp_path, tmp_path / "movie.mp4", params={"transcript": {"kind": "file"}}
+    )
+
+    with pytest.raises(base.StageError) as error:
+        registry.create("ingest_transcript").run(ctx)
+
+    assert "transcript.path" in str(error.value)
+
+
+def test_ingest_transcript_task_source_requires_all_fields(tmp_path: Path) -> None:
+    ctx, _ = make_ctx(
+        tmp_path,
+        tmp_path / "movie.mp4",
+        params={"transcript": {"kind": "task", "project": "default"}},
+    )
+
+    with pytest.raises(base.StageError) as error:
+        registry.create("ingest_transcript").run(ctx)
+
+    assert "transcript.task_id" in str(error.value)
+
+
+def test_ingest_transcript_task_source_rejects_nested_file(tmp_path: Path) -> None:
+    ctx, _ = make_ctx(
+        tmp_path,
+        tmp_path / "movie.mp4",
+        params={
+            "transcript": {
+                "kind": "task",
+                "project": "default",
+                "task_id": "t-src",
+                "file": "../../task.json",
+            }
+        },
+    )
+
+    with pytest.raises(base.StageError) as error:
+        registry.create("ingest_transcript").run(ctx)
+
+    assert "transcript.file" in str(error.value)
+
+
 def test_extract_audio_requires_ffmpeg(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr("traduko.stages.av.ffmpeg_available", lambda: False)
     ctx, _ = make_ctx(tmp_path, tmp_path / "in.mp4")

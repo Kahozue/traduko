@@ -74,6 +74,84 @@ class IngestSubtitleStage:
         return StageResult(artifacts=[path.name])
 
 
+def _resolve_transcript(ctx: StageContext) -> tuple[Path, str]:
+    """(path, human label) of the transcript named by params.transcript.
+
+    Two source kinds: a disk file the user picked, or a named artifact of
+    another task. The label goes into every error message so a failure says
+    which kind of source went wrong, not just which path.
+    """
+    source = ctx.params.get("transcript")
+    if not isinstance(source, dict):
+        raise StageError("ingest_transcript stage requires params.transcript")
+    kind = source.get("kind")
+    if kind == "file":
+        raw = source.get("path")
+        if not raw:
+            raise StageError("transcript.path is required for a file transcript")
+        return Path(raw), "transcript file"
+    if kind == "task":
+        for field in ("project", "task_id", "file"):
+            if not source.get(field):
+                raise StageError(
+                    f"transcript.{field} is required for a task transcript"
+                )
+        file = str(source["file"])
+        if Path(file).name != file:
+            raise StageError(f"transcript.file must be a bare artifact name: {file}")
+        path = (
+            ctx.data_root
+            / "projects"
+            / str(source["project"])
+            / "tasks"
+            / str(source["task_id"])
+            / "artifacts"
+            / file
+        )
+        return path, f"task artifact {source['project']}/{source['task_id']}/{file}"
+    raise StageError(f"transcript.kind must be file or task, got: {kind!r}")
+
+
+@registry.register
+class IngestTranscriptStage:
+    """Transcript in, segments out: the head of the compose profiles.
+
+    Unlike ingest_subtitle it reads a source named by params rather than the
+    task input, because a compose task's input is the media being dubbed.
+    The timestamps flag tells align_duration whether it can fit clips to a
+    timeline or has to lay them end to end.
+    """
+
+    type = "ingest_transcript"
+
+    def run(self, ctx: StageContext) -> StageResult:
+        path, label = _resolve_transcript(ctx)
+        if not path.exists():
+            raise StageError(f"{label} not found: {path}")
+        try:
+            cues = parse_subtitle(path)
+        except (SubtitleError, OSError) as error:
+            raise StageError(f"cannot read {label} {path}: {error}") from error
+        if not cues:
+            raise StageError(f"no transcript lines found in {label} {path}")
+        segments = [
+            {"id": c.id, "start": c.start, "end": c.end, "text": c.text} for c in cues
+        ]
+        artifact = ctx.artifacts.write_json(
+            ctx.stage_index + 1,
+            "segments.json",
+            {
+                "language": ctx.params.get("source_language", "unknown"),
+                "timestamps": all(
+                    c.start is not None and c.end is not None for c in cues
+                ),
+                "segments": segments,
+            },
+        )
+        ctx.emit_progress(1, 1)
+        return StageResult(artifacts=[artifact.name])
+
+
 @registry.register
 class ExtractAudioStage:
     type = "extract_audio"

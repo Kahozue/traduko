@@ -19,6 +19,7 @@ STATUS_LABELS = {
 
 STAGE_LABELS = {
     "ingest_subtitle": "讀入字幕",
+    "ingest_transcript": "讀入逐字稿",
     "extract_audio": "抽取音軌",
     "asr": "語音辨識",
     "segment": "斷句",
