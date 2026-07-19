@@ -222,3 +222,48 @@ def test_on_event_tool_error_reports_not_ok(tmp_path: Path) -> None:
     runner.run("Test goal.")
     finished = [data for kind, data in events if kind == "tool_finished"]
     assert finished and finished[0]["ok"] is False
+
+
+def test_narrative_strips_dangling_code_fence(tmp_path: Path) -> None:
+    # Models often wrap the protocol JSON in a markdown fence; the fence
+    # opener must not survive on the narrative's tail (the UI would render
+    # an empty code block under the message).
+    runner, log, events = make_event_runner(
+        tmp_path,
+        [
+            '先掃描任務。\n\n```json\n{"tool": "note", "arguments": {"text": "x"}}\n```',
+            '完成。\n\n```\n{"done": true, "summary": "ok"}',
+        ],
+    )
+    result = runner.run("Test goal.")
+    assert result.converged is True
+    texts = [data["text"] for kind, data in events if kind == "text"]
+    assert texts == ["先掃描任務。"]
+    # The done turn's narrative feeds the summary fallback path untouched
+    # (summary given here), but nothing fenced leaks into events.
+    assert all("```" not in text for text in texts)
+
+
+def test_max_rounds_summary_present_wins_over_narrative(tmp_path: Path) -> None:
+    runner, _, _ = make_runner(
+        tmp_path,
+        ['檢查完成，結論如下。\n{"tool": "end_round", "arguments": {"summary": "一切正常"}}'],
+        limits=AgentLimits(max_rounds=1, max_turns=10),
+    )
+    result = runner.run("Goal")
+    assert result.converged is False and result.reason == "max_rounds"
+    # Summary is the model's chosen closing line; it wins.
+    assert result.summary == "一切正常"
+
+
+def test_max_rounds_empty_summary_falls_back_to_narrative(tmp_path: Path) -> None:
+    # No summary on the end_round: the narrative before it is the answer, and
+    # it must not be lost to a canned failure.
+    runner, _, _ = make_runner(
+        tmp_path,
+        ['檢查完成，一切正常。\n{"tool": "end_round", "arguments": {"summary": ""}}'],
+        limits=AgentLimits(max_rounds=1, max_turns=10),
+    )
+    result = runner.run("Goal")
+    assert result.converged is False and result.reason == "max_rounds"
+    assert result.summary == "檢查完成，一切正常。"

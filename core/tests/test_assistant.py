@@ -537,6 +537,67 @@ def test_non_converged_reply_states_reason_and_history_records_it(
     assert messages[1]["proposal_ids"] == []
 
 
+def test_default_provider_setting_wins_over_sorted_order(tmp_path: Path) -> None:
+    # The pre-fix bug: with providers {"Claude", "Gemini"} and
+    # default_provider="Gemini", sorted order picked "Claude" — the assistant
+    # ignored the provider chosen in settings.
+    config = CoreConfig(
+        default_provider="zeta",
+        llm_providers={
+            "alpha": {"type": "scripted", "responses": ["should not be used"]},
+            "zeta": {
+                "type": "scripted",
+                "model": "zeta-model",
+                "responses": ['{"done": true, "summary": "ok"}'],
+            },
+        },
+    )
+    save_config(tmp_path, config)
+    ws = Workspace.open(tmp_path)
+    result = run_assistant_message(ws, "hi")
+    assert result["converged"] is True
+    assert result["reply"] == "ok"
+    messages = read_active_messages(ws)
+    assert messages[-1]["model"] == "zeta-model"
+
+
+def test_max_rounds_summary_becomes_reply_not_canned_failure(tmp_path: Path) -> None:
+    # With max_rounds=1, a model that closes its round with a real summary
+    # has answered; the canned failure text must not replace it.
+    ws = scripted_ws(
+        tmp_path,
+        ['{"tool": "end_round", "arguments": {"summary": "掃描完成，一切正常。"}}'],
+    )
+    result = run_assistant_message(ws, "check the system")
+    assert result["converged"] is False
+    assert result["reason"] == "max_rounds"
+    assert result["reply"] == "掃描完成，一切正常。"
+    messages = read_active_messages(ws)
+    assert messages[-1]["text"] == "掃描完成，一切正常。"
+
+
+def test_system_prompt_follows_ui_language(tmp_path: Path) -> None:
+    for lang, marker in [
+        ("zh-TW", "一律使用繁體中文"),
+        ("en", "always reply in English"),
+        ("ja", "必ず日本語で"),
+    ]:
+        ws = scripted_ws(
+            tmp_path / lang, ['{"done": true, "summary": "ok"}']
+        )
+        run_assistant_message(ws, "hello", lang=lang)
+        goal = start_record_goal(run_files(ws)[0])
+        assert marker in goal
+        assert "emoji" in goal or "絵文字" in goal
+
+
+def test_unknown_lang_falls_back_to_traditional_chinese(tmp_path: Path) -> None:
+    ws = scripted_ws(tmp_path, ['{"done": true, "summary": "ok"}'])
+    run_assistant_message(ws, "hello", lang="fr")
+    goal = start_record_goal(run_files(ws)[0])
+    assert "一律使用繁體中文" in goal
+
+
 def test_skills_prompt_block_is_injected_into_goal(tmp_path: Path) -> None:
     ws = scripted_ws(tmp_path, ['{"done": true, "summary": "ok"}'])
     skill_dir = tmp_path / "skills" / "ops-helper"

@@ -4,8 +4,8 @@ import type { ReactNode } from "react";
 // React elements (never dangerouslySetInnerHTML), so untrusted text can never
 // inject markup — the worst a crafted reply can do is render plain text. Scope
 // is deliberately small: fenced code blocks, headings, unordered/ordered
-// lists, blockquotes, and inline bold/italic/code/links. Anything unrecognized
-// falls through as a paragraph.
+// lists, blockquotes, pipe tables, horizontal rules, and inline
+// bold/italic/code/links. Anything unrecognized falls through as a paragraph.
 
 type Inline = { text: string; bold?: boolean; italic?: boolean; code?: boolean; href?: string };
 
@@ -62,6 +62,20 @@ function renderInline(text: string, keyPrefix: string): ReactNode[] {
   });
 }
 
+// A table row is a pipe-delimited line; the header must be followed by a
+// dash separator line to count as a table (GitHub style). Escaped pipes are
+// out of scope for assistant replies.
+const TABLE_ROW_RE = /^\s*\|.*\|\s*$/;
+const TABLE_SEP_RE = /^\s*\|?[\s:|-]+\|?\s*$/;
+const HR_RE = /^\s*(?:-{3,}|\*{3,}|_{3,})\s*$/;
+
+function splitTableRow(line: string): string[] {
+  let inner = line.trim();
+  if (inner.startsWith("|")) inner = inner.slice(1);
+  if (inner.endsWith("|")) inner = inner.slice(0, -1);
+  return inner.split("|").map((cell) => cell.trim());
+}
+
 export function renderMarkdown(source: string): ReactNode[] {
   const lines = source.replace(/\r\n/g, "\n").split("\n");
   const blocks: ReactNode[] = [];
@@ -116,11 +130,58 @@ export function renderMarkdown(source: string): ReactNode[] {
         code.push(lines[i]);
         i += 1;
       }
+      // A fence with no content (typically the dangling opener left when a
+      // reply was cut at a tool call) renders as an empty gray box — skip it.
+      if (code.some((codeLine) => codeLine.trim() !== "")) {
+        blocks.push(
+          <pre key={`pre-${blocks.length}`}>
+            <code>{code.join("\n")}</code>
+          </pre>,
+        );
+      }
+      continue;
+    }
+    if (
+      TABLE_ROW_RE.test(line) &&
+      i + 1 < lines.length &&
+      TABLE_SEP_RE.test(lines[i + 1]) &&
+      lines[i + 1].includes("-")
+    ) {
+      flushAll();
+      const header = splitTableRow(line);
+      const rows: string[][] = [];
+      i += 2;
+      while (i < lines.length && TABLE_ROW_RE.test(lines[i])) {
+        rows.push(splitTableRow(lines[i]));
+        i += 1;
+      }
+      i -= 1;
+      const tableKey = `t-${blocks.length}`;
       blocks.push(
-        <pre key={`pre-${blocks.length}`}>
-          <code>{code.join("\n")}</code>
-        </pre>,
+        <table key={tableKey}>
+          <thead>
+            <tr>
+              {header.map((cell, col) => (
+                <th key={col}>{renderInline(cell, `${tableKey}-h-${col}`)}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((cells, rowIndex) => (
+              <tr key={rowIndex}>
+                {cells.map((cell, col) => (
+                  <td key={col}>{renderInline(cell, `${tableKey}-${rowIndex}-${col}`)}</td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>,
       );
+      continue;
+    }
+    if (HR_RE.test(line)) {
+      flushAll();
+      blocks.push(<hr key={`hr-${blocks.length}`} />);
       continue;
     }
     const heading = /^(#{1,6})\s+(.*)$/.exec(line);

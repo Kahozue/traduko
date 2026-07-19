@@ -4,6 +4,7 @@
    never an overlay. */
 
 .panel {
+  position: relative;
   display: flex;
   flex-direction: column;
   width: 380px;
@@ -84,14 +85,18 @@
   cursor: not-allowed;
 }
 
-/* History drawer — a session list that overlays the message flow. */
+/* History drawer — a full-height session list over the message flow, so a
+   long history gets the whole panel instead of squeezing the conversation. */
 .historyDrawer {
+  position: absolute;
+  top: 52px;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 3;
   display: flex;
   flex-direction: column;
-  flex-shrink: 0;
-  max-height: 55%;
-  border-bottom: 1px solid var(--border);
-  background: var(--bg-subtle);
+  background: var(--bg-surface);
 }
 
 .historyHead {
@@ -122,6 +127,39 @@
 .historyClose:hover {
   background: var(--bg-inset);
   color: var(--text-primary);
+}
+
+/* Title search across sessions. */
+.historySearch {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  height: 32px;
+  margin: 0 16px 8px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-s);
+  color: var(--text-secondary);
+  transition: border-color var(--transition);
+}
+
+.historySearch:focus-within {
+  border-color: var(--accent);
+}
+
+.historySearchInput {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--fs-note);
+}
+
+.historySearchInput:focus {
+  outline: none;
 }
 
 .historyBulk {
@@ -169,7 +207,7 @@
 .historyRow {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   padding: 4px 8px;
   border-radius: var(--radius-s);
 }
@@ -193,9 +231,9 @@
   display: flex;
   flex: 1;
   min-width: 0;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 10px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
   padding: 6px 0;
   border: none;
   background: transparent;
@@ -204,8 +242,6 @@
 }
 
 .historyRowTitle {
-  flex: 1;
-  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -214,7 +250,6 @@
 }
 
 .historyRowMeta {
-  flex-shrink: 0;
   font-size: var(--fs-meta);
   color: var(--text-secondary);
   font-variant-numeric: tabular-nums;
@@ -323,6 +358,31 @@
   text-decoration: underline;
 }
 
+.markdown table {
+  margin: 0 0 8px;
+  border-collapse: collapse;
+  font-size: var(--fs-note);
+}
+
+.markdown th,
+.markdown td {
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  text-align: left;
+  vertical-align: top;
+}
+
+.markdown th {
+  background: var(--bg-inset);
+  font-weight: 600;
+}
+
+.markdown hr {
+  margin: 10px 0;
+  border: none;
+  border-top: 1px solid var(--border);
+}
+
 /* Attachment chips (compose row and inside a sent bubble). */
 .attachRow {
   display: flex;
@@ -383,31 +443,6 @@
   color: var(--text-secondary);
   font-size: var(--fs-meta);
   font-family: var(--font-mono);
-}
-
-.attachButton {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  width: 36px;
-  height: 36px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-s);
-  background: var(--bg-surface);
-  color: var(--text-secondary);
-  cursor: pointer;
-  transition: background var(--transition), color var(--transition);
-}
-
-.attachButton:hover:not(:disabled) {
-  background: var(--bg-inset);
-  color: var(--text-primary);
-}
-
-.attachButton:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
 }
 
 /* Pause button inside the busy row, and the edit banner above the composer. */
@@ -497,7 +532,6 @@
 }
 
 .bubbleAssistant {
-  border: 1px solid var(--border);
   background: var(--bg-subtle);
   color: var(--text-primary);
 }
@@ -697,34 +731,75 @@
 }
 
 .footer {
-  display: flex;
   flex-shrink: 0;
-  align-items: flex-end;
-  gap: 8px;
-  padding: 12px 16px;
+  padding: 10px 16px 14px;
   border-top: 1px solid var(--border);
 }
 
-.textarea {
-  flex: 1;
-  min-height: 36px;
-  max-height: 140px;
-  padding: 8px 11px;
+/* One contained composer surface: the field grows with its content, the
+   action row (attach, expand, send) sits underneath inside the same box. */
+.composer {
+  display: flex;
+  flex-direction: column;
   border: 1px solid var(--border);
-  border-radius: var(--radius-s);
+  border-radius: var(--radius-m);
   background: var(--bg-surface);
+  transition: border-color var(--transition), box-shadow var(--transition);
+}
+
+.composer:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.composerActions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 6px 6px 8px;
+}
+
+.composerButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: var(--radius-s);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background var(--transition), color var(--transition);
+}
+
+.composerButton:hover:not(:disabled) {
+  background: var(--bg-inset);
+  color: var(--text-primary);
+}
+
+.composerButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.textarea {
+  min-height: 40px;
+  max-height: 132px;
+  padding: 10px 12px 2px;
+  border: none;
+  border-radius: var(--radius-m);
+  background: transparent;
   color: var(--text-primary);
   font: inherit;
   font-size: var(--fs-body);
   line-height: 1.5;
   resize: none;
-  transition: border-color var(--transition), box-shadow var(--transition);
+  overflow-y: auto;
 }
 
 .textarea:focus {
   outline: none;
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
 .textarea:disabled {
@@ -734,13 +809,14 @@
 
 .sendButton {
   flex-shrink: 0;
-  height: 36px;
-  padding: 0 16px;
+  margin-left: auto;
+  height: 30px;
+  padding: 0 14px;
   border: none;
   border-radius: var(--radius-s);
   background: var(--accent);
   color: var(--text-on-dark);
-  font-size: var(--fs-body);
+  font-size: var(--fs-note);
   font-weight: 500;
   cursor: pointer;
   transition: background var(--transition);
@@ -755,15 +831,72 @@
   opacity: 0.5;
 }
 
+/* Expanded composer: a full-panel editing surface for long messages. */
+.expandOverlay {
+  position: absolute;
+  top: 52px;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-surface);
+}
+
+.expandHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+  padding: 10px 12px 8px 16px;
+}
+
+.expandTitle {
+  font-size: var(--fs-note);
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.expandTextarea {
+  flex: 1;
+  min-height: 0;
+  margin: 0 16px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-m);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--fs-body);
+  line-height: 1.6;
+  resize: none;
+}
+
+.expandTextarea:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.expandFoot {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+  padding: 10px 16px 14px;
+}
+
+.expandHint {
+  color: var(--text-secondary);
+  font-size: var(--fs-meta);
+}
+
 /* Live turn: the in-flight assistant activity between send and reply. */
 .liveTurn {
   display: flex;
   flex-direction: column;
   gap: 10px;
-}
-
-.streamText {
-  white-space: pre-wrap;
 }
 
 .streamCursor {

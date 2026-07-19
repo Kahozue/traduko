@@ -45,3 +45,31 @@ test("plain text passes through as a paragraph", () => {
   const { container } = renderMd("just a line");
   expect(container.querySelector("p")?.textContent).toBe("just a line");
 });
+
+test("skips an empty fenced block left by a cut-off reply", () => {
+  const { container } = renderMd("先掃描任務。\n\n```json");
+  expect(container.querySelector("pre")).toBeNull();
+  expect(container.querySelector("p")?.textContent).toBe("先掃描任務。");
+});
+
+test("renders a pipe table with header and body", () => {
+  const { container } = renderMd(
+    "| 任務 | 狀態 |\n| --- | --- |\n| 小說 A | **完成** |\n| 影片 B | 執行中 |",
+  );
+  const table = container.querySelector("table");
+  expect(table).not.toBeNull();
+  expect(table?.querySelectorAll("thead th")).toHaveLength(2);
+  expect(table?.querySelectorAll("tbody tr")).toHaveLength(2);
+  expect(table?.querySelector("tbody strong")?.textContent).toBe("完成");
+});
+
+test("a pipe line without a separator stays a paragraph", () => {
+  const { container } = renderMd("| just | text |");
+  expect(container.querySelector("table")).toBeNull();
+  expect(container.querySelector("p")?.textContent).toBe("| just | text |");
+});
+
+test("renders a horizontal rule", () => {
+  const { container } = renderMd("above\n\n---\n\nbelow");
+  expect(container.querySelector("hr")).not.toBeNull();
+});

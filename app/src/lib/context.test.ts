@@ -28,6 +28,20 @@ describe("assistantContextInfo", () => {
     expect(info?.ratio).toBeGreaterThan(0);
   });
 
+  it("prefers default_provider over sorted order", () => {
+    const info = assistantContextInfo(
+      {
+        default_provider: "zeta",
+        llm_providers: {
+          alpha: { type: "openai_compat", model: "a", context_window: 4000 },
+          zeta: { type: "openai_compat", model: "z", context_window: 200000 },
+        },
+      } as never,
+      [{ text: "hi" }],
+    );
+    expect(info?.window).toBe(200000);
+  });
+
   it("returns null without a context window or providers", () => {
     expect(assistantContextInfo(undefined, [])).toBeNull();
     expect(

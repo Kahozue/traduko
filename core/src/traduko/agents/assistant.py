@@ -50,9 +50,18 @@ TASK_DETAIL_EVENTS_LIMIT = 20
 # the on-disk history file itself is never trimmed.
 HISTORY_TRANSCRIPT_LIMIT = 40
 ASSISTANT_PROJECT = "assistant"
-ASSISTANT_LIMITS = AgentLimits(max_rounds=1, max_turns=12)
+# max_turns bounds LLM calls per message (every tool call costs one turn); 12
+# proved too tight for real diagnostics passes (scan tasks + budget + config
+# already burns five), so a turn-limited reply cut real answers short.
+ASSISTANT_LIMITS = AgentLimits(max_rounds=1, max_turns=24)
 
-SYSTEM_PROMPT = """\
+# System prompts keyed by the UI language the message was sent from. The
+# reply language is pinned to the interface language (not auto-detected from
+# the operator's text: small models routinely answer Traditional-Chinese
+# operators in Simplified Chinese). The mechanical tool protocol appended by
+# the runner stays English on purpose — it is a wire format, like code.
+SYSTEM_PROMPTS: dict[str, str] = {
+    "en": """\
 You are Traduko's built-in operations assistant. You help the operator \
 understand and adjust their local Traduko installation: task status, \
 budget usage, configuration, logs, and preflight diagnostics.
@@ -75,8 +84,61 @@ it. When the operator attaches a file, its path appears in their message \
 as "[attached files: ...]"; use that path as create_task's input_path. \
 Attached images from the current message are also sent to you as images, \
 so if you can see them, read them directly (e.g. a settings screenshot) \
-instead of asking the operator to describe them. \
-Reply in the same language the operator wrote in."""
+instead of asking the operator to describe them.
+
+Language rule (highest priority): always reply in English, even if the \
+operator writes in another language. Never use emoji.""",
+    "zh-TW": """\
+你是 Traduko 的內建操作助理，協助操作者了解與調整本機的 Traduko 安裝：\
+任務狀態、預算用量、設定、日誌與 preflight 診斷。
+
+鐵則：你永遠不能自行修改設定。唯一的修改途徑是呼叫 propose_config_change \
+工具，它會建立一筆待審提案，操作者必須在應用程式面板中審核核准後才會生效。\
+絕不可宣稱或暗示你已經套用、儲存或修改了任何設定；最多只能說你已提交提案，\
+正在等待核准。
+
+回答前先用唯讀工具（list_tasks、task_detail、budget_status、read_config、\
+read_logs、run_preflight）蒐集事實，不要猜測系統狀態。你也可以替操作者準備\
+工作：list_profiles 列出可用的管線 profile，create_task 依 profile 建立新\
+任務。你建立的任務會停在 PENDING 狀態，由操作者確認後執行——你永遠不能自行\
+啟動任務，所以建立前先確認輸入檔案、profile 與目標設定。操作者附加檔案時，\
+路徑會以「[attached files: ...]」出現在訊息中；把該路徑當作 create_task 的 \
+input_path。目前訊息附加的圖片也會直接傳給你，看得到就直接讀取內容（例如\
+設定截圖），不要再要求操作者描述。
+
+語言規則（最高優先）：一律使用繁體中文（台灣用語）回覆，即使操作者使用其他\
+語言。禁止使用任何 emoji。""",
+    "ja": """\
+あなたは Traduko の内蔵オペレーションアシスタントです。オペレーターが\
+ローカルの Traduko 環境を把握・調整できるよう支援します：タスク状態、\
+予算使用量、設定、ログ、preflight 診断。
+
+鉄則：設定を自分で変更することは決してできません。変更の唯一の手段は \
+propose_config_change ツールの呼び出しであり、これは承認待ちの提案を\
+作成するだけです。オペレーターがアプリのパネルで確認・承認して初めて\
+反映されます。設定を適用・保存・変更したと述べたり示唆したりしては\
+いけません。言えるのは「提案を提出し、承認待ちである」ことまでです。
+
+回答の前に、読み取り専用ツール（list_tasks、task_detail、budget_status、\
+read_config、read_logs、run_preflight）で事実を収集し、システム状態を\
+推測で語らないでください。オペレーターの依頼があれば作業の準備もできます：\
+list_profiles で利用可能なパイプライン profile を一覧し、create_task で\
+新しいタスクを作成します。作成したタスクは PENDING のまま残り、実行は\
+オペレーターが確認して行います。あなたがタスクを開始することは決して\
+ありません。作成前に入力ファイル・profile・目標設定を確認してください。\
+オペレーターがファイルを添付すると、そのパスはメッセージ内に \
+「[attached files: ...]」として現れます。そのパスを create_task の \
+input_path に使ってください。現在のメッセージに添付された画像はあなたにも\
+送られるので、見える場合は（設定のスクリーンショットなど）内容を直接\
+読み取り、説明を求め直さないでください。
+
+言語ルール（最優先）：オペレーターが他の言語で書いた場合でも、必ず日本語で\
+返答してください。絵文字は一切使用しないでください。""",
+}
+
+DEFAULT_LANG = "zh-TW"
+# Kept as an alias for callers/tests that referenced the single-prompt name.
+SYSTEM_PROMPT = SYSTEM_PROMPTS["en"]
 
 _SECRET_MARKERS = ("key", "token", "password", "secret", "webhook")
 
@@ -486,10 +548,14 @@ def tool_kind(name: str) -> str:
 def _resolve_default_llm(config: CoreConfig):
     """Pick the assistant's LLM provider from `config.llm_providers`.
 
-    Rule (no explicit default field exists in config): the "default" key if
-    present, else the sole entry if there is exactly one, else the first
-    key in sorted order. Mirrors `stages/common.py:resolve_llm`'s handling
-    of an entry dict (pop "model" before handing the rest to `create_llm`).
+    Rule: the provider the user chose in settings (`config.default_provider`)
+    wins; then the "default" key if present, then the sole entry if there is
+    exactly one, then the first key in sorted order. The fallback chain keeps
+    old configs working, but an explicit default_provider must never lose to
+    alphabetical order (the pre-fix bug: "Claude" sorted ahead of the chosen
+    provider, so the assistant always ran claude-haiku-4-5). Mirrors
+    `stages/common.py:resolve_llm`'s handling of an entry dict (pop "model"
+    before handing the rest to `create_llm`).
     """
     providers = config.llm_providers
     if not providers:
@@ -497,7 +563,10 @@ def _resolve_default_llm(config: CoreConfig):
             "no llm_providers configured; add one under config/core.yaml "
             "before using the assistant"
         )
-    if "default" in providers:
+    default = config.default_provider
+    if default and default in providers:
+        key = default
+    elif "default" in providers:
         key = "default"
     elif len(providers) == 1:
         key = next(iter(providers))
@@ -537,7 +606,13 @@ def clear_history(ws: Workspace) -> None:
     _save_history(ws, [])
 
 
-def _build_goal(history: list[dict], text: str, *, images: list[str] | None = None) -> str:
+def _build_goal(
+    history: list[dict],
+    text: str,
+    *,
+    images: list[str] | None = None,
+    lang: str = DEFAULT_LANG,
+) -> str:
     block = skillhub.active_prompt_block()
     transcript = ["Conversation so far:"]
     for message in history[-HISTORY_TRANSCRIPT_LIMIT:]:
@@ -551,7 +626,7 @@ def _build_goal(history: list[dict], text: str, *, images: list[str] | None = No
     if images:
         user_line += f"  [attached files: {', '.join(images)}]"
     transcript.append(f"USER: {user_line}")
-    parts = [SYSTEM_PROMPT]
+    parts = [SYSTEM_PROMPTS.get(lang, SYSTEM_PROMPTS[DEFAULT_LANG])]
     if block:
         parts.append(block)
     parts.append("\n".join(transcript))
@@ -572,6 +647,7 @@ def run_assistant_message(
     *,
     edit_index: int | None = None,
     images: list[str] | None = None,
+    lang: str = DEFAULT_LANG,
 ) -> dict:
     """Run one assistant turn: load history, run the agent, persist history.
 
@@ -587,7 +663,8 @@ def run_assistant_message(
     transcript, and sent as image content on this turn's opening message
     (vision-capable models see the pixels; text-only endpoints reject the
     call, which surfaces as AssistantLLMError). Images from earlier history
-    messages stay path-only.
+    messages stay path-only. `lang` is the UI language the message was sent
+    from; it picks the system prompt and thereby the reply language.
     """
     provider, model = _resolve_default_llm(ws.config)
     if edit_index is not None:
@@ -597,7 +674,7 @@ def run_assistant_message(
             ws, assistant_store.active_session_id(ws), edit_index
         )
     history = _load_history(ws)
-    goal = _build_goal(history, text, images=images)
+    goal = _build_goal(history, text, images=images, lang=lang)
 
     from . import assistant_store
 
@@ -670,7 +747,16 @@ def run_assistant_message(
         # can classify it; the turn is not persisted to history because no
         # assistant reply exists.
         raise AssistantLLMError(str(error)) from error
-    reply = result.summary if result.converged else _not_converged_reply(result.reason)
+    if result.converged:
+        reply = result.summary
+    elif result.reason == "max_rounds" and result.summary.strip():
+        # The model closed its (only) round with a real summary: that summary
+        # IS the answer it meant to give — assistants run with max_rounds=1,
+        # so end_round and done are morally the same move. Dropping it for a
+        # canned failure threw away finished replies.
+        reply = result.summary
+    else:
+        reply = _not_converged_reply(result.reason)
 
     user_message = {
         "role": "user",

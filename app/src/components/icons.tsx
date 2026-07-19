@@ -19,10 +19,28 @@ export type IconName =
   | "file-text"
   | "book-open"
   | "audio-lines"
-  | "chevron-down";
+  | "chevron-down"
+  | "paperclip"
+  | "expand"
+  | "search";
 
 const GLYPHS: Record<IconName, ReactNode> = {
   "chevron-down": <path d="m6 9 6 6 6-6" />,
+  paperclip: (
+    <path d="m16 6-8.414 8.586a2 2 0 0 0 2.829 2.829l8.414-8.586a4 4 0 1 0-5.657-5.657l-8.379 8.551a6 6 0 1 0 8.485 8.485L21 13" />
+  ),
+  expand: (
+    <>
+      <path d="M15 3h6v6M9 21H3v-6" />
+      <path d="M21 3l-7 7M3 21l7-7" />
+    </>
+  ),
+  search: (
+    <>
+      <circle cx="11" cy="11" r="8" />
+      <path d="m21 21-4.3-4.3" />
+    </>
+  ),
   "audio-lines": (
     <path d="M2 10v3M6 6v11M10 3v18M14 8v7M18 5v13M22 10v3" />
   ),

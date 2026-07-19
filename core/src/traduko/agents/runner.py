@@ -14,6 +14,7 @@ stands); it never crashes the run.
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Callable
 from dataclasses import dataclass
 
@@ -55,6 +56,16 @@ AGENT_TOOLS:
 """
 
 
+# Models routinely wrap their protocol JSON in a markdown fence; cutting the
+# narrative at the first "{" then leaves a dangling opener ("```json") on its
+# tail, which the UI renders as an empty code block. Strip it.
+_DANGLING_FENCE_RE = re.compile(r"```[\w+-]*\s*$")
+
+
+def _clean_narrative(text: str) -> str:
+    return _DANGLING_FENCE_RE.sub("", text).strip()
+
+
 def _split_action(content: str) -> tuple[str, dict | None]:
     """Narrative text before the first JSON action, plus the action.
 
@@ -72,7 +83,7 @@ def _split_action(content: str) -> tuple[str, dict | None]:
         return content.strip(), None
     if action.get("done") is not True and not isinstance(action.get("tool"), str):
         return content.strip(), None
-    return content[:start].strip(), action
+    return _clean_narrative(content[:start]), action
 
 
 def _parse_action(content: str) -> dict | None:
@@ -235,7 +246,14 @@ class AgentRunner:
                     cost_usd=round(round_cost, 6),
                 )
                 if rounds >= self.limits.max_rounds:
-                    return self._finish(False, "max_rounds", summary, rounds, turns)
+                    # Round-capped finish: the narrative ahead of the
+                    # end_round call is the model's closing words. Fold it
+                    # into the summary (same as the done path) so the caller
+                    # persists a real answer, not a canned failure — and
+                    # never duplicated when summary already repeats it.
+                    return self._finish(
+                        False, "max_rounds", summary or narrative, rounds, turns
+                    )
                 if self._should_stop_for_budget(round_cost):
                     return self._finish(
                         False, "budget", "not enough budget for another round",

@@ -1147,6 +1147,9 @@ class AssistantMessageRequest(BaseModel):
     edit_index: int | None = None
     # Absolute paths of image files attached to this message.
     images: list[str] | None = None
+    # UI language the message was sent from ("zh-TW" | "en" | "ja"); picks the
+    # assistant's system prompt and thereby the reply language.
+    lang: str | None = None
 
 
 @router.post("/assistant/message")
@@ -1156,7 +1159,11 @@ def post_assistant_message(request: Request, body: AssistantMessageRequest) -> d
         raise HTTPException(status_code=422, detail="text must not be empty")
     try:
         result = run_assistant_message(
-            ws, body.text, edit_index=body.edit_index, images=body.images
+            ws,
+            body.text,
+            edit_index=body.edit_index,
+            images=body.images,
+            lang=body.lang or "zh-TW",
         )
     except AssistantUnavailable as error:
         # No usable LLM provider: 409 so the panel can guide the operator to

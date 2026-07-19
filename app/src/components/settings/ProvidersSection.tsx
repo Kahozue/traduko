@@ -112,6 +112,7 @@ const MODEL_LIMITS: Record<string, { context: number; output: number }> = {
   "glm-4.7": { context: 200000, output: 131072 },
   "kimi-k2.7-code": { context: 1048576, output: 262144 },
   "kimi-k2.7-code-highspeed": { context: 1048576, output: 262144 },
+  "kimi-k3": { context: 1048576, output: 262144 },
 };
 
 // Which preset a stored row matches, so an edited config re-opens on the

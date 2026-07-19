@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { t, type MessageKey } from "../i18n";
 import { ApiError } from "../lib/api/client";
 import { humanizeError } from "../lib/errors";
+import { localeStore } from "../lib/locale";
 import { renderMarkdown } from "../lib/markdown";
 import { formatDateTime } from "../lib/time";
 import { assistantContextInfo } from "../lib/context";
@@ -143,7 +144,10 @@ export function AssistantPanel({ onClose }: { onClose: () => void }) {
   // so send truncates the session there before rerunning.
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [showHistory, setShowHistory] = useState(false);
+  // Full-panel composer overlay for long messages.
+  const [expanded, setExpanded] = useState(false);
   const listRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   // AbortController for the in-flight request, so "pause" can cancel it.
   const abortRef = useRef<AbortController | null>(null);
 
@@ -151,13 +155,11 @@ export function AssistantPanel({ onClose }: { onClose: () => void }) {
     mutationFn: (vars: { text: string; editIndex?: number; images?: string[] }) => {
       const controller = new AbortController();
       abortRef.current = controller;
-      const opts =
-        vars.editIndex !== undefined || (vars.images && vars.images.length > 0)
-          ? { editIndex: vars.editIndex, images: vars.images }
-          : undefined;
-      const promise = opts
-        ? api.sendAssistantMessage(vars.text, opts)
-        : api.sendAssistantMessage(vars.text);
+      const promise = api.sendAssistantMessage(vars.text, {
+        editIndex: vars.editIndex,
+        images: vars.images,
+        lang: localeStore.getLocale(),
+      });
       // Reject the mutation if the user pauses before the reply lands.
       return new Promise<Awaited<ReturnType<typeof api.sendAssistantMessage>>>(
         (resolve, reject) => {
@@ -167,6 +169,22 @@ export function AssistantPanel({ onClose }: { onClose: () => void }) {
           promise.then(resolve, reject);
         },
       );
+    },
+    // The sent message appears in the flow immediately (and the composer is
+    // already cleared by submit); the server's reply replaces this snapshot.
+    onMutate: (vars) => {
+      const previous =
+        queryClient.getQueryData<AssistantMessageDoc[]>(HISTORY_KEY) ?? [];
+      const base =
+        vars.editIndex !== undefined ? previous.slice(0, vars.editIndex) : previous;
+      const optimistic: AssistantMessageDoc = {
+        role: "user",
+        text: vars.text,
+        ts: new Date().toISOString(),
+        ...(vars.images && vars.images.length > 0 ? { images: vars.images } : {}),
+      };
+      queryClient.setQueryData(HISTORY_KEY, [...base, optimistic]);
+      return { previous };
     },
     onSuccess: (data) => {
       queryClient.setQueryData(HISTORY_KEY, data.history);
@@ -179,9 +197,16 @@ export function AssistantPanel({ onClose }: { onClose: () => void }) {
         void queryClient.invalidateQueries({ queryKey: ["tasks"] });
       }
       void queryClient.invalidateQueries({ queryKey: SESSIONS_KEY });
-      setDraft("");
-      setAttachments([]);
-      setEditingIndex(null);
+    },
+    onError: (_error, vars, context) => {
+      // Roll the optimistic bubble back and hand the text back to the
+      // composer for a retry — unless the user already typed something new.
+      if (context) queryClient.setQueryData(HISTORY_KEY, context.previous);
+      setDraft((current) => (current === "" ? vars.text : current));
+      if (vars.images && vars.images.length > 0) {
+        setAttachments((current) => (current.length === 0 ? vars.images ?? [] : current));
+      }
+      if (vars.editIndex !== undefined) setEditingIndex(vars.editIndex);
     },
     onSettled: () => {
       abortRef.current = null;
@@ -191,8 +216,10 @@ export function AssistantPanel({ onClose }: { onClose: () => void }) {
     },
   });
 
-  const clear = useMutation({
-    mutationFn: () => api.clearAssistant(),
+  const newChat = useMutation({
+    // A fresh session keeps the old conversation in history; the previous
+    // behavior (clearing the active session in place) destroyed it.
+    mutationFn: () => api.createAssistantSession(),
     onSuccess: () => {
       queryClient.setQueryData(HISTORY_KEY, []);
       void queryClient.invalidateQueries({ queryKey: SESSIONS_KEY });
@@ -204,20 +231,44 @@ export function AssistantPanel({ onClose }: { onClose: () => void }) {
     if (node) node.scrollTop = node.scrollHeight;
   }, [messages.length, live.texts.length, live.streaming, live.tool]);
 
+  // Grow the inline composer with its content (up to the CSS max-height) so
+  // multi-line drafts stay readable without reaching for the expand overlay.
+  useEffect(() => {
+    const node = textareaRef.current;
+    if (!node) return;
+    node.style.height = "auto";
+    node.style.height = `${Math.min(node.scrollHeight, 132)}px`;
+  }, [draft]);
+
   function submit() {
     const text = draft.trim();
     if (!text || send.isPending) return;
     setAttachError(false);
     send.reset();
-    send.mutate({
+    const vars = {
       text,
       editIndex: editingIndex ?? undefined,
       images: attachments.length > 0 ? attachments : undefined,
-    });
+    };
+    // Clear the composer right away: the message now lives in the flow as an
+    // optimistic bubble, not in the input.
+    setDraft("");
+    setAttachments([]);
+    setEditingIndex(null);
+    setExpanded(false);
+    send.mutate(vars);
   }
 
   function onKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
     if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      submit();
+    }
+  }
+
+  // In the expanded overlay Enter inserts a newline; Cmd/Ctrl+Enter sends.
+  function onExpandedKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+    if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
       event.preventDefault();
       submit();
     }
@@ -308,8 +359,12 @@ export function AssistantPanel({ onClose }: { onClose: () => void }) {
           className={styles.iconButton}
           title={t("assistant.newChat")}
           aria-label={t("assistant.newChat")}
-          onClick={() => clear.mutate()}
-          disabled={clear.isPending}
+          // Already on an empty conversation: nothing to preserve, so don't
+          // pile up blank sessions in history.
+          onClick={() => {
+            if (messages.length > 0) newChat.mutate();
+          }}
+          disabled={newChat.isPending || send.isPending || messages.length === 0}
         >
           <Icon name="pencil" size={16} />
         </button>
@@ -363,8 +418,10 @@ export function AssistantPanel({ onClose }: { onClose: () => void }) {
             {live.streaming && (
               <div className={styles.bubbleRow}>
                 <div className={`${styles.bubble} ${styles.bubbleAssistant}`}>
-                  <span className={styles.streamText}>{live.streaming}</span>
-                  <span className={styles.streamCursor} aria-hidden="true" />
+                  <div className={styles.markdown}>
+                    {renderMarkdown(live.streaming)}
+                    <span className={styles.streamCursor} aria-hidden="true" />
+                  </div>
                 </div>
               </div>
             )}
@@ -435,34 +492,84 @@ export function AssistantPanel({ onClose }: { onClose: () => void }) {
           submit();
         }}
       >
-        <button
-          type="button"
-          className={styles.attachButton}
-          title={t("assistant.attach")}
-          aria-label={t("assistant.attach")}
-          disabled={send.isPending}
-          onClick={pickImages}
-        >
-          <Icon name="cpu" size={16} />
-        </button>
-        <textarea
-          className={styles.textarea}
-          rows={1}
-          value={draft}
-          placeholder={t("assistant.inputPlaceholder")}
-          disabled={send.isPending}
-          onChange={(event) => setDraft(event.target.value)}
-          onKeyDown={onKeyDown}
-          onPaste={onPaste}
-        />
-        <button
-          type="submit"
-          className={styles.sendButton}
-          disabled={send.isPending || draft.trim() === ""}
-        >
-          {t("assistant.send")}
-        </button>
+        <div className={styles.composer}>
+          <textarea
+            ref={textareaRef}
+            className={styles.textarea}
+            rows={1}
+            value={draft}
+            placeholder={t("assistant.inputPlaceholder")}
+            disabled={send.isPending}
+            onChange={(event) => setDraft(event.target.value)}
+            onKeyDown={onKeyDown}
+            onPaste={onPaste}
+          />
+          <div className={styles.composerActions}>
+            <button
+              type="button"
+              className={styles.composerButton}
+              title={t("assistant.attach")}
+              aria-label={t("assistant.attach")}
+              disabled={send.isPending}
+              onClick={pickImages}
+            >
+              <Icon name="paperclip" size={15} />
+            </button>
+            <button
+              type="button"
+              className={styles.composerButton}
+              title={t("assistant.expand")}
+              aria-label={t("assistant.expand")}
+              disabled={send.isPending}
+              onClick={() => setExpanded(true)}
+            >
+              <Icon name="expand" size={15} />
+            </button>
+            <button
+              type="submit"
+              className={styles.sendButton}
+              disabled={send.isPending || draft.trim() === ""}
+            >
+              {t("assistant.send")}
+            </button>
+          </div>
+        </div>
       </form>
+      {expanded && (
+        <div className={styles.expandOverlay}>
+          <div className={styles.expandHead}>
+            <span className={styles.expandTitle}>{t("assistant.expand.title")}</span>
+            <button
+              type="button"
+              className={styles.headerButton}
+              onClick={() => setExpanded(false)}
+            >
+              {t("assistant.expand.close")}
+            </button>
+          </div>
+          <textarea
+            className={styles.expandTextarea}
+            value={draft}
+            placeholder={t("assistant.inputPlaceholder")}
+            disabled={send.isPending}
+            autoFocus
+            onChange={(event) => setDraft(event.target.value)}
+            onKeyDown={onExpandedKeyDown}
+            onPaste={onPaste}
+          />
+          <div className={styles.expandFoot}>
+            <span className={styles.expandHint}>{t("assistant.expand.hint")}</span>
+            <button
+              type="button"
+              className={styles.sendButton}
+              disabled={send.isPending || draft.trim() === ""}
+              onClick={submit}
+            >
+              {t("assistant.send")}
+            </button>
+          </div>
+        </div>
+      )}
     </aside>
   );
 }
@@ -477,6 +584,7 @@ function HistoryDrawer({
   const api = useApi();
   const queryClient = useQueryClient();
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [query, setQuery] = useState("");
   const sessions = useQuery({
     queryKey: SESSIONS_KEY,
     queryFn: () => api.listAssistantSessions(),
@@ -525,6 +633,11 @@ function HistoryDrawer({
   }
 
   const rows = sessions.data ?? [];
+  const needle = query.trim().toLowerCase();
+  const filtered =
+    needle === ""
+      ? rows
+      : rows.filter((row) => row.title.toLowerCase().includes(needle));
   const hasSelection = selected.size > 0;
 
   return (
@@ -534,6 +647,16 @@ function HistoryDrawer({
         <button type="button" className={styles.historyClose} onClick={onClose}>
           {t("assistant.close")}
         </button>
+      </div>
+      <div className={styles.historySearch}>
+        <Icon name="search" size={14} />
+        <input
+          className={styles.historySearchInput}
+          value={query}
+          placeholder={t("assistant.history.search")}
+          aria-label={t("assistant.history.search")}
+          onChange={(event) => setQuery(event.target.value)}
+        />
       </div>
       {hasSelection && (
         <div className={styles.historyBulk}>
@@ -565,7 +688,10 @@ function HistoryDrawer({
       )}
       <div className={styles.historyList}>
         {rows.length === 0 && <p className={styles.empty}>{t("assistant.history.empty")}</p>}
-        {rows.map((row) => (
+        {rows.length > 0 && filtered.length === 0 && (
+          <p className={styles.empty}>{t("assistant.history.noMatch")}</p>
+        )}
+        {filtered.map((row) => (
           <HistoryRow
             key={row.id}
             row={row}
@@ -599,15 +725,10 @@ function HistoryRow({
         checked={selected}
         onChange={onToggle}
       />
-      <button
-        type="button"
-        className={styles.historyOpen}
-        title={formatDateTime(row.updated_at)}
-        onClick={onOpen}
-      >
+      <button type="button" className={styles.historyOpen} onClick={onOpen}>
         <span className={styles.historyRowTitle}>{row.title}</span>
         <span className={styles.historyRowMeta}>
-          {row.message_count}
+          {formatDateTime(row.updated_at)} · {row.message_count}
           {row.archived ? ` · ${t("assistant.archived")}` : ""}
         </span>
       </button>

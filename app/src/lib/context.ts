@@ -25,8 +25,9 @@ export interface ContextInfo {
   ratio: number;
 }
 
-// Mirrors the core's _resolve_default_llm rule: the "default" key wins,
-// then a sole entry, then the first key in sorted order.
+// Mirrors the core's _resolve_default_llm rule: the provider chosen in
+// settings (default_provider) wins, then the "default" key, then a sole
+// entry, then the first key in sorted order.
 export function assistantContextInfo(
   config: CoreConfigDoc | undefined,
   messages: { text: string }[],
@@ -34,11 +35,15 @@ export function assistantContextInfo(
   const providers = config?.llm_providers ?? {};
   const names = Object.keys(providers);
   if (names.length === 0) return null;
-  const key = names.includes("default")
-    ? "default"
-    : names.length === 1
-      ? names[0]
-      : [...names].sort()[0];
+  const chosen = config?.default_provider;
+  const key =
+    chosen && names.includes(chosen)
+      ? chosen
+      : names.includes("default")
+        ? "default"
+        : names.length === 1
+          ? names[0]
+          : [...names].sort()[0];
   const window = Number(
     (providers[key] as { context_window?: unknown }).context_window,
   );

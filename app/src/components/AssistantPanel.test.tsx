@@ -57,7 +57,7 @@ function setup({
   const api: Partial<ApiClient> = {
     getAssistantHistory: vi.fn().mockResolvedValue(history),
     sendAssistantMessage: vi.fn(),
-    clearAssistant: vi.fn().mockResolvedValue({ cleared: true }),
+    createAssistantSession: vi.fn().mockResolvedValue({ id: "s-new" }),
     listProposals: vi.fn().mockResolvedValue([]),
     listAssistantSessions: vi.fn().mockResolvedValue([]),
     activateAssistantSession: vi.fn().mockResolvedValue({ active: "s1" }),
@@ -102,9 +102,53 @@ test("sending a message renders the reply and clears the draft", async () => {
   const textarea = screen.getByPlaceholderText("輸入訊息，Enter 送出");
   await userEvent.type(textarea, "任務 xyz 呢？");
   await userEvent.click(screen.getByRole("button", { name: "傳送" }));
-  expect(api.sendAssistantMessage).toHaveBeenCalledWith("任務 xyz 呢？");
+  expect(api.sendAssistantMessage).toHaveBeenCalledWith("任務 xyz 呢？", {
+    editIndex: undefined,
+    images: undefined,
+    lang: "zh-TW",
+  });
   expect(await screen.findByText("已為你查詢，任務 xyz 尚在排隊。")).toBeInTheDocument();
   expect(textarea).toHaveValue("");
+});
+
+test("the draft clears immediately on send and the sent bubble appears optimistically", async () => {
+  let resolveSend!: (value: AssistantReply) => void;
+  const sendAssistantMessage = vi.fn().mockReturnValue(
+    new Promise<AssistantReply>((resolve) => {
+      resolveSend = resolve;
+    }),
+  );
+  setup({ api: { sendAssistantMessage } });
+  await screen.findByText("尚無對話，輸入訊息開始");
+  const textarea = screen.getByPlaceholderText("輸入訊息，Enter 送出");
+  await userEvent.type(textarea, "樂觀顯示測試");
+  await userEvent.type(textarea, "{Enter}");
+  // Before the reply resolves: input is empty, the message shows in the flow.
+  expect(textarea).toHaveValue("");
+  expect(screen.getByText("樂觀顯示測試")).toBeInTheDocument();
+  resolveSend({
+    reply: "ok",
+    proposal_ids: [],
+    converged: true,
+    reason: "",
+    history: [
+      { role: "user", text: "樂觀顯示測試", ts: "t1" },
+      { role: "assistant", text: "ok", ts: "t2" },
+    ],
+  });
+  await screen.findByText("ok");
+});
+
+test("a failed send rolls back the optimistic bubble and restores the draft", async () => {
+  const sendAssistantMessage = vi.fn().mockRejectedValue(new ApiError(500, "boom"));
+  setup({ api: { sendAssistantMessage } });
+  await screen.findByText("尚無對話，輸入訊息開始");
+  const textarea = screen.getByPlaceholderText("輸入訊息，Enter 送出");
+  await userEvent.type(textarea, "會失敗的訊息");
+  await userEvent.type(textarea, "{Enter}");
+  expect(await screen.findByText("傳送失敗，請稍後再試。")).toBeInTheDocument();
+  expect(textarea).toHaveValue("會失敗的訊息");
+  expect(screen.getByText("尚無對話，輸入訊息開始")).toBeInTheDocument();
 });
 
 test("Enter sends the message; Shift+Enter inserts a newline instead", async () => {
@@ -127,7 +171,11 @@ test("Enter sends the message; Shift+Enter inserts a newline instead", async () 
   expect(textarea).toHaveValue("第一行\n");
   await userEvent.type(textarea, "第二行");
   await userEvent.type(textarea, "{Enter}");
-  expect(sendAssistantMessage).toHaveBeenCalledWith("第一行\n第二行");
+  expect(sendAssistantMessage).toHaveBeenCalledWith("第一行\n第二行", {
+    editIndex: undefined,
+    images: undefined,
+    lang: "zh-TW",
+  });
 });
 
 test("busy state disables input and shows the processing indicator", async () => {
@@ -155,11 +203,11 @@ test("busy state disables input and shows the processing indicator", async () =>
   expect(textarea).toBeEnabled();
 });
 
-test("new chat calls clear and empties the message flow", async () => {
+test("new chat opens a fresh session and keeps the old one for history", async () => {
   const { api } = setup({ history: HISTORY });
   await screen.findByText("任務 abc 進度如何？");
   await userEvent.click(screen.getByRole("button", { name: "新對話" }));
-  await waitFor(() => expect(api.clearAssistant).toHaveBeenCalled());
+  await waitFor(() => expect(api.createAssistantSession).toHaveBeenCalled());
   expect(await screen.findByText("尚無對話，輸入訊息開始")).toBeInTheDocument();
   expect(screen.queryByText("任務 abc 進度如何？")).not.toBeInTheDocument();
 });
@@ -208,6 +256,7 @@ test("editing a user message prefills the draft and resends with edit_index", as
   expect(sendAssistantMessage).toHaveBeenCalledWith("改後的問題", {
     editIndex: 0,
     images: undefined,
+    lang: "zh-TW",
   });
 });
 
@@ -418,8 +467,76 @@ test("core 的英文未收斂訊息以 zh-TW 對應文案呈現", async () => {
     ],
   });
   expect(
-    await screen.findByText(/助理回覆格式異常，這則訊息未能處理完成/),
+    await screen.findByText(/助理回覆格式異常而提前結束/),
   ).toBeInTheDocument();
+});
+
+test("history search filters sessions by title", async () => {
+  const listAssistantSessions = vi.fn().mockResolvedValue([
+    {
+      id: "s1",
+      title: "字幕翻譯討論",
+      archived: false,
+      created_at: "2026-07-18T01:00:00+00:00",
+      updated_at: "2026-07-18T01:00:00+00:00",
+      message_count: 4,
+      active: false,
+    },
+    {
+      id: "s2",
+      title: "預算問題",
+      archived: false,
+      created_at: "2026-07-18T02:00:00+00:00",
+      updated_at: "2026-07-18T02:00:00+00:00",
+      message_count: 2,
+      active: true,
+    },
+  ]);
+  setup({ api: { listAssistantSessions } });
+  await userEvent.click(screen.getByRole("button", { name: "歷史紀錄" }));
+  expect(await screen.findByText("字幕翻譯討論")).toBeInTheDocument();
+  expect(screen.getByText("預算問題")).toBeInTheDocument();
+  await userEvent.type(screen.getByPlaceholderText("搜尋對話標題"), "預算");
+  expect(screen.queryByText("字幕翻譯討論")).not.toBeInTheDocument();
+  expect(screen.getByText("預算問題")).toBeInTheDocument();
+  await userEvent.clear(screen.getByPlaceholderText("搜尋對話標題"));
+  await userEvent.type(screen.getByPlaceholderText("搜尋對話標題"), "不存在的標題");
+  expect(await screen.findByText("沒有符合的對話")).toBeInTheDocument();
+});
+
+test("the expand button opens a large composer that sends the shared draft", async () => {
+  const reply: AssistantReply = {
+    reply: "收到長訊息。",
+    proposal_ids: [],
+    converged: true,
+    reason: "",
+    history: [
+      { role: "user", text: "第一段\n\n第二段", ts: "t1" },
+      { role: "assistant", text: "收到長訊息。", ts: "t2" },
+    ],
+  };
+  const sendAssistantMessage = vi.fn().mockResolvedValue(reply);
+  setup({ api: { sendAssistantMessage } });
+  await screen.findByText("尚無對話，輸入訊息開始");
+  const inline = screen.getByPlaceholderText("輸入訊息，Enter 送出");
+  await userEvent.type(inline, "第一段");
+  await userEvent.click(screen.getByRole("button", { name: "放大輸入" }));
+  expect(screen.getByText("編寫訊息")).toBeInTheDocument();
+  const big = screen
+    .getAllByPlaceholderText("輸入訊息，Enter 送出")
+    .find((node) => node !== inline)!;
+  expect(big).toHaveValue("第一段");
+  // Enter inserts a newline in the expanded editor instead of sending.
+  await userEvent.type(big, "{Enter}{Enter}第二段");
+  expect(sendAssistantMessage).not.toHaveBeenCalled();
+  await userEvent.keyboard("{Meta>}{Enter}{/Meta}");
+  expect(sendAssistantMessage).toHaveBeenCalledWith("第一段\n\n第二段", {
+    editIndex: undefined,
+    images: undefined,
+    lang: "zh-TW",
+  });
+  // The overlay closes after sending.
+  await waitFor(() => expect(screen.queryByText("編寫訊息")).not.toBeInTheDocument());
 });
 
 test("live turn shows streamed narrative and tool activity, then clears", async () => {

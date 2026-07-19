@@ -556,6 +556,8 @@ export const zhTW = {
   "assistant.clear": "清空",
   "assistant.history": "歷史紀錄",
   "assistant.history.empty": "尚無歷史對話",
+  "assistant.history.search": "搜尋對話標題",
+  "assistant.history.noMatch": "沒有符合的對話",
   "assistant.newChat": "新對話",
   "assistant.selected": "已選",
   "assistant.archive": "封存",
@@ -569,17 +571,21 @@ export const zhTW = {
   "assistant.attach": "附加圖片或檔案",
   "assistant.attachRemove": "移除附件",
   "assistant.attachFailed": "剪貼板圖片附加失敗，請再試一次",
+  "assistant.expand": "放大輸入",
+  "assistant.expand.title": "編寫訊息",
+  "assistant.expand.close": "收合",
+  "assistant.expand.hint": "Enter 換行，Cmd+Enter 送出",
   "assistant.empty": "尚無對話，輸入訊息開始",
   "assistant.loading": "載入中",
   "assistant.inputPlaceholder": "輸入訊息，Enter 送出",
   "assistant.fail.generic":
     "這則訊息未能處理完成，未經你核准的變更都不會發生；請重試或換個說法。",
   "assistant.fail.protocol_error":
-    "助理回覆格式異常，這則訊息未能處理完成；請重試或換個說法。",
+    "助理回覆格式異常而提前結束；以上內容可能不完整，可請助理繼續。",
   "assistant.fail.max_rounds":
-    "已達單次處理的輪次上限，這則訊息未能處理完成；請把需求拆小後再試。",
+    "已達單次處理的輪次上限而提前結束；以上內容可能不完整，可請助理繼續。",
   "assistant.fail.max_turns":
-    "已達單次處理的回合上限，這則訊息未能處理完成；請把需求拆小後再試。",
+    "已達單次處理的回合上限而提前結束；以上內容可能不完整，可請助理繼續。",
   "assistant.fail.budget":
     "預算已觸頂，這則訊息未能處理完成；請到設定提高上限後再試。",
   "assistant.send": "傳送",

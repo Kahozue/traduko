@@ -359,7 +359,7 @@ export class ApiClient {
 
   sendAssistantMessage(
     text: string,
-    opts?: { editIndex?: number; images?: string[] },
+    opts?: { editIndex?: number; images?: string[]; lang?: string },
   ): Promise<AssistantReply> {
     return this.request("/assistant/message", {
       method: "POST",
@@ -367,6 +367,7 @@ export class ApiClient {
         text,
         edit_index: opts?.editIndex,
         images: opts?.images,
+        lang: opts?.lang,
       }),
     });
   }
