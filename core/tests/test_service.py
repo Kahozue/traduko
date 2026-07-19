@@ -1886,3 +1886,162 @@ def test_mcp_candidates_endpoint(tmp_path: Path) -> None:
         assert response.status_code == 200
         names = [entry["name"] for entry in response.json()]
         assert names == ["fetch", "memory", "filesystem", "playwright"]
+
+
+# --- glossary endpoints (v3_5-02) ------------------------------------------
+
+
+def test_glossaries_require_token(tmp_path: Path) -> None:
+    with service(tmp_path) as (client, headers, token):
+        assert client.get("/glossaries").status_code == 401
+
+
+def test_glossary_crud_full_flow(tmp_path: Path) -> None:
+    with service(tmp_path) as (client, headers, token):
+        created = client.post(
+            "/glossaries",
+            json={"name": "Anime Terms", "domain": "video"},
+            headers=headers,
+        )
+        assert created.status_code == 201
+        gid = created.json()["id"]
+
+        rows = client.get("/glossaries", headers=headers).json()
+        assert [r["id"] for r in rows] == [gid]
+        assert rows[0]["entry_count"] == 0
+        assert rows[0]["enabled"] is True
+
+        saved = client.put(
+            f"/glossaries/{gid}/entries",
+            json={
+                "entries": [
+                    {"source": "Kirito", "target": "桐人", "notes": "", "category": "人名"}
+                ]
+            },
+            headers=headers,
+        )
+        assert saved.status_code == 200
+        assert saved.json() == {"saved": True, "count": 1}
+
+        detail = client.get(f"/glossaries/{gid}", headers=headers).json()
+        assert detail["entries"][0]["source"] == "Kirito"
+        assert detail["entries"][0]["category"] == "人名"
+        assert client.get("/glossaries", headers=headers).json()[0]["entry_count"] == 1
+
+        client.patch(f"/glossaries/{gid}", json={"enabled": False}, headers=headers)
+        assert client.get("/glossaries", headers=headers).json()[0]["enabled"] is False
+        renamed = client.patch(
+            f"/glossaries/{gid}", json={"name": "Renamed"}, headers=headers
+        )
+        assert renamed.json()["name"] == "Renamed"
+
+        assert client.get("/glossaries?domain=audio", headers=headers).json() == []
+        assert len(client.get("/glossaries?domain=video", headers=headers).json()) == 1
+
+        assert client.delete(f"/glossaries/{gid}", headers=headers).json() == {
+            "deleted": True
+        }
+        assert client.get("/glossaries", headers=headers).json() == []
+
+
+def test_glossary_unknown_id_returns_404(tmp_path: Path) -> None:
+    with service(tmp_path) as (client, headers, token):
+        assert client.get("/glossaries/nope", headers=headers).status_code == 404
+        assert (
+            client.patch(
+                "/glossaries/nope", json={"name": "x"}, headers=headers
+            ).status_code
+            == 404
+        )
+        assert client.delete("/glossaries/nope", headers=headers).status_code == 404
+        assert (
+            client.put(
+                "/glossaries/nope/entries", json={"entries": []}, headers=headers
+            ).status_code
+            == 404
+        )
+
+
+def test_glossary_create_validation(tmp_path: Path) -> None:
+    with service(tmp_path) as (client, headers, token):
+        assert (
+            client.post(
+                "/glossaries", json={"name": "  ", "domain": "video"}, headers=headers
+            ).status_code
+            == 422
+        )
+        assert (
+            client.post(
+                "/glossaries", json={"name": "X", "domain": "bogus"}, headers=headers
+            ).status_code
+            == 422
+        )
+
+
+def test_glossary_import_csv_and_bad_format(tmp_path: Path) -> None:
+    with service(tmp_path) as (client, headers, token):
+        content = "source,target,notes,category\r\nKirito,桐人,,人名\r\n"
+        imported = client.post(
+            "/glossaries/import",
+            json={"name": "Imp", "domain": "general", "content": content, "format": "csv"},
+            headers=headers,
+        )
+        assert imported.status_code == 201
+        assert imported.json()["entry_count"] == 1
+        gid = imported.json()["id"]
+        assert (
+            client.get(f"/glossaries/{gid}", headers=headers).json()["entries"][0][
+                "source"
+            ]
+            == "Kirito"
+        )
+        assert (
+            client.post(
+                "/glossaries/import",
+                json={"name": "Y", "domain": "general", "content": "x", "format": "xml"},
+                headers=headers,
+            ).status_code
+            == 422
+        )
+        assert (
+            client.post(
+                "/glossaries/import",
+                json={
+                    "name": "Z",
+                    "domain": "general",
+                    "content": "{not json",
+                    "format": "json",
+                },
+                headers=headers,
+            ).status_code
+            == 422
+        )
+
+
+def test_glossary_export_csv_and_json(tmp_path: Path) -> None:
+    with service(tmp_path) as (client, headers, token):
+        gid = client.post(
+            "/glossaries", json={"name": "Exp", "domain": "general"}, headers=headers
+        ).json()["id"]
+        client.put(
+            f"/glossaries/{gid}/entries",
+            json={
+                "entries": [
+                    {"source": "Kirito", "target": "桐人", "notes": "", "category": ""}
+                ]
+            },
+            headers=headers,
+        )
+        csv_resp = client.get(f"/glossaries/{gid}/export?format=csv", headers=headers)
+        assert csv_resp.status_code == 200
+        assert csv_resp.headers["content-type"].startswith("text/csv")
+        assert "attachment" in csv_resp.headers["content-disposition"]
+        assert "Kirito" in csv_resp.text
+
+        json_resp = client.get(f"/glossaries/{gid}/export?format=json", headers=headers)
+        assert json_resp.headers["content-type"].startswith("application/json")
+        assert json.loads(json_resp.text)["entries"][0]["source"] == "Kirito"
+
+        assert (
+            client.get("/glossaries/nope/export", headers=headers).status_code == 404
+        )

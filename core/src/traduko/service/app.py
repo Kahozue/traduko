@@ -60,6 +60,7 @@ from ..dubbing.models import SpeakersDoc
 from ..dubbing.setup import DubbingManager
 from ..eventlog import EventLogger
 from ..executor import reset_stages_after_artifact
+from ..glossary import GlossaryEntry, GlossaryStore, GlossaryTableMeta
 from ..events import Event
 from ..media import MediaError, ffmpeg_available
 from ..pdfengine.setup import PdfManager
@@ -947,6 +948,181 @@ def delete_skill(request: Request, name: str) -> dict:
     except FileNotFoundError as error:
         raise HTTPException(status_code=404, detail=str(error)) from None
     return {"deleted": True}
+
+
+_GLOSSARY_DOMAINS = {"video", "audio", "document", "comic", "general"}
+
+
+def _glossary_store(request: Request) -> GlossaryStore:
+    ws: Workspace = request.app.state.workspace
+    return GlossaryStore(ws.root)
+
+
+def _glossary_meta_dict(meta: GlossaryTableMeta) -> dict:
+    return {
+        "id": meta.id,
+        "name": meta.name,
+        "domain": meta.domain,
+        "enabled": meta.enabled,
+        "created_at": meta.created_at,
+        "updated_at": meta.updated_at,
+    }
+
+
+def _require_glossary_name(name: str) -> str:
+    trimmed = name.strip()
+    if not trimmed:
+        raise HTTPException(status_code=422, detail="glossary name is required")
+    return trimmed
+
+
+def _require_glossary_domain(domain: str) -> str:
+    if domain not in _GLOSSARY_DOMAINS:
+        raise HTTPException(status_code=422, detail=f"invalid domain: {domain}")
+    return domain
+
+
+def _glossary_not_found(glossary_id: str) -> HTTPException:
+    return HTTPException(status_code=404, detail=f"glossary not found: {glossary_id}")
+
+
+@router.get("/glossaries")
+def list_glossaries(request: Request, domain: str | None = None) -> list[dict]:
+    store = _glossary_store(request)
+    rows: list[dict] = []
+    for meta in store.list_tables(domain):
+        row = _glossary_meta_dict(meta)
+        row["entry_count"] = len(store.read_entries(meta.id))
+        rows.append(row)
+    return rows
+
+
+class GlossaryCreateRequest(BaseModel):
+    name: str
+    domain: str
+
+
+@router.post("/glossaries", status_code=201)
+def create_glossary(request: Request, body: GlossaryCreateRequest) -> dict:
+    name = _require_glossary_name(body.name)
+    domain = _require_glossary_domain(body.domain)
+    meta = _glossary_store(request).create_table(name, domain)
+    return _glossary_meta_dict(meta)
+
+
+class GlossaryImportRequest(BaseModel):
+    name: str
+    domain: str
+    content: str
+    format: str
+
+
+@router.post("/glossaries/import", status_code=201)
+def import_glossary(request: Request, body: GlossaryImportRequest) -> dict:
+    name = _require_glossary_name(body.name)
+    domain = _require_glossary_domain(body.domain)
+    if body.format not in ("csv", "json"):
+        raise HTTPException(status_code=422, detail=f"invalid format: {body.format}")
+    store = _glossary_store(request)
+    try:
+        meta = store.import_table(name, domain, body.content, body.format)
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from None
+    row = _glossary_meta_dict(meta)
+    row["entry_count"] = len(store.read_entries(meta.id))
+    return row
+
+
+@router.get("/glossaries/{glossary_id}")
+def get_glossary(request: Request, glossary_id: str) -> dict:
+    store = _glossary_store(request)
+    try:
+        meta = store.get_table(glossary_id)
+        entries = store.read_entries(glossary_id)
+    except KeyError:
+        raise _glossary_not_found(glossary_id) from None
+    row = _glossary_meta_dict(meta)
+    row["entries"] = [asdict(entry) for entry in entries]
+    return row
+
+
+class GlossaryPatchRequest(BaseModel):
+    name: str | None = None
+    enabled: bool | None = None
+
+
+@router.patch("/glossaries/{glossary_id}")
+def patch_glossary(request: Request, glossary_id: str, body: GlossaryPatchRequest) -> dict:
+    store = _glossary_store(request)
+    try:
+        if body.name is not None:
+            store.rename_table(glossary_id, _require_glossary_name(body.name))
+        if body.enabled is not None:
+            store.set_enabled(glossary_id, body.enabled)
+        meta = store.get_table(glossary_id)
+    except KeyError:
+        raise _glossary_not_found(glossary_id) from None
+    return _glossary_meta_dict(meta)
+
+
+@router.delete("/glossaries/{glossary_id}")
+def delete_glossary(request: Request, glossary_id: str) -> dict:
+    try:
+        _glossary_store(request).delete_table(glossary_id)
+    except KeyError:
+        raise _glossary_not_found(glossary_id) from None
+    return {"deleted": True}
+
+
+class GlossaryEntryModel(BaseModel):
+    source: str
+    target: str
+    notes: str = ""
+    category: str = ""
+
+
+class GlossaryEntriesRequest(BaseModel):
+    entries: list[GlossaryEntryModel]
+
+
+@router.put("/glossaries/{glossary_id}/entries")
+def put_glossary_entries(
+    request: Request, glossary_id: str, body: GlossaryEntriesRequest
+) -> dict:
+    entries = [
+        GlossaryEntry(
+            source=e.source.strip(),
+            target=e.target.strip(),
+            notes=e.notes.strip(),
+            category=e.category.strip(),
+        )
+        for e in body.entries
+        if e.source.strip() and e.target.strip()
+    ]
+    try:
+        _glossary_store(request).write_entries(glossary_id, entries)
+    except KeyError:
+        raise _glossary_not_found(glossary_id) from None
+    return {"saved": True, "count": len(entries)}
+
+
+@router.get("/glossaries/{glossary_id}/export")
+def export_glossary(request: Request, glossary_id: str, format: str = "csv") -> Response:
+    if format not in ("csv", "json"):
+        raise HTTPException(status_code=422, detail=f"invalid format: {format}")
+    try:
+        content = _glossary_store(request).export_table(glossary_id, format)
+    except KeyError:
+        raise _glossary_not_found(glossary_id) from None
+    media_type = "application/json" if format == "json" else "text/csv"
+    ext = "json" if format == "json" else "csv"
+    return Response(
+        content=content,
+        media_type=media_type,
+        headers={
+            "Content-Disposition": f'attachment; filename="{glossary_id}.{ext}"'
+        },
+    )
 
 
 @router.get("/proposals")
