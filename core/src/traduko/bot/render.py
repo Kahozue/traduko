@@ -26,6 +26,7 @@ STAGE_LABELS = {
     "export_subtitles": "輸出字幕",
     "hardburn": "硬燒字幕",
     "proofread": "AI 校對",
+    "glossary_proofread": "名詞表校對",
     "noop": "空階段",
 }
 
@@ -61,6 +62,14 @@ def render_task_list(rows: list[dict], limit: int = 8) -> str:
 
 def render_task_detail(record: dict) -> str:
     lines = [task_label(record), f"狀態：{status_label(record['status'])}"]
+    glossary = record.get("glossary")
+    if glossary:
+        n_tables = len(glossary.get("global_ids", []))
+        if glossary.get("use_task"):
+            n_tables += 1
+        asr_labels = {"auto": "自動", "force": "強制校對", "off": "僅翻譯注入"}
+        asr_lbl = asr_labels.get(glossary.get("asr_mode", "auto"), glossary.get("asr_mode", "auto"))
+        lines.append(f"名詞表：{n_tables} 表 · {asr_lbl}")
     for i, stage in enumerate(record["stages"], start=1):
         lines.append(f"{i}. {stage_label(stage['type'])}：{status_label(stage['status'])}")
     return "\n".join(lines)

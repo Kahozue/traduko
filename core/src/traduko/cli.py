@@ -9,8 +9,8 @@ import typer
 from .eventlog import EventLogger
 from .events import Event
 from .executor import PipelineExecutor
-from .glossary import GlossaryStore
-from .models import TaskStatus
+from .glossary import GlossaryStore, resolve_effective_glossary
+from .models import StageRecord, StageStatus, TaskGlossary, TaskStatus
 from .notify import Notifier
 from .paths import ENV_DATA_ROOT
 from .preflight import PreflightReport, run_preflight
@@ -158,6 +158,149 @@ def task_show(
     ws: Workspace = ctx.obj
     record = ws.store.load(project or ws.config.default_project, task_id)
     typer.echo(record.model_dump_json(indent=2))
+
+
+@task_app.command("glossary")
+def task_glossary(
+    ctx: typer.Context,
+    task_id: str = typer.Argument(...),
+    project: Optional[str] = typer.Option(None, "--project"),
+) -> None:
+    """Show the effective glossary config and merged entry count for a task."""
+    ws: Workspace = ctx.obj
+    proj = project or ws.config.default_project
+    record = ws.store.load(proj, task_id)
+    typer.echo(f"global_ids: {record.glossary.global_ids}")
+    typer.echo(f"use_task: {record.glossary.use_task}")
+    typer.echo(f"asr_mode: {record.glossary.asr_mode}")
+    entries = resolve_effective_glossary(ws.root, record)
+    typer.echo(f"merged entries: {len(entries)}")
+
+
+@task_app.command("glossary-set")
+def task_glossary_set(
+    ctx: typer.Context,
+    task_id: str = typer.Argument(...),
+    project: Optional[str] = typer.Option(None, "--project"),
+    global_ids: Optional[str] = typer.Option(
+        None, "--global-ids", help="Comma-separated global glossary table ids."
+    ),
+    use_task: Optional[bool] = typer.Option(None, "--use-task/--no-use-task"),
+    asr_mode: Optional[str] = typer.Option(
+        None, "--asr-mode", help="auto, force, or off"
+    ),
+) -> None:
+    """Write the task glossary config."""
+    ws: Workspace = ctx.obj
+    proj = project or ws.config.default_project
+    record = ws.store.load(proj, task_id)
+    ids = record.glossary.global_ids
+    if global_ids is not None:
+        ids = [x.strip() for x in global_ids.split(",") if x.strip()]
+        # Validate ids exist
+        store = GlossaryStore(ws.root)
+        known = {m.id for m in store.list_tables()}
+        unknown = [i for i in ids if i not in known]
+        if unknown:
+            typer.echo(f"unknown glossary id: {', '.join(unknown)}")
+            raise typer.Exit(code=1)
+    mode = record.glossary.asr_mode
+    if asr_mode is not None:
+        if asr_mode not in ("auto", "force", "off"):
+            typer.echo(f"invalid asr_mode: {asr_mode}")
+            raise typer.Exit(code=1)
+        mode = asr_mode
+    record.glossary = TaskGlossary(
+        global_ids=ids,
+        use_task=use_task if use_task is not None else record.glossary.use_task,
+        asr_mode=mode,
+    )
+    ws.store.save(record)
+    typer.echo(f"global_ids: {record.glossary.global_ids}")
+    typer.echo(f"use_task: {record.glossary.use_task}")
+    typer.echo(f"asr_mode: {record.glossary.asr_mode}")
+
+
+@task_app.command("glossary-reapply")
+def task_glossary_reapply(
+    ctx: typer.Context,
+    task_id: str = typer.Argument(...),
+    mode: str = typer.Option(..., "--mode", help="asr, proofread, or translate"),
+    project: Optional[str] = typer.Option(None, "--project"),
+    skip_preflight: bool = typer.Option(False, "--skip-preflight"),
+) -> None:
+    """Reset stages and rerun the pipeline from the specified point."""
+    ws: Workspace = ctx.obj
+    proj = project or ws.config.default_project
+    record = ws.store.load(proj, task_id)
+
+    if mode not in ("asr", "proofread", "translate"):
+        typer.echo(f"invalid mode: {mode}")
+        raise typer.Exit(code=1)
+
+    reset_from_type: str | None = None
+
+    if mode == "asr":
+        asr_index = next(
+            (i for i, s in enumerate(record.stages) if s.type == "asr"), None
+        )
+        if asr_index is None:
+            typer.echo("no asr stage to reapply")
+            raise typer.Exit(code=1)
+        from .tasks import ensure_glossary_proofread_stage
+        ensure_glossary_proofread_stage(record, ws.config)
+        reset_from_type = "asr"
+
+    elif mode == "proofread":
+        asr_index = next(
+            (i for i, s in enumerate(record.stages) if s.type == "asr"), None
+        )
+        if asr_index is None:
+            typer.echo("no asr stage to reapply")
+            raise typer.Exit(code=1)
+        gp = next(
+            (s for s in record.stages if s.type == "glossary_proofread"), None
+        )
+        if gp is None:
+            record.stages.insert(asr_index + 1, StageRecord(type="glossary_proofread"))
+        reset_from_type = "glossary_proofread"
+
+    elif mode == "translate":
+        trans_index = next(
+            (i for i, s in enumerate(record.stages)
+             if s.type in {"translate", "translate_chunks"}),
+            None,
+        )
+        if trans_index is None:
+            typer.echo("no translate stage to reapply")
+            raise typer.Exit(code=1)
+        reset_from_type = record.stages[trans_index].type
+
+    assert reset_from_type is not None
+    reset_index = next(
+        i for i, s in enumerate(record.stages) if s.type == reset_from_type
+    )
+    for stage in record.stages[reset_index:]:
+        stage.status = StageStatus.PENDING
+        stage.error = None
+    record.status = TaskStatus.PENDING
+    ws.store.save(record)
+
+    if not skip_preflight:
+        report = run_preflight(record, ws.root)
+        if not report.ok:
+            _print_report(report)
+            typer.echo("preflight failed (fix or use --skip-preflight)")
+            raise typer.Exit(code=1)
+
+    def print_event(event: Event) -> None:
+        typer.echo(f"[{event.type}] {json.dumps(event.data, ensure_ascii=False)}")
+
+    ws.bus.subscribe(print_event)
+    EventLogger(ws.root).attach(ws.bus)
+    Notifier.from_config(ws.config).attach(ws.bus)
+    result = PipelineExecutor(ws.store, ws.bus, ws.root).run(record)
+    typer.echo(result.status.value)
 
 
 @app.command("serve")

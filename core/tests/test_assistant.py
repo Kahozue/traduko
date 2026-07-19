@@ -933,3 +933,96 @@ def test_assistant_propose_fires_authorization_event(tmp_path: Path) -> None:
     auth = [e for e in events if e.type == "assistant_authorization_required"]
     assert len(auth) == 1
     assert auth[0].data["proposal_id"] == result["proposal_ids"][0]
+
+
+# --- glossary tools (v3_5-03) -------------------------------------------
+
+
+def test_glossary_list_returns_table_metadata(tmp_path: Path) -> None:
+    ws = make_ws(tmp_path)
+    from traduko.glossary import GlossaryStore
+    store = GlossaryStore(ws.root)
+    store.create_table("Terms", "general")
+    tools = action_tool_map(ws)
+    result = json.loads(tools["glossary_list"].handler({}))
+    assert len(result) == 1
+    assert result[0]["name"] == "Terms"
+    assert result[0]["domain"] == "general"
+    assert result[0]["enabled"] is True
+    assert result[0]["entry_count"] == 0
+
+
+def test_glossary_read_returns_entries(tmp_path: Path) -> None:
+    ws = make_ws(tmp_path)
+    from traduko.glossary import GlossaryEntry, GlossaryStore
+    store = GlossaryStore(ws.root)
+    meta = store.create_table("Anime", "video")
+    store.write_entries(meta.id, [GlossaryEntry(source="Kirito", target="桐人", notes="hero", category="人名")])
+    tools = action_tool_map(ws)
+    result = json.loads(tools["glossary_read"].handler({"table_id": meta.id}))
+    assert result["name"] == "Anime"
+    assert result["entries"][0]["source"] == "Kirito"
+
+
+def test_glossary_read_unknown_table_is_tool_error(tmp_path: Path) -> None:
+    ws = make_ws(tmp_path)
+    tools = action_tool_map(ws)
+    with pytest.raises(ToolError, match="glossary not found"):
+        tools["glossary_read"].handler({"table_id": "nope"})
+
+
+def test_glossary_upsert_entry_adds_new(tmp_path: Path) -> None:
+    ws = make_ws(tmp_path)
+    from traduko.glossary import GlossaryStore
+    store = GlossaryStore(ws.root)
+    meta = store.create_table("Terms", "general")
+    tools = action_tool_map(ws)
+    result = json.loads(tools["glossary_upsert_entry"].handler({
+        "table_id": meta.id, "source": "Asuna", "target": "亞絲娜", "category": "人名",
+    }))
+    assert result["action"] == "added"
+    assert len(store.read_entries(meta.id)) == 1
+
+
+def test_glossary_upsert_entry_updates_existing(tmp_path: Path) -> None:
+    ws = make_ws(tmp_path)
+    from traduko.glossary import GlossaryEntry, GlossaryStore
+    store = GlossaryStore(ws.root)
+    meta = store.create_table("Terms", "general")
+    store.write_entries(meta.id, [GlossaryEntry(source="Kirito", target="桐人")])
+    tools = action_tool_map(ws)
+    result = json.loads(tools["glossary_upsert_entry"].handler({
+        "table_id": meta.id, "source": "Kirito", "target": "桐人（更新）",
+    }))
+    assert result["action"] == "updated"
+    entries = store.read_entries(meta.id)
+    assert entries[0].target == "桐人（更新）"
+
+
+def test_apply_glossary_to_task_writes_config_without_enqueue(tmp_path: Path) -> None:
+    ws = make_ws(tmp_path)
+    record = create_task(ws)
+    from traduko.glossary import GlossaryStore
+    store = GlossaryStore(ws.root)
+    meta = store.create_table("Terms", "general")
+    tools = action_tool_map(ws)
+    result = json.loads(tools["apply_glossary_to_task"].handler({
+        "project": "p", "task_id": record.id, "global_ids": [meta.id], "asr_mode": "force",
+    }))
+    assert result["glossary"]["global_ids"] == [meta.id]
+    assert result["glossary"]["asr_mode"] == "force"
+    assert "reapply" in result["note"]
+    # Task is still PENDING, not enqueued
+    reloaded = ws.store.load("p", record.id)
+    assert reloaded.status == TaskStatus.PENDING
+    assert reloaded.glossary.global_ids == [meta.id]
+
+
+def test_apply_glossary_to_task_rejects_invalid_asr_mode(tmp_path: Path) -> None:
+    ws = make_ws(tmp_path)
+    record = create_task(ws)
+    tools = action_tool_map(ws)
+    with pytest.raises(ToolError, match="invalid asr_mode"):
+        tools["apply_glossary_to_task"].handler({
+            "project": "p", "task_id": record.id, "asr_mode": "bogus",
+        })

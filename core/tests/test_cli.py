@@ -310,3 +310,69 @@ def test_glossary_unknown_id_exits_nonzero(tmp_path: Path) -> None:
     ):
         result = runner.invoke(app, cmd, env=env)
         assert result.exit_code == 1, cmd
+
+
+# --- task glossary subcommands (v3_5-03) -----------------------------------
+
+
+def _setup_reapply_workspace(tmp_path: Path) -> tuple[dict[str, str], str]:
+    """Create a workspace with an ASR profile and a completed task."""
+    profile_dir = tmp_path / "profiles"
+    profile_dir.mkdir(parents=True, exist_ok=True)
+    (profile_dir / "asr-sub.yaml").write_text(
+        "schema_version: 1\nname: asr-sub\nkind: video\nstages:\n"
+        "  - type: extract_audio\n  - type: asr\n"
+        "    params:\n      engine: faster_whisper\n"
+        "  - type: segment\n  - type: translate\n"
+        "    params:\n      provider: fake\n      target_language: en\n",
+        encoding="utf-8",
+    )
+    env = {"TRADUKO_DATA_ROOT": str(tmp_path)}
+    input_file = tmp_path / "in.srt"
+    input_file.write_text("1\n00:00:00,000 --> 00:00:01,000\nhi\n", encoding="utf-8")
+    created = runner.invoke(
+        app, ["task", "create", str(input_file), "--profile", "asr-sub"], env=env
+    )
+    assert created.exit_code == 0, created.output
+    task_id = created.output.strip().splitlines()[-1]
+    return env, task_id
+
+
+def test_task_glossary_shows_config(tmp_path: Path) -> None:
+    env, task_id = _setup_reapply_workspace(tmp_path)
+    result = runner.invoke(app, ["task", "glossary", task_id], env=env)
+    assert result.exit_code == 0, result.output
+    assert "asr_mode:" in result.output
+
+
+def test_task_glossary_set_updates_config(tmp_path: Path) -> None:
+    env, task_id = _setup_reapply_workspace(tmp_path)
+    result = runner.invoke(
+        app,
+        ["task", "glossary-set", task_id, "--asr-mode", "force", "--use-task"],
+        env=env,
+    )
+    assert result.exit_code == 0, result.output
+    assert "asr_mode: force" in result.output
+    assert "use_task: True" in result.output
+
+
+def test_task_glossary_set_rejects_unknown_id(tmp_path: Path) -> None:
+    env, task_id = _setup_reapply_workspace(tmp_path)
+    result = runner.invoke(
+        app,
+        ["task", "glossary-set", task_id, "--global-ids", "nope"],
+        env=env,
+    )
+    assert result.exit_code == 1
+    assert "unknown" in result.output
+
+
+def test_task_glossary_set_rejects_invalid_asr_mode(tmp_path: Path) -> None:
+    env, task_id = _setup_reapply_workspace(tmp_path)
+    result = runner.invoke(
+        app,
+        ["task", "glossary-set", task_id, "--asr-mode", "bogus"],
+        env=env,
+    )
+    assert result.exit_code == 1

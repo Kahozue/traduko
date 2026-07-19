@@ -47,3 +47,36 @@ def test_budget_rendering() -> None:
         {"month_usd": 1.5, "task_usd_limit": None, "monthly_usd_limit": 20.0}
     )
     assert "1.50 USD" in text and "未設上限" in text and "20.00 USD" in text
+
+
+def test_task_detail_shows_glossary_line() -> None:
+    record = {
+        "id": "t1", "project": "p", "status": "paused", "name": "ep01",
+        "stages": [{"type": "asr", "status": "completed"}],
+        "glossary": {"global_ids": ["g1", "g2"], "use_task": True, "asr_mode": "force"},
+    }
+    text = render.render_task_detail(record)
+    assert "名詞表：3 表 · 強制校對" in text
+
+
+def test_task_detail_glossary_auto_mode() -> None:
+    record = {
+        "id": "t1", "project": "p", "status": "pending", "name": "ep02",
+        "stages": [],
+        "glossary": {"global_ids": ["g1"], "use_task": False, "asr_mode": "auto"},
+    }
+    text = render.render_task_detail(record)
+    assert "名詞表：1 表 · 自動" in text
+
+
+def test_task_detail_no_glossary_when_absent() -> None:
+    record = {
+        "id": "t1", "project": "p", "status": "pending", "name": "ep03",
+        "stages": [{"type": "noop", "status": "pending"}],
+    }
+    text = render.render_task_detail(record)
+    assert "名詞表" not in text
+
+
+def test_stage_label_glossary_proofread() -> None:
+    assert render.stage_label("glossary_proofread") == "名詞表校對"

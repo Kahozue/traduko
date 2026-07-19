@@ -27,6 +27,7 @@ from .. import mcphub, skillhub
 from ..budget import BudgetMeter
 from ..config import CoreConfig
 from ..events import Event
+from ..glossary import GlossaryStore
 from ..llm import LLMError, create_llm
 from ..preflight import run_preflight as compute_preflight
 from ..proposals import (
@@ -486,6 +487,98 @@ def _build_action_tools(ws: Workspace, created_task_ids: list[str]) -> list[Agen
             ensure_ascii=False,
         )
 
+    # --- glossary tools -------------------------------------------------------
+
+    def glossary_list(args: dict) -> str:
+        store = GlossaryStore(ws.root)
+        rows = []
+        for meta in store.list_tables():
+            rows.append(
+                {"id": meta.id, "name": meta.name, "domain": meta.domain,
+                 "enabled": meta.enabled, "entry_count": len(store.read_entries(meta.id))}
+            )
+        return json.dumps(rows, ensure_ascii=False)
+
+    def glossary_read(args: dict) -> str:
+        table_id = str(args["table_id"])
+        store = GlossaryStore(ws.root)
+        try:
+            meta = store.get_table(table_id)
+            entries = store.read_entries(table_id)
+        except KeyError:
+            raise ToolError(f"glossary not found: {table_id}") from None
+        return json.dumps(
+            {"id": meta.id, "name": meta.name, "domain": meta.domain,
+             "entries": [{"source": e.source, "target": e.target,
+                          "notes": e.notes, "category": e.category} for e in entries]},
+            ensure_ascii=False,
+        )
+
+    def glossary_upsert_entry(args: dict) -> str:
+        table_id = str(args["table_id"])
+        source = str(args["source"]).strip()
+        target = str(args["target"]).strip()
+        if not source or not target:
+            raise ToolError("source and target must not be empty")
+        notes = str(args.get("notes", "")).strip()
+        category = str(args.get("category", "")).strip()
+        store = GlossaryStore(ws.root)
+        try:
+            entries = store.read_entries(table_id)
+        except KeyError:
+            raise ToolError(f"glossary not found: {table_id}") from None
+        from ..glossary.models import GlossaryEntry
+        new_entry = GlossaryEntry(source=source, target=target, notes=notes, category=category)
+        updated = False
+        for i, entry in enumerate(entries):
+            if entry.source == source:
+                entries[i] = new_entry
+                updated = True
+                break
+        if not updated:
+            entries.append(new_entry)
+        store.write_entries(table_id, entries)
+        action = "updated" if updated else "added"
+        return json.dumps({"action": action, "source": source}, ensure_ascii=False)
+
+    def apply_glossary_to_task(args: dict) -> str:
+        project = str(args["project"])
+        task_id = str(args["task_id"])
+        try:
+            record = ws.store.load(project, task_id)
+        except FileNotFoundError:
+            raise ToolError(f"task not found: {project}/{task_id}") from None
+        from ..models import TaskGlossary
+        cfg = record.glossary.model_copy(update={})
+        if "global_ids" in args:
+            cfg = TaskGlossary(
+                global_ids=list(args["global_ids"]),
+                use_task=cfg.use_task,
+                asr_mode=cfg.asr_mode,
+            )
+        if "use_task" in args:
+            cfg = TaskGlossary(
+                global_ids=cfg.global_ids,
+                use_task=bool(args["use_task"]),
+                asr_mode=cfg.asr_mode,
+            )
+        if "asr_mode" in args:
+            mode = str(args["asr_mode"])
+            if mode not in ("auto", "force", "off"):
+                raise ToolError(f"invalid asr_mode: {mode}")
+            cfg = TaskGlossary(
+                global_ids=cfg.global_ids,
+                use_task=cfg.use_task,
+                asr_mode=mode,
+            )
+        record.glossary = cfg
+        ws.store.save(record)
+        return json.dumps(
+            {"task_id": record.id, "glossary": record.glossary.model_dump(),
+             "note": "task glossary updated; reapply via the task page or rerun to take effect"},
+            ensure_ascii=False,
+        )
+
     return [
         AgentTool(
             name="list_profiles",
@@ -548,6 +641,96 @@ def _build_action_tools(ws: Workspace, created_task_ids: list[str]) -> list[Agen
             },
             handler=_safe(rerun_task),
         ),
+        AgentTool(
+            name="glossary_list",
+            description="List all glossary tables with their id, name, domain, enabled status, and entry count.",
+            parameters={},
+            handler=_safe(glossary_list),
+        ),
+        AgentTool(
+            name="glossary_read",
+            description="Read the entries of a glossary table by its id.",
+            parameters={
+                "table_id": {
+                    "type": "string",
+                    "required": True,
+                    "description": "glossary table id",
+                },
+            },
+            handler=_safe(glossary_read),
+        ),
+        AgentTool(
+            name="glossary_upsert_entry",
+            description=(
+                "Add or update an entry in a glossary table. If an entry with "
+                "the same source already exists, it is updated; otherwise a new "
+                "entry is appended."
+            ),
+            parameters={
+                "table_id": {
+                    "type": "string",
+                    "required": True,
+                    "description": "glossary table id",
+                },
+                "source": {
+                    "type": "string",
+                    "required": True,
+                    "description": "source term",
+                },
+                "target": {
+                    "type": "string",
+                    "required": True,
+                    "description": "target translation",
+                },
+                "notes": {
+                    "type": "string",
+                    "required": False,
+                    "description": "optional notes",
+                },
+                "category": {
+                    "type": "string",
+                    "required": False,
+                    "description": "optional category",
+                },
+            },
+            handler=_safe(glossary_upsert_entry),
+        ),
+        AgentTool(
+            name="apply_glossary_to_task",
+            description=(
+                "Apply glossary settings to a task. Only writes the task.json "
+                "glossary field; does not enqueue or run the task. The operator "
+                "must reapply or rerun for the changes to take effect."
+            ),
+            parameters={
+                "project": {
+                    "type": "string",
+                    "required": True,
+                    "description": "project the task is filed under",
+                },
+                "task_id": {
+                    "type": "string",
+                    "required": True,
+                    "description": "task id",
+                },
+                "global_ids": {
+                    "type": "array",
+                    "required": False,
+                    "description": "list of global glossary table ids to select",
+                },
+                "use_task": {
+                    "type": "boolean",
+                    "required": False,
+                    "description": "whether to enable the task-local glossary table",
+                },
+                "asr_mode": {
+                    "type": "string",
+                    "required": False,
+                    "description": "ASR glossary mode: auto, force, or off",
+                },
+            },
+            handler=_safe(apply_glossary_to_task),
+        ),
     ]
 
 
@@ -582,9 +765,13 @@ _TOOL_KINDS = {
     "run_preflight": "read",
     "list_profiles": "read",
     "use_skill": "read",
+    "glossary_list": "read",
+    "glossary_read": "read",
     "propose_config_change": "write",
     "create_task": "execute",
     "rerun_task": "execute",
+    "glossary_upsert_entry": "execute",
+    "apply_glossary_to_task": "execute",
 }
 
 
