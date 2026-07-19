@@ -1101,3 +1101,42 @@ select.input {
   color: var(--warn);
   font-size: var(--fs-note);
 }
+
+/* Translation defaults: a short language code, a free-text style note, and
+   a multi-line prompt override. Widths follow the content, per the density
+   rules in the design language. */
+.codeInput {
+  width: 200px;
+  height: 32px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-s);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font-size: var(--fs-body);
+}
+
+.textInput {
+  width: 320px;
+  height: 32px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-s);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font-size: var(--fs-body);
+}
+
+.promptInput {
+  width: 420px;
+  max-width: 100%;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-s);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: var(--fs-body);
+  line-height: 1.6;
+  resize: vertical;
+}

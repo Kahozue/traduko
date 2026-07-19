@@ -43,6 +43,12 @@ const DEFAULT_CONFIG: CoreConfigDoc = {
     diarize_enabled: true,
   },
   pdf: { python: "" },
+  translation_defaults: {
+    video: { target_language: "zh-TW", style: "", prompt_override: "" },
+    audio: { target_language: "zh-TW", style: "", prompt_override: "" },
+    document: { target_language: "zh-TW", style: "", prompt_override: "" },
+    comic: { target_language: "zh-TW", style: "", prompt_override: "" },
+  },
   audio: { diarize_enabled: true, dub_enabled: false, translate_enabled: true },
   asr: {
     engine: "faster_whisper",
@@ -432,4 +438,45 @@ test("the video dubbing section carries the diarize default toggle", async () =>
   expect(
     within(audioPanel).queryByRole("checkbox", { name: "新任務預設啟用", hidden: true }),
   ).toBeNull();
+});
+
+test("each domain tab carries its own translation defaults block", async () => {
+  const { saveConfig } = setup();
+  await screen.findByLabelText("預設專案");
+
+  await userEvent.click(screen.getByRole("tab", { name: "影片" }));
+  const videoPanel = document.getElementById("settings-panel-video")!;
+  expect(
+    within(videoPanel).getByRole("heading", { name: "翻譯" }),
+  ).toBeInTheDocument();
+  const videoLanguage = within(videoPanel).getByLabelText("目標語言");
+  expect(videoLanguage).toHaveValue("zh-TW");
+  await userEvent.clear(videoLanguage);
+  await userEvent.type(videoLanguage, "ja");
+  await userEvent.type(within(videoPanel).getByLabelText("風格"), "簡潔");
+
+  // Sibling domains keep their own values.
+  await userEvent.click(screen.getByRole("tab", { name: "音頻" }));
+  const audioPanel = document.getElementById("settings-panel-audio")!;
+  expect(within(audioPanel).getByLabelText("目標語言")).toHaveValue("zh-TW");
+  await userEvent.click(screen.getByRole("tab", { name: "文件" }));
+  const documentPanel = document.getElementById("settings-panel-document")!;
+  expect(within(documentPanel).getByLabelText("目標語言")).toHaveValue("zh-TW");
+  await userEvent.type(
+    within(documentPanel).getByLabelText("Prompt 覆寫"),
+    "custom",
+  );
+
+  await userEvent.click(screen.getByRole("button", { name: "儲存" }));
+  await waitFor(() => expect(saveConfig).toHaveBeenCalledTimes(1));
+  expect(saveConfig.mock.calls[0][0].translation_defaults).toEqual({
+    video: { target_language: "ja", style: "簡潔", prompt_override: "" },
+    audio: { target_language: "zh-TW", style: "", prompt_override: "" },
+    document: {
+      target_language: "zh-TW",
+      style: "",
+      prompt_override: "custom",
+    },
+    comic: { target_language: "zh-TW", style: "", prompt_override: "" },
+  });
 });

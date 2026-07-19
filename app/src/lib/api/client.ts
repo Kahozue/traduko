@@ -36,6 +36,7 @@ import type {
   SyncStatus,
   TaskIndexRow,
   TaskRecord,
+  TaskTranslationDoc,
   TtsEngineInfo,
   DubParams,
 } from "./types";
@@ -331,6 +332,38 @@ export class ApiClient {
     return this.request(`/tasks/${project}/${taskId}/dub/redub`, {
       method: "POST",
       body: JSON.stringify({ from }),
+    });
+  }
+
+  // Task-level translation settings, aggregated from the translate stages.
+  getTaskTranslation(project: string, taskId: string): Promise<TaskTranslationDoc> {
+    return this.request(`/tasks/${project}/${taskId}/translation`);
+  }
+
+  // Write translation settings onto every translate stage. Fields left
+  // undefined are unchanged; "" clears style / prompt_override.
+  patchTaskTranslation(
+    project: string,
+    taskId: string,
+    body: {
+      target_language?: string;
+      style?: string;
+      prompt_override?: string;
+    },
+  ): Promise<TaskTranslationDoc> {
+    return this.request(`/tasks/${project}/${taskId}/translation`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    });
+  }
+
+  // Reset the translate stage and everything after it, then run.
+  retranslate(
+    project: string,
+    taskId: string,
+  ): Promise<{ queued: boolean; reset_from: string }> {
+    return this.request(`/tasks/${project}/${taskId}/retranslate`, {
+      method: "POST",
     });
   }
 

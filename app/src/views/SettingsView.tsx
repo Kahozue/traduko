@@ -2,7 +2,10 @@ import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { t, type MessageKey } from "../i18n";
 import { useApi, useConnection } from "../lib/connection";
-import type { CoreConfigDoc } from "../lib/api/types";
+import type {
+  CoreConfigDoc,
+  TranslationDomainDefaultsDoc,
+} from "../lib/api/types";
 import { AboutSection } from "../components/settings/AboutSection";
 import { AgentSection } from "../components/settings/AgentSection";
 import { AppearanceSection } from "../components/settings/AppearanceSection";
@@ -12,6 +15,7 @@ import { DubbingSection } from "../components/settings/DubbingSection";
 import { GlossarySection } from "../components/settings/GlossarySection";
 import { PipelineDefaultsSection } from "../components/settings/PipelineDefaultsSection";
 import { PdfEngineSection } from "../components/settings/PdfEngineSection";
+import { TranslationSection } from "../components/settings/TranslationSection";
 import { ProvidersSection } from "../components/settings/ProvidersSection";
 import { ChannelsSection } from "../components/settings/ChannelsSection";
 import { BotSection } from "../components/settings/BotSection";
@@ -42,6 +46,15 @@ const TAB_LABELS: Record<TabId, MessageKey> = {
   integrations: "settings.tab.integrations",
   about: "settings.tab.about",
 };
+
+// Domains carrying translation defaults. comic is modelled ahead of its tab
+// so a config round trip never drops it.
+const TRANSLATION_DOMAINS = ["video", "audio", "document", "comic"] as const;
+type TranslationDomain = (typeof TRANSLATION_DOMAINS)[number];
+
+function emptyTranslationDefaults(): TranslationDomainDefaultsDoc {
+  return { target_language: "zh-TW", style: "", prompt_override: "" };
+}
 
 function clone(config: CoreConfigDoc): CoreConfigDoc {
   // Config documents come from the JSON API, so a JSON round trip is a
@@ -110,6 +123,19 @@ function normalize(config: CoreConfigDoc): CoreConfigDoc {
     next.audio = { diarize_enabled: true, dub_enabled: false, translate_enabled: true };
   }
   if (!next.pdf) next.pdf = { python: "" };
+  if (!next.translation_defaults) {
+    next.translation_defaults = {
+      video: emptyTranslationDefaults(),
+      audio: emptyTranslationDefaults(),
+      document: emptyTranslationDefaults(),
+      comic: emptyTranslationDefaults(),
+    };
+  }
+  for (const domain of TRANSLATION_DOMAINS) {
+    if (!next.translation_defaults[domain]) {
+      next.translation_defaults[domain] = emptyTranslationDefaults();
+    }
+  }
   if (!next.asr) {
     next.asr = {
       engine: "faster_whisper",
@@ -282,6 +308,28 @@ export function SettingsView({
     setResetKey((key) => key + 1);
   }
 
+  function translationSection(domain: TranslationDomain) {
+    if (!draft) return null;
+    return (
+      <TranslationSection
+        defaults={draft.translation_defaults[domain]}
+        onChange={(value) =>
+          setDraft((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  translation_defaults: {
+                    ...prev.translation_defaults,
+                    [domain]: value,
+                  },
+                }
+              : prev,
+          )
+        }
+      />
+    );
+  }
+
   const statusText =
     conn.status === "ready"
       ? t("conn.ready")
@@ -379,6 +427,7 @@ export function SettingsView({
                 setDraft((prev) => (prev ? { ...prev, dubbing: value } : prev))
               }
             />
+            {translationSection("video")}
             <GlossarySection domain="video" onEditGlossary={onEditGlossary} />
           </>
         )}
@@ -416,6 +465,7 @@ export function SettingsView({
                 setDraft((prev) => (prev ? { ...prev, dubbing: value } : prev))
               }
             />
+            {translationSection("audio")}
             <GlossarySection domain="audio" onEditGlossary={onEditGlossary} />
           </>
         )}
@@ -436,6 +486,7 @@ export function SettingsView({
                 setDraft((prev) => (prev ? { ...prev, pdf: value } : prev))
               }
             />
+            {translationSection("document")}
             <GlossarySection domain="document" onEditGlossary={onEditGlossary} />
           </>
         )}

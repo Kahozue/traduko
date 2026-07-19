@@ -388,6 +388,7 @@ export interface CoreConfigDoc {
   pdf: PdfEngineConfigDoc;
   asr: AsrConfigDoc;
   audio: AudioConfigDoc;
+  translation_defaults: TranslationDefaultsDoc;
   [key: string]: unknown;
 }
 
@@ -524,6 +525,29 @@ export interface DubbingConfigDoc {
 }
 
 // Audio-domain pipeline defaults: initial switch values for new audio tasks.
+export interface TranslationDomainDefaultsDoc {
+  target_language: string;
+  style: string;
+  prompt_override: string;
+  [key: string]: unknown;
+}
+
+export interface TranslationDefaultsDoc {
+  video: TranslationDomainDefaultsDoc;
+  audio: TranslationDomainDefaultsDoc;
+  document: TranslationDomainDefaultsDoc;
+  comic: TranslationDomainDefaultsDoc;
+  [key: string]: unknown;
+}
+
+// Task-level translation settings, read off the task's translate stages.
+export interface TaskTranslationDoc {
+  stage_type: string;
+  target_language: string;
+  style: string;
+  prompt_override: string;
+}
+
 export interface AudioConfigDoc {
   diarize_enabled: boolean;
   dub_enabled: boolean;

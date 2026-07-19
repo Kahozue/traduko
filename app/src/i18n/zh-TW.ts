@@ -184,6 +184,12 @@ export const zhTW = {
   "settings.audio.pipeline.translate": "翻譯",
   "settings.audio.pipeline.diarize": "說話人分離",
   "settings.audio.pipeline.dub": "配音",
+  "settings.translation.title": "翻譯",
+  "settings.translation.targetLanguage": "目標語言",
+  "settings.translation.style": "風格",
+  "settings.translation.styleDesc": "留空表示不指定風格",
+  "settings.translation.promptOverride": "Prompt 覆寫",
+  "settings.translation.promptOverrideDesc": "留空表示用全域模板",
   "settings.dubbing.hide": "隱藏",
   "settings.pdf.title": "PDF 翻譯引擎",
   "settings.pdf.hint":

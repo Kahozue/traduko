@@ -149,6 +149,12 @@ test("config endpoints round trip", async () => {
       diarize_enabled: true,
     },
     pdf: { python: "" },
+    translation_defaults: {
+      video: { target_language: "zh-TW", style: "", prompt_override: "" },
+      audio: { target_language: "zh-TW", style: "", prompt_override: "" },
+      document: { target_language: "zh-TW", style: "", prompt_override: "" },
+      comic: { target_language: "zh-TW", style: "", prompt_override: "" },
+    },
     audio: { diarize_enabled: true, dub_enabled: false, translate_enabled: true },
     asr: {
       engine: "faster_whisper",
