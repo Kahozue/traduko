@@ -124,6 +124,15 @@ class AsrStage:
             ok, error = MacosAsrManager(ctx.data_root).ensure_compiled()
             if not ok:
                 raise StageError(f"macOS speech helper unavailable: {error}")
+        # Cloud transcription is billable: honour the caps before spending
+        # and put the measured duration on the ledger afterwards.
+        meter: BudgetMeter | None = None
+        if provider_name == "openai_cloud":
+            meter = BudgetMeter(ctx.data_root, ctx.bus, config)
+            try:
+                meter.ensure_headroom(ctx.task.project, ctx.task.id)
+            except BudgetExceededError as error:
+                raise PauseRequested(str(error)) from error
         try:
             provider = create_asr(provider_name, **options)
             result = provider.transcribe(
@@ -135,6 +144,13 @@ class AsrStage:
             )
         except AsrError as error:
             raise StageError(str(error)) from error
+        if meter is not None:
+            meter.record_asr(
+                str(options.get("model", "")),
+                result.duration,
+                project=ctx.task.project,
+                task_id=ctx.task.id,
+            )
         segments = []
         for i, s in enumerate(result.segments):
             segment = {"id": i + 1, "start": s.start, "end": s.end, "text": s.text}

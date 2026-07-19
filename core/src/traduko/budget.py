@@ -1,8 +1,11 @@
-"""Budget meter: token and USD accounting for every LLM call.
+"""Budget meter: token and USD accounting for every LLM call, plus
+duration-billed cloud ASR transcription.
 
 Ledger is human-readable JSONL under <root>/budget/, one file per month.
-Prices are USD per 1M tokens (input, output); users can override or extend
-them in config/pricing.yaml.
+Chat prices are USD per 1M tokens (input, output); cloud ASR prices are
+USD per audio minute. Users can override or extend both in
+config/pricing.yaml: entries with input/output feed the chat table,
+entries with per_minute feed the ASR table.
 """
 from __future__ import annotations
 
@@ -24,18 +27,40 @@ BUILTIN_PRICES: dict[str, tuple[float, float]] = {
     "claude-haiku-4-5": (1.0, 5.0),
 }
 
+# USD per audio minute; whisper-1 is OpenAI's published rate, the gpt-4o
+# family approximates its audio-token pricing. Overridable via pricing.yaml.
+BUILTIN_ASR_PRICES: dict[str, float] = {
+    "whisper-1": 0.006,
+    "gpt-4o-transcribe": 0.006,
+    "gpt-4o-mini-transcribe": 0.003,
+    "gpt-4o-transcribe-diarize": 0.006,
+}
+
 
 class BudgetExceededError(Exception):
     pass
 
 
+def _read_pricing(root: Path) -> dict:
+    path = root / "config" / "pricing.yaml"
+    if not path.exists():
+        return {}
+    return yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+
+
 def load_prices(root: Path) -> dict[str, tuple[float, float]]:
     prices = dict(BUILTIN_PRICES)
-    path = root / "config" / "pricing.yaml"
-    if path.exists():
-        data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-        for model, entry in data.items():
+    for model, entry in _read_pricing(root).items():
+        if isinstance(entry, dict) and "input" in entry and "output" in entry:
             prices[model] = (float(entry["input"]), float(entry["output"]))
+    return prices
+
+
+def load_asr_prices(root: Path) -> dict[str, float]:
+    prices = dict(BUILTIN_ASR_PRICES)
+    for model, entry in _read_pricing(root).items():
+        if isinstance(entry, dict) and "per_minute" in entry:
+            prices[model] = float(entry["per_minute"])
     return prices
 
 
@@ -44,6 +69,7 @@ class BudgetMeter:
         self.bus = bus
         self.config = config
         self._prices = load_prices(root)
+        self._asr_prices = load_asr_prices(root)
         self._dir = root / "budget"
         self._dir.mkdir(parents=True, exist_ok=True)
         self._month_usd = 0.0
@@ -123,6 +149,35 @@ class BudgetMeter:
                     {"scope": scope, "used_usd": used, "limit_usd": limit},
                 )
 
+    def ensure_headroom(self, project: str, task_id: str) -> None:
+        """Raise BudgetExceededError when a task or month cap is spent;
+        for callers about to incur non-LLM billable work (cloud ASR)."""
+        self._check_caps(project, task_id)
+
+    def record_asr(
+        self, model: str, seconds: float, *, project: str, task_id: str
+    ) -> float:
+        """Bill a cloud transcription by locally measured audio duration.
+        Unknown models log a zero-cost row so the usage still leaves a trace."""
+        price = self._asr_prices.get(model)
+        cost = 0.0 if price is None else seconds / 60.0 * price
+        record = {
+            "ts": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "project": project,
+            "task_id": task_id,
+            "kind": "asr",
+            "model": model,
+            "seconds": round(seconds, 3),
+            "cost_usd": round(cost, 6),
+            "price_known": price is not None,
+        }
+        with self._ledger_path().open("a", encoding="utf-8") as f:
+            f.write(json.dumps(record, ensure_ascii=False) + "\n")
+        self._task_usd[task_id] = self._task_usd.get(task_id, 0.0) + cost
+        self._month_usd += cost
+        self._maybe_warn(project, task_id)
+        return cost
+
     def chat(
         self,
         provider: LLMProvider,
@@ -149,6 +204,7 @@ class BudgetMeter:
             "ts": datetime.now(timezone.utc).isoformat(timespec="seconds"),
             "project": project,
             "task_id": task_id,
+            "kind": "chat",
             "model": request.model,
             "prompt_tokens": usage.prompt_tokens,
             "completion_tokens": usage.completion_tokens,

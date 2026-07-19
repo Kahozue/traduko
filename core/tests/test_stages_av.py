@@ -297,3 +297,67 @@ def test_segment_stage_accepts_legacy_asr_without_flag(tmp_path: Path) -> None:
     )
     result = registry.create("segment").run(ctx)
     assert result.artifacts == ["02-segments.json"]
+
+
+# --- cloud ASR spend lands on the budget ledger (v3-10) ---
+
+
+def test_asr_stage_records_cloud_spend(tmp_path: Path, monkeypatch) -> None:
+    import json
+
+    save_config(tmp_path, CoreConfig())
+    src = tmp_path / "in.wav"
+    src.write_bytes(b"RIFF")
+    ctx, _ = make_ctx(
+        tmp_path, src, stage_index=1, params={"engine": "openai_whisper"}
+    )
+    captured: dict = {}
+
+    def fake_create(name, **options):
+        captured["name"] = name
+        captured["options"] = options
+        return FakeAsr()
+
+    monkeypatch.setattr("traduko.stages.av.create_asr", fake_create)
+    registry.create("asr").run(ctx)
+    assert captured["name"] == "openai_cloud"
+    ledger_files = list((tmp_path / "budget").glob("ledger-*.jsonl"))
+    assert len(ledger_files) == 1
+    row = json.loads(ledger_files[0].read_text(encoding="utf-8").splitlines()[0])
+    assert row["kind"] == "asr"
+    assert row["model"] == "whisper-1"
+    assert row["seconds"] == 2.0
+    assert row["cost_usd"] == pytest.approx(2.0 / 60 * 0.006)
+    assert row["price_known"] is True
+    assert row["task_id"] == "t-test"
+
+
+def test_asr_stage_local_engine_stays_off_the_ledger(tmp_path: Path) -> None:
+    src = tmp_path / "in.wav"
+    src.write_bytes(b"RIFF")
+    ctx, _ = make_ctx(tmp_path, src, params={"provider": "fake-asr"})
+    registry.create("asr").run(ctx)
+    assert not (tmp_path / "budget").exists()
+
+
+def test_asr_stage_pauses_when_budget_is_spent(tmp_path: Path, monkeypatch) -> None:
+    from traduko.budget import BudgetMeter
+    from traduko.events import EventBus as Bus
+
+    config = CoreConfig(budget=BudgetConfig(monthly_usd_limit=1.0))
+    save_config(tmp_path, config)
+    # Pre-spend past the monthly cap: 12000s at 0.006/min = 1.2 USD.
+    BudgetMeter(tmp_path, Bus(), config).record_asr(
+        "whisper-1", 12000.0, project="default", task_id="warmup"
+    )
+    src = tmp_path / "in.wav"
+    src.write_bytes(b"RIFF")
+    ctx, _ = make_ctx(
+        tmp_path, src, stage_index=1, params={"engine": "openai_whisper"}
+    )
+    monkeypatch.setattr(
+        "traduko.stages.av.create_asr",
+        lambda name, **options: pytest.fail("must not transcribe past the cap"),
+    )
+    with pytest.raises(base.PauseRequested, match="budget"):
+        registry.create("asr").run(ctx)
