@@ -54,4 +54,9 @@ class TimelineSegment(BaseModel):
 
 class DubTimelineDoc(BaseModel):
     schema_version: int = 1
+    # timed: clips are fitted into each segment's own window. sequential: the
+    # transcript carries no timing, so clips are laid end to end and `note`
+    # says why when the input was only partly timed.
+    mode: Literal["timed", "sequential"] = "timed"
+    note: str = ""
     segments: list[TimelineSegment] = Field(default_factory=list)

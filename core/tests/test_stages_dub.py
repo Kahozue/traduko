@@ -133,6 +133,24 @@ def test_assign_speakers_without_turns_is_single_speaker() -> None:
     assert len(doc.speakers) == 1
 
 
+def test_assign_speakers_tolerates_untimed_segments() -> None:
+    # A compose task ingests a plain-text transcript: no timing to overlap
+    # against, but diarization must still produce a usable speakers doc.
+    segments = [
+        {"id": 1, "start": None, "end": None, "source": "first"},
+        {"id": 2, "start": None, "end": None, "source": "second"},
+    ]
+    doc = dub.build_speakers_doc(segments, [])
+    assert [s.speaker for s in doc.segments] == ["S1", "S1"]
+    assert doc.speakers[0].ref_start == 0.0 and doc.speakers[0].ref_end == 0.0
+
+
+def test_assign_speakers_untimed_segments_with_turns() -> None:
+    segments = [{"id": 1, "start": None, "end": None, "source": "first"}]
+    doc = dub.build_speakers_doc(segments, TURNS)
+    assert [s.speaker for s in doc.segments] == ["S1"]
+
+
 def test_diarize_stage_writes_speakers(tmp_path: Path, fake_client) -> None:
     install_engine(tmp_path)
     write_dub_config(tmp_path)
@@ -379,6 +397,132 @@ def test_align_duration_carries_failed_segments(tmp_path: Path, monkeypatch) -> 
     registry.create("align_duration").run(ctx)
     timeline = ctx.artifacts.read_latest_json("dub-timeline.json")
     assert timeline["segments"][0]["status"] == "failed"
+
+
+UNTIMED_SEGMENTS = [
+    {"id": 1, "start": None, "end": None, "text": "first line"},
+    {"id": 2, "start": None, "end": None, "text": "second line"},
+    {"id": 3, "start": None, "end": None, "text": "third line"},
+]
+
+
+def write_untimed_segments(ctx, segments=None, index: int = 4) -> None:
+    ctx.artifacts.write_json(
+        index,
+        "segments.json",
+        {
+            "language": "en",
+            "timestamps": False,
+            "segments": segments if segments is not None else UNTIMED_SEGMENTS,
+        },
+    )
+
+
+def setup_untimed_align(tmp_path, monkeypatch, segments=None, stage_index: int = 8):
+    """align_duration on a compose task: a transcript with no timing, so
+    there is no window to fit clips into."""
+    install_engine(tmp_path)
+    write_dub_config(tmp_path)
+    ctx, progress = make_ctx(
+        tmp_path,
+        tmp_path / "transcript.txt",
+        stage_index=stage_index,
+        params={"dub_text": "original", "voice_mode": "design"},
+    )
+    write_untimed_segments(ctx, segments)
+    write_speakers(ctx)
+    commands: list[list[str]] = []
+    monkeypatch.setattr(dub, "run_media", lambda cmd: commands.append(cmd))
+    monkeypatch.setattr(dub, "ffmpeg_available", lambda: True)
+    return ctx, progress, commands
+
+
+def test_align_duration_sequential_lays_clips_end_to_end(
+    tmp_path: Path, monkeypatch, fake_client
+) -> None:
+    ctx, _, commands = setup_untimed_align(tmp_path, monkeypatch)
+    write_manifest(ctx, {1: 1.5, 2: 2.0, 3: 0.75})
+
+    registry.create("align_duration").run(ctx)
+
+    timeline = ctx.artifacts.read_latest_json("dub-timeline.json")
+    assert timeline["mode"] == "sequential"
+    assert [s["start"] for s in timeline["segments"]] == [0.0, 1.5, 3.5]
+    assert [s["duration"] for s in timeline["segments"]] == [1.5, 2.0, 0.75]
+    assert {s["status"] for s in timeline["segments"]} == {"fit"}
+    assert [s["tempo"] for s in timeline["segments"]] == [1.0, 1.0, 1.0]
+    # Nothing to fit into, so no regeneration and no tempo pass.
+    assert fake_client.synth_calls == []
+    assert not [c for c in commands if any("atempo" in str(p) for p in c)]
+
+
+def test_align_duration_sequential_skips_failed_segments(
+    tmp_path: Path, monkeypatch, fake_client
+) -> None:
+    ctx, _, _ = setup_untimed_align(tmp_path, monkeypatch)
+    ctx.artifacts.write_json(
+        8,
+        "dub-manifest.json",
+        {
+            "segments": [
+                {"id": 1, "speaker": "S1", "file": "08-dub/seg-1.wav",
+                 "duration": 1.5, "status": "synthesized"},
+                {"id": 2, "speaker": "S2", "file": "", "duration": 0.0,
+                 "status": "failed", "error": "boom"},
+                {"id": 3, "speaker": "S1", "file": "08-dub/seg-3.wav",
+                 "duration": 2.0, "status": "synthesized"},
+            ]
+        },
+    )
+
+    registry.create("align_duration").run(ctx)
+
+    timeline = ctx.artifacts.read_latest_json("dub-timeline.json")
+    by_id = {s["id"]: s for s in timeline["segments"]}
+    assert by_id[2]["status"] == "failed"
+    # A failed clip contributes no audio, so it must not push the next one out.
+    assert by_id[3]["start"] == 1.5
+
+
+def test_align_duration_partial_timing_falls_back_to_sequential(
+    tmp_path: Path, monkeypatch, fake_client
+) -> None:
+    ctx, _, _ = setup_untimed_align(
+        tmp_path,
+        monkeypatch,
+        segments=[
+            {"id": 1, "start": 0.0, "end": 2.0, "text": "timed line"},
+            {"id": 2, "start": None, "end": None, "text": "untimed line"},
+        ],
+    )
+    write_manifest(ctx, {1: 1.5, 2: 2.0})
+
+    registry.create("align_duration").run(ctx)
+
+    timeline = ctx.artifacts.read_latest_json("dub-timeline.json")
+    assert timeline["mode"] == "sequential"
+    assert "note" in timeline and timeline["note"]
+    assert [s["start"] for s in timeline["segments"]] == [0.0, 1.5]
+
+
+def test_align_duration_timed_input_keeps_segment_starts(
+    tmp_path: Path, monkeypatch
+) -> None:
+    client = FakeClient(synth_duration=lambda call: 1.7)
+    monkeypatch.setattr(dub, "_make_client", lambda data_root, config: client)
+    ctx, _, _ = setup_tts(tmp_path, monkeypatch, stage_index=8)
+    write_manifest(ctx, {1: 2.1, 2: 3.0, 3: 12.0})
+
+    registry.create("align_duration").run(ctx)
+
+    timeline = ctx.artifacts.read_latest_json("dub-timeline.json")
+    assert timeline["mode"] == "timed"
+    assert [s["start"] for s in timeline["segments"]] == [
+        seg["start"] for seg in SEGMENTS
+    ]
+    assert [s["window"] for s in timeline["segments"]] == [
+        seg["end"] - seg["start"] for seg in SEGMENTS
+    ]
 
 
 def write_timeline(ctx, index: int = 9) -> None:

@@ -155,25 +155,46 @@ def _overlap(a0: float, a1: float, b0: float, b1: float) -> float:
     return max(0.0, min(a1, b1) - max(a0, b0))
 
 
+def _seg_span(seg: dict) -> tuple[float, float] | None:
+    """(start, end), or None for a transcript line that carries no timing."""
+    start, end = seg.get("start"), seg.get("end")
+    if start is None or end is None:
+        return None
+    return start, end
+
+
+def _seg_duration(seg: dict) -> float:
+    span = _seg_span(seg)
+    return span[1] - span[0] if span else 0.0
+
+
 def build_speakers_doc(segments: list[dict], turns: list[dict]) -> SpeakersDoc:
     """Assign each subtitle segment the diarization speaker with the most
     overlap (nearest turn when none overlaps; single speaker when
     diarization found nothing), then pick each speaker's longest segment
-    as the voice-clone reference."""
+    as the voice-clone reference.
+
+    An untimed segment has nothing to overlap against, so it falls to the
+    first turn's speaker; its speaker's reference window then comes from a
+    timed segment if that speaker has one."""
     raw: list[tuple[dict, str]] = []
     for seg in segments:
+        span = _seg_span(seg)
         best, best_overlap = None, 0.0
-        for turn in turns:
-            overlap = _overlap(seg["start"], seg["end"], turn["start"], turn["end"])
-            if overlap > best_overlap:
-                best, best_overlap = turn["speaker"], overlap
-        if best is None and turns:
-            mid = (seg["start"] + seg["end"]) / 2
-            nearest = min(
-                turns,
-                key=lambda t: min(abs(mid - t["start"]), abs(mid - t["end"])),
-            )
-            best = nearest["speaker"]
+        if span is None:
+            best = turns[0]["speaker"] if turns else None
+        else:
+            for turn in turns:
+                overlap = _overlap(span[0], span[1], turn["start"], turn["end"])
+                if overlap > best_overlap:
+                    best, best_overlap = turn["speaker"], overlap
+            if best is None and turns:
+                mid = (span[0] + span[1]) / 2
+                nearest = min(
+                    turns,
+                    key=lambda t: min(abs(mid - t["start"]), abs(mid - t["end"])),
+                )
+                best = nearest["speaker"]
         raw.append((seg, best or ""))
 
     mapping: dict[str, str] = {}
@@ -184,13 +205,14 @@ def build_speakers_doc(segments: list[dict], turns: list[dict]) -> SpeakersDoc:
     speakers: list[Speaker] = []
     for label, speaker_id in mapping.items():
         own = [seg for seg, seg_label in raw if seg_label == label]
-        ref = max(own, key=lambda s: s["end"] - s["start"])
+        ref = max(own, key=_seg_duration)
+        ref_span = _seg_span(ref) or (0.0, 0.0)
         speakers.append(
             Speaker(
                 id=speaker_id,
                 label=f"Speaker {speaker_id[1:]}",
-                ref_start=ref["start"],
-                ref_end=ref["end"],
+                ref_start=ref_span[0],
+                ref_end=ref_span[1],
                 ref_text=ref.get("source", ""),
             )
         )
@@ -446,6 +468,26 @@ class TtsSynthesizeStage:
         return StageResult(artifacts=[manifest_path.name, *ref_names])
 
 
+def _timeline_mode(segments: list[dict]) -> tuple[str, str]:
+    """("timed"|"sequential", note). A transcript ingested from a plain text
+    file carries no timing, so there is no window to fit a clip into and the
+    clips have to be laid end to end. Partly timed input goes the same way,
+    with a note on the artifact saying so: half a timeline is not a timeline.
+    """
+    timed = [
+        s.get("start") is not None and s.get("end") is not None for s in segments
+    ]
+    if all(timed):
+        return "timed", ""
+    if any(timed):
+        return (
+            "sequential",
+            "some transcript lines carry no timing, so every clip was laid "
+            "end to end instead of being fitted to the original timing",
+        )
+    return "sequential", ""
+
+
 @registry.register
 class AlignDurationStage:
     type = "align_duration"
@@ -483,12 +525,36 @@ class AlignDurationStage:
         out_dir = ctx.artifacts.path_for(out_index, "dub")
         out_dir.mkdir(parents=True, exist_ok=True)
 
-        client = None if mode == "preview" else _make_client(ctx.data_root, config)
+        timeline_mode, timeline_note = _timeline_mode(text_doc["segments"])
+        sequential = timeline_mode == "sequential"
+
+        client = (
+            None
+            if mode == "preview" or sequential
+            else _make_client(ctx.data_root, config)
+        )
         timeline: list[TimelineSegment] = []
+        cursor = 0.0
         total = len(manifest["segments"])
         try:
             for n, entry in enumerate(manifest["segments"]):
                 seg = seg_by_id.get(entry["id"])
+                if sequential:
+                    # No window to fit into: each clip keeps its natural
+                    # length and starts where the previous one ended.
+                    synthesized = entry.get("status") == "synthesized" and seg
+                    duration = entry["duration"] if synthesized else 0.0
+                    timeline.append(
+                        TimelineSegment(
+                            id=entry["id"], start=cursor, window=duration,
+                            duration=duration,
+                            file=entry["file"] if synthesized else "",
+                            status="fit" if synthesized else "failed",
+                        )
+                    )
+                    cursor += duration
+                    ctx.emit_progress(n + 1, total)
+                    continue
                 start = seg["start"] if seg else 0.0
                 window = (seg["end"] - seg["start"]) if seg else 0.0
                 if entry.get("status") != "synthesized" or seg is None:
@@ -585,7 +651,9 @@ class AlignDurationStage:
         path = ctx.artifacts.write_json(
             out_index,
             "dub-timeline.json",
-            DubTimelineDoc(segments=timeline).model_dump(),
+            DubTimelineDoc(
+                mode=timeline_mode, note=timeline_note, segments=timeline
+            ).model_dump(),
         )
         return StageResult(artifacts=[path.name])
 
