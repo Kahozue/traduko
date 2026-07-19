@@ -3042,3 +3042,106 @@ def test_export_estimate_audio_kind_uses_bitrate(tmp_path: Path, monkeypatch) ->
         assert resp.json()["size_bytes"] == pytest.approx(
             192 * 1000 * 100 / 8, rel=0.01
         )
+
+
+# --- translation defaults (v3_5-08) -----------------------------------------
+
+
+def _stages_of(client, headers, task_id: str) -> list[dict]:
+    return client.get(f"/tasks/default/{task_id}", headers=headers).json()["stages"]
+
+
+def test_create_task_applies_video_domain_translation_defaults(
+    tmp_path: Path,
+) -> None:
+    with service(tmp_path) as (client, headers, token):
+        config = load_config(tmp_path)
+        config.translation_defaults.video.target_language = "ja"
+        config.translation_defaults.video.style = "keep it terse"
+        from traduko.config import save_config
+
+        save_config(tmp_path, config)
+        client.app.state.workspace.config = load_config(tmp_path)
+
+        task_id = create_task(client, headers, tmp_path, profile="subtitle-translate")
+
+        translate = next(
+            s for s in _stages_of(client, headers, task_id) if s["type"] == "translate"
+        )
+        assert translate["params"]["target_language"] == "ja"
+        assert translate["params"]["style"] == "keep it terse"
+
+
+def test_create_task_leaves_style_unset_when_domain_default_is_empty(
+    tmp_path: Path,
+) -> None:
+    with service(tmp_path) as (client, headers, token):
+        task_id = create_task(client, headers, tmp_path, profile="subtitle-translate")
+        translate = next(
+            s for s in _stages_of(client, headers, task_id) if s["type"] == "translate"
+        )
+        assert translate["params"]["target_language"] == "zh-TW"
+        assert "style" not in translate["params"]
+        assert "prompt_override" not in translate["params"]
+
+
+def test_create_document_task_applies_document_defaults_to_all_translate_stages(
+    tmp_path: Path,
+) -> None:
+    with service(tmp_path) as (client, headers, token):
+        config = load_config(tmp_path)
+        config.translation_defaults.document.target_language = "ko"
+        from traduko.config import save_config
+
+        save_config(tmp_path, config)
+        client.app.state.workspace.config = load_config(tmp_path)
+
+        response = client.post(
+            "/tasks",
+            json={
+                "input_path": str(make_input(tmp_path)),
+                "profile": "novel-translate",
+            },
+            headers=headers,
+        )
+        assert response.status_code == 201, response.text
+        stages = response.json()["stages"]
+
+        chunk_stages = [s for s in stages if s["type"] == "translate_chunks"]
+        assert len(chunk_stages) == 2
+        assert all(s["params"]["target_language"] == "ko" for s in chunk_stages)
+        # qc_scan derives its untranslated heuristic from the same language.
+        assert all(
+            s["params"]["target_language"] == "ko"
+            for s in stages
+            if s["type"] == "qc_scan"
+        )
+
+
+def test_cli_create_task_does_not_apply_domain_defaults(tmp_path: Path) -> None:
+    from typer.testing import CliRunner
+
+    from traduko.cli import app as cli_app
+    from traduko.config import save_config
+
+    with service(tmp_path) as (client, headers, token):
+        pass
+    config = load_config(tmp_path)
+    config.translation_defaults.video.target_language = "ja"
+    save_config(tmp_path, config)
+
+    input_file = make_input(tmp_path)
+    result = CliRunner().invoke(
+        cli_app,
+        ["task", "create", str(input_file), "--profile", "subtitle-translate"],
+        env={"TRADUKO_DATA_ROOT": str(tmp_path)},
+    )
+    assert result.exit_code == 0, result.output
+    task_id = result.output.strip().splitlines()[-1]
+    record = json.loads(
+        (
+            tmp_path / "projects" / "default" / "tasks" / task_id / "task.json"
+        ).read_text(encoding="utf-8")
+    )
+    translate = next(s for s in record["stages"] if s["type"] == "translate")
+    assert translate["params"]["target_language"] == "en"

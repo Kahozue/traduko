@@ -206,6 +206,35 @@ def initial_switches_for_new_task(
     return switches
 
 
+# Stage types whose params carry translation settings.
+TRANSLATE_STAGE_TYPES = frozenset({"translate", "translate_chunks"})
+
+# qc_scan has no translation settings of its own, but its untranslated-text
+# heuristic keys off the same target language, so it has to move in step.
+_TARGET_LANGUAGE_FOLLOWERS = frozenset({"qc_scan"})
+
+
+def apply_translation_defaults(
+    record: TaskRecord, kind: str, config: CoreConfig
+) -> None:
+    """Seed the task's translate stages from the domain defaults. Called once
+    at creation from the HTTP endpoint; the CLI keeps the profile as authored.
+    style and prompt_override are only written when set, so an unconfigured
+    domain leaves the profile's own params alone."""
+    defaults = getattr(config.translation_defaults, kind, None)
+    if defaults is None:
+        return
+    for stage in record.stages:
+        if stage.type in TRANSLATE_STAGE_TYPES:
+            stage.params["target_language"] = defaults.target_language
+            if defaults.style:
+                stage.params["style"] = defaults.style
+            if defaults.prompt_override:
+                stage.params["prompt_override"] = defaults.prompt_override
+        elif stage.type in _TARGET_LANGUAGE_FOLLOWERS:
+            stage.params["target_language"] = defaults.target_language
+
+
 # Tail stage closing the appended dub group, per domain.
 DUB_GROUP_TAIL = {"video": "mux", "audio": "export_audio"}
 

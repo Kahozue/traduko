@@ -109,6 +109,7 @@ from ..tasks import (
     apply_asr_engine_override,
     apply_dub_text_override,
     apply_model_override,
+    apply_translation_defaults,
     apply_voice_mode_override,
     dub_group_stages,
     ensure_glossary_proofread_stage,
@@ -413,7 +414,9 @@ def create_task(request: Request, body: TaskCreateRequest) -> dict:
         stages=stage_records_from(profile),
         name=body.name,
     )
-    record.glossary = task_glossary_for_new_task(ws.root, profile_kind(profile))
+    kind = profile_kind(profile)
+    record.glossary = task_glossary_for_new_task(ws.root, kind)
+    apply_translation_defaults(record, kind, ws.config)
     apply_asr_engine_override(record, body.asr_engine or None)
     apply_voice_mode_override(
         record, body.voice_mode or None, body.voice_instruction or None

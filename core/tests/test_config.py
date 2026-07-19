@@ -336,3 +336,34 @@ def test_pipeline_default_switches_defaults_and_roundtrip(tmp_path: Path) -> Non
     assert loaded.audio.dub_enabled is True
     assert loaded.audio.translate_enabled is False
     assert loaded.dubbing.diarize_enabled is False
+
+
+def test_translation_defaults_four_domains_and_roundtrip(tmp_path: Path) -> None:
+    config = load_config(tmp_path)
+    for domain in ("video", "audio", "document", "comic"):
+        defaults = getattr(config.translation_defaults, domain)
+        assert defaults.target_language == "zh-TW"
+        assert defaults.style == ""
+        assert defaults.prompt_override == ""
+    config.translation_defaults.video.target_language = "ja"
+    config.translation_defaults.video.style = "keep it terse"
+    config.translation_defaults.document.prompt_override = "custom ${target_language}"
+    save_config(tmp_path, config)
+    loaded = load_config(tmp_path)
+    assert loaded.translation_defaults.video.target_language == "ja"
+    assert loaded.translation_defaults.video.style == "keep it terse"
+    assert loaded.translation_defaults.document.prompt_override == (
+        "custom ${target_language}"
+    )
+    assert loaded.translation_defaults.audio.target_language == "zh-TW"
+
+
+def test_config_file_without_translation_defaults_reads_defaults(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "config").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "config" / "config.yaml").write_text(
+        "schema_version: 1\ndefault_project: default\n", encoding="utf-8"
+    )
+    loaded = load_config(tmp_path)
+    assert loaded.translation_defaults.comic.target_language == "zh-TW"

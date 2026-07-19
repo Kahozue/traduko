@@ -169,6 +169,38 @@ class AudioConfig(BaseModel):
     translate_enabled: bool = True
 
 
+class TranslationDomainDefaults(BaseModel):
+    """One domain's translation defaults. Written into a new task's translate
+    stage params at creation time only; existing tasks are never touched.
+    Empty prompt_override means the prompts/ template stays in charge."""
+
+    model_config = ConfigDict(extra="allow")
+
+    target_language: str = "zh-TW"
+    style: str = ""
+    prompt_override: str = ""
+
+
+class TranslationDefaultsConfig(BaseModel):
+    """Per-domain translation defaults. comic is modelled now and surfaces in
+    settings once the comic tab exists."""
+
+    model_config = ConfigDict(extra="allow")
+
+    video: TranslationDomainDefaults = Field(
+        default_factory=TranslationDomainDefaults
+    )
+    audio: TranslationDomainDefaults = Field(
+        default_factory=TranslationDomainDefaults
+    )
+    document: TranslationDomainDefaults = Field(
+        default_factory=TranslationDomainDefaults
+    )
+    comic: TranslationDomainDefaults = Field(
+        default_factory=TranslationDomainDefaults
+    )
+
+
 class CoreConfig(BaseModel):
     model_config = ConfigDict(extra="allow")
 
@@ -186,6 +218,9 @@ class CoreConfig(BaseModel):
     pdf: PdfEngineConfig = Field(default_factory=PdfEngineConfig)
     asr: AsrConfig = Field(default_factory=AsrConfig)
     audio: AudioConfig = Field(default_factory=AudioConfig)
+    translation_defaults: TranslationDefaultsConfig = Field(
+        default_factory=TranslationDefaultsConfig
+    )
 
 
 def _migrate_confirmed(data: dict) -> None:
