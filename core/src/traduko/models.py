@@ -4,6 +4,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 from enum import StrEnum
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -35,6 +36,12 @@ class StageRecord(BaseModel):
     error: str | None = None
 
 
+class TaskGlossary(BaseModel):
+    global_ids: list[str] = Field(default_factory=list)
+    use_task: bool = False
+    asr_mode: Literal["auto", "force", "off"] = "auto"
+
+
 class TaskRecord(BaseModel):
     schema_version: int = 1
     id: str
@@ -44,6 +51,7 @@ class TaskRecord(BaseModel):
     name: str | None = None
     status: TaskStatus = TaskStatus.PENDING
     stages: list[StageRecord]
+    glossary: TaskGlossary = Field(default_factory=TaskGlossary)
     created_at: str
     updated_at: str
 

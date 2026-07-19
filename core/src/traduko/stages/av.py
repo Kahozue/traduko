@@ -15,7 +15,7 @@ from ..asr.engines import engine_provider, resolve_engine
 from ..budget import BudgetExceededError, BudgetMeter
 from ..config import load_config
 from ..fsutil import atomic_write_text
-from ..glossary import load_glossary
+from ..glossary import resolve_effective_glossary
 from ..llm import LLMError
 from ..media import (
     MediaError,
@@ -238,7 +238,7 @@ class TranslateStage:
                 settings,
                 provider,
                 meter,
-                load_glossary(ctx.data_root, ctx.task.project),
+                resolve_effective_glossary(ctx.data_root, ctx.task),
                 load_template(ctx.data_root, "translate"),
                 project=ctx.task.project,
                 task_id=ctx.task.id,

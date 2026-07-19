@@ -9,7 +9,7 @@ from ..agents.recorder import AgentRunRecorder
 from ..budget import BudgetMeter
 from ..config import load_config
 from ..events import Event
-from ..glossary import load_glossary
+from ..glossary import resolve_effective_glossary
 from ..llm import LLMError
 from ..prompts import load_template
 from . import registry
@@ -69,7 +69,7 @@ class ProofreadStage:
                 settings,
                 provider,
                 meter,
-                load_glossary(ctx.data_root, ctx.task.project),
+                resolve_effective_glossary(ctx.data_root, ctx.task),
                 load_template(ctx.data_root, "proofread"),
                 load_template(ctx.data_root, "translate"),
                 project=ctx.task.project,

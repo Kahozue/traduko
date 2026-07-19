@@ -25,7 +25,7 @@ from ..documents.translate import (
     DocTranslationSettings,
     translate_document_chunks,
 )
-from ..glossary import load_glossary
+from ..glossary import resolve_effective_glossary
 from ..llm import LLMError
 from ..prompts import load_template
 from ..translate import TranslationError, TranslationPaused
@@ -186,7 +186,7 @@ class TranslateChunksStage:
                 settings,
                 provider,
                 meter,
-                load_glossary(ctx.data_root, ctx.task.project),
+                resolve_effective_glossary(ctx.data_root, ctx.task),
                 load_template(ctx.data_root, "doc-translate"),
                 load_template(ctx.data_root, "doc-summary"),
                 project=ctx.task.project,
@@ -245,7 +245,7 @@ class QcScanStage:
             doc,
             chunks,
             translation,
-            load_glossary(ctx.data_root, ctx.task.project),
+            resolve_effective_glossary(ctx.data_root, ctx.task),
             ctx.params.get("target_language", ""),
         )
         path = ctx.artifacts.write_json(
