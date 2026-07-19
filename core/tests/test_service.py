@@ -2615,3 +2615,59 @@ def test_patch_switches_dub_append_on_completed_task_goes_pending(
         body = response.json()
         assert body["status"] == "pending"
         assert body["stages"][0]["status"] == "completed"
+
+
+def set_config(client, headers, **sections) -> None:
+    body = client.get("/config", headers=headers).json()
+    for section, values in sections.items():
+        body.setdefault(section, {}).update(values)
+    assert client.put("/config", json=body, headers=headers).status_code == 200
+
+
+def test_create_audio_task_applies_global_pipeline_defaults(tmp_path: Path) -> None:
+    with service(tmp_path) as (client, headers, token):
+        # Default audio.dub_enabled=False: an audio task created with a dub
+        # profile starts with its dub group skipped.
+        task_id = create_task(client, headers, tmp_path, profile="audio-dub")
+        body = client.get(f"/tasks/default/{task_id}", headers=headers).json()
+        by_type = {stage["type"]: stage for stage in body["stages"]}
+        assert body["switches"]["dub"] is False
+        assert body["switches"]["translate"] is True
+        assert by_type["tts_synthesize"]["status"] == "skipped"
+        assert by_type["export_audio"]["status"] == "skipped"
+        assert by_type["translate"]["status"] == "pending"
+
+
+def test_create_audio_task_translate_disabled_skips_translate_group(
+    tmp_path: Path,
+) -> None:
+    with service(tmp_path) as (client, headers, token):
+        set_config(client, headers, audio={"translate_enabled": False})
+        task_id = create_task(client, headers, tmp_path, profile="audio-translate")
+        body = client.get(f"/tasks/default/{task_id}", headers=headers).json()
+        by_type = {stage["type"]: stage for stage in body["stages"]}
+        assert body["switches"]["translate"] is False
+        assert by_type["translate"]["status"] == "skipped"
+        assert by_type["proofread"]["status"] == "skipped"
+        assert by_type["export_subtitles"]["status"] == "skipped"
+        assert by_type["export_transcript"]["status"] == "pending"
+
+
+def test_create_video_task_diarize_default_applies(tmp_path: Path) -> None:
+    with service(tmp_path) as (client, headers, token):
+        set_config(client, headers, dubbing={"diarize_enabled": False})
+        task_id = create_task(client, headers, tmp_path, profile="av-dub")
+        body = client.get(f"/tasks/default/{task_id}", headers=headers).json()
+        by_type = {stage["type"]: stage for stage in body["stages"]}
+        assert body["switches"]["diarize"] is False
+        assert by_type["diarize"]["status"] == "skipped"
+        assert by_type["tts_synthesize"]["status"] == "pending"
+
+
+def test_create_task_without_switchable_stages_leaves_switches_none(
+    tmp_path: Path,
+) -> None:
+    with service(tmp_path) as (client, headers, token):
+        task_id = create_task(client, headers, tmp_path, profile="subtitle-translate")
+        body = client.get(f"/tasks/default/{task_id}", headers=headers).json()
+        assert body["switches"] is None

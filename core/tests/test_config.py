@@ -320,3 +320,19 @@ def test_asr_config_defaults_and_roundtrip(tmp_path):
     assert loaded.asr.model == "medium"
     assert loaded.asr.cloud_api_key == "sk-x"
     assert loaded.asr.custom_model == "whisper-large-v3"
+
+
+def test_pipeline_default_switches_defaults_and_roundtrip(tmp_path: Path) -> None:
+    config = load_config(tmp_path)
+    assert config.dubbing.diarize_enabled is True
+    assert config.audio.diarize_enabled is True
+    assert config.audio.dub_enabled is False
+    assert config.audio.translate_enabled is True
+    config.audio.dub_enabled = True
+    config.audio.translate_enabled = False
+    config.dubbing.diarize_enabled = False
+    save_config(tmp_path, config)
+    loaded = load_config(tmp_path)
+    assert loaded.audio.dub_enabled is True
+    assert loaded.audio.translate_enabled is False
+    assert loaded.dubbing.diarize_enabled is False

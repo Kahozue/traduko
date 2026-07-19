@@ -119,6 +119,8 @@ class DubbingConfig(BaseModel):
     cfg_value: float | None = None
     seed: int | None = None
     denoise: bool = False
+    # Video-domain pipeline default: whether new tasks run diarization.
+    diarize_enabled: bool = True
 
 
 class PdfEngineConfig(BaseModel):
@@ -156,6 +158,17 @@ class AsrConfig(BaseModel):
     zh_prompt: bool = True
 
 
+class AudioConfig(BaseModel):
+    """Audio-domain pipeline defaults: the initial switch values a new audio
+    task starts with. Existing tasks are never touched retroactively."""
+
+    model_config = ConfigDict(extra="allow")
+
+    diarize_enabled: bool = True
+    dub_enabled: bool = False
+    translate_enabled: bool = True
+
+
 class CoreConfig(BaseModel):
     model_config = ConfigDict(extra="allow")
 
@@ -172,6 +185,7 @@ class CoreConfig(BaseModel):
     dubbing: DubbingConfig = Field(default_factory=DubbingConfig)
     pdf: PdfEngineConfig = Field(default_factory=PdfEngineConfig)
     asr: AsrConfig = Field(default_factory=AsrConfig)
+    audio: AudioConfig = Field(default_factory=AudioConfig)
 
 
 def _migrate_confirmed(data: dict) -> None:

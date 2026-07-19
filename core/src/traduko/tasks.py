@@ -182,6 +182,30 @@ def recalc_stages_for_switches(record: TaskRecord, switches: "TaskSwitches") -> 
         record.status = TaskStatus.PENDING
 
 
+def initial_switches_for_new_task(
+    record: TaskRecord, config: CoreConfig
+) -> TaskSwitches | None:
+    """Initial switch values from the global pipeline defaults, per domain.
+    Only switches whose stage group exists in the profile get a value; a task
+    with nothing switchable keeps switches=None."""
+    domain = task_domain(record)
+    types = {stage.type for stage in record.stages}
+    switches = TaskSwitches()
+    if domain == "audio":
+        if types & SWITCH_STAGE_TYPES["translate"]:
+            switches.translate = config.audio.translate_enabled
+        if types & SWITCH_STAGE_TYPES["diarize"]:
+            switches.diarize = config.audio.diarize_enabled
+        if types & SWITCH_STAGE_TYPES["dub"]:
+            switches.dub = config.audio.dub_enabled
+    elif domain == "video":
+        if types & SWITCH_STAGE_TYPES["diarize"]:
+            switches.diarize = config.dubbing.diarize_enabled
+    if switches == TaskSwitches():
+        return None
+    return switches
+
+
 # Tail stage closing the appended dub group, per domain.
 DUB_GROUP_TAIL = {"video": "mux", "audio": "export_audio"}
 

@@ -99,6 +99,7 @@ from ..tasks import (
     apply_model_override,
     apply_voice_mode_override,
     ensure_glossary_proofread_stage,
+    initial_switches_for_new_task,
     recalc_stages_for_switches,
     task_domain,
 )
@@ -407,6 +408,10 @@ def create_task(request: Request, body: TaskCreateRequest) -> dict:
     apply_dub_text_override(record, body.dub_text or None)
     ensure_glossary_proofread_stage(record, ws.config)
     apply_model_override(record, body.provider or None, body.model or None)
+    switches = initial_switches_for_new_task(record, ws.config)
+    if switches is not None:
+        record.switches = switches
+        recalc_stages_for_switches(record, switches)
     ws.store.save(record)
     return record.model_dump()
 
