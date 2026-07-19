@@ -90,8 +90,10 @@ from ..skillhub import SkillsManager, SkillValidationError
 from ..styles import SubtitleStyle
 from ..styles_render import render_style_frame
 from ..tasks import (
+    DUB_TEXT_MODES,
     VOICE_MODES,
     apply_asr_engine_override,
+    apply_dub_text_override,
     apply_model_override,
     apply_voice_mode_override,
     ensure_glossary_proofread_stage,
@@ -337,6 +339,8 @@ class TaskCreateRequest(BaseModel):
     # design-mode voice description, written into the dub stages' params.
     voice_mode: str | None = None
     voice_instruction: str | None = None
+    # Optional dub text source (auto/translation/original) for the dub stages.
+    dub_text: str | None = None
 
 
 def _validate_voice_mode(mode: str | None) -> None:
@@ -344,6 +348,14 @@ def _validate_voice_mode(mode: str | None) -> None:
         raise HTTPException(
             status_code=422,
             detail=f"voice_mode must be one of: {', '.join(VOICE_MODES)}",
+        )
+
+
+def _validate_dub_text(dub_text: str | None) -> None:
+    if dub_text and dub_text not in DUB_TEXT_MODES:
+        raise HTTPException(
+            status_code=422,
+            detail=f"dub_text must be one of: {', '.join(DUB_TEXT_MODES)}",
         )
 
 
@@ -377,6 +389,7 @@ def create_task(request: Request, body: TaskCreateRequest) -> dict:
             status_code=404, detail=f"profile not found: {body.profile}"
         ) from None
     _validate_voice_mode(body.voice_mode)
+    _validate_dub_text(body.dub_text)
     record = ws.store.create(
         project=body.project or ws.config.default_project,
         input_path=str(input_path.resolve()),
@@ -389,6 +402,7 @@ def create_task(request: Request, body: TaskCreateRequest) -> dict:
     apply_voice_mode_override(
         record, body.voice_mode or None, body.voice_instruction or None
     )
+    apply_dub_text_override(record, body.dub_text or None)
     ensure_glossary_proofread_stage(record, ws.config)
     apply_model_override(record, body.provider or None, body.model or None)
     ws.store.save(record)
@@ -429,6 +443,8 @@ class TaskUpdateRequest(BaseModel):
     # Per-task dubbing voice mode; ""/"clone" removes the override.
     voice_mode: str | None = None
     voice_instruction: str | None = None
+    # Per-task dub text source; ""/"auto" removes the override.
+    dub_text: str | None = None
     # Per-task glossary config; None leaves as is.
     glossary: TaskGlossary | None = None
 
@@ -447,14 +463,16 @@ def update_task(
         and body.asr_engine is None
         and body.voice_mode is None
         and body.voice_instruction is None
+        and body.dub_text is None
         and body.glossary is None
     ):
         raise HTTPException(
             status_code=422,
             detail="name, project, provider, model, asr_engine, "
-            "voice_mode, voice_instruction or glossary required",
+            "voice_mode, voice_instruction, dub_text or glossary required",
         )
     _validate_voice_mode(body.voice_mode)
+    _validate_dub_text(body.dub_text)
     name_changed = False
     if body.name is not None:
         name = body.name.strip()
@@ -469,6 +487,7 @@ def update_task(
         or body.asr_engine is not None
         or body.voice_mode is not None
         or body.voice_instruction is not None
+        or body.dub_text is not None
         or body.glossary is not None
     ):
         worker: TaskWorker = request.app.state.worker
@@ -477,6 +496,7 @@ def update_task(
         apply_model_override(record, body.provider, body.model)
         apply_asr_engine_override(record, body.asr_engine)
         apply_voice_mode_override(record, body.voice_mode, body.voice_instruction)
+        apply_dub_text_override(record, body.dub_text)
         if body.glossary is not None:
             record.glossary = body.glossary
         model_changed = True

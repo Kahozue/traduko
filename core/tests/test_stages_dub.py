@@ -142,7 +142,7 @@ def test_diarize_stage_writes_speakers(tmp_path: Path, fake_client) -> None:
     ctx.artifacts.path_for(1, "audio.wav").write_bytes(b"RIFF")
 
     result = registry.create("diarize").run(ctx)
-    assert result.artifacts == ["07-speakers.json"]
+    assert result.artifacts == ["07-speakers.json", "07-segments.diarized.json"]
     doc = ctx.artifacts.read_latest_json("speakers.json")
     assert [s["speaker"] for s in doc["segments"]] == ["S1", "S2", "S1"]
     assert fake_client.diarized and fake_client.diarized[0].endswith("01-audio.wav")
@@ -187,13 +187,14 @@ def write_speakers(ctx, index: int = 7) -> None:
     )
 
 
-def setup_tts(tmp_path, monkeypatch, stage_index=7, params=None):
+def setup_tts(tmp_path, monkeypatch, stage_index=7, params=None, with_translation=True):
     install_engine(tmp_path)
     write_dub_config(tmp_path)
     ctx, progress = make_ctx(
         tmp_path, tmp_path / "in.mp4", stage_index=stage_index, params=params
     )
-    write_translation(ctx)
+    if with_translation:
+        write_translation(ctx)
     write_speakers(ctx)
     commands: list[list[str]] = []
     monkeypatch.setattr(dub, "run_media", lambda cmd: commands.append(cmd))
@@ -730,3 +731,144 @@ def test_align_design_regen_keeps_instruction_without_references(
     assert call["instruction"] == "speak faster"
     assert call["prompt_wav"] is None
     assert call["prompt_text"] is None
+
+
+# --- dub_text 文本來源回落鏈 (v3_5-04) ---------------------------------------
+
+
+SOURCE_ONLY_SEGMENTS = [
+    {"id": 1, "start": 0.0, "end": 2.0, "text": "hello"},
+    {"id": 2, "start": 2.2, "end": 3.8, "text": "hi back"},
+    {"id": 3, "start": 4.0, "end": 9.0, "text": "long speech"},
+]
+
+
+def write_asr_doc(ctx, index: int = 2) -> None:
+    ctx.artifacts.write_json(
+        index,
+        "asr.json",
+        {
+            "language": "en",
+            "duration": 9.0,
+            "timestamps": True,
+            "segments": SOURCE_ONLY_SEGMENTS,
+        },
+    )
+
+
+def write_segments_doc(ctx, index: int = 3) -> None:
+    ctx.artifacts.write_json(
+        index,
+        "segments.json",
+        {"language": "en", "segments": SOURCE_ONLY_SEGMENTS},
+    )
+
+
+def test_tts_dub_text_auto_prefers_translation(
+    tmp_path: Path, fake_client, monkeypatch
+) -> None:
+    ctx, _, _ = setup_tts(tmp_path, monkeypatch, params={"dub_text": "auto"})
+    write_segments_doc(ctx)
+    registry.create("tts_synthesize").run(ctx)
+    assert [c["text"] for c in fake_client.synth_calls] == ["哈囉", "回嗨", "長篇"]
+
+
+def test_tts_dub_text_auto_falls_back_to_source_without_translation(
+    tmp_path: Path, fake_client, monkeypatch
+) -> None:
+    ctx, _, _ = setup_tts(tmp_path, monkeypatch, with_translation=False)
+    write_segments_doc(ctx)
+    registry.create("tts_synthesize").run(ctx)
+    assert [c["text"] for c in fake_client.synth_calls] == [
+        "hello",
+        "hi back",
+        "long speech",
+    ]
+
+
+def test_tts_dub_text_original_uses_source_even_with_translation(
+    tmp_path: Path, fake_client, monkeypatch
+) -> None:
+    ctx, _, _ = setup_tts(tmp_path, monkeypatch, params={"dub_text": "original"})
+    write_segments_doc(ctx)
+    registry.create("tts_synthesize").run(ctx)
+    assert [c["text"] for c in fake_client.synth_calls] == [
+        "hello",
+        "hi back",
+        "long speech",
+    ]
+
+
+def test_tts_dub_text_translation_without_artifact_fails(
+    tmp_path: Path, fake_client, monkeypatch
+) -> None:
+    ctx, _, _ = setup_tts(
+        tmp_path,
+        monkeypatch,
+        params={"dub_text": "translation"},
+        with_translation=False,
+    )
+    write_segments_doc(ctx)
+    with pytest.raises(base.StageError, match="translation"):
+        registry.create("tts_synthesize").run(ctx)
+
+
+def test_tts_dub_text_unknown_value_rejected(
+    tmp_path: Path, fake_client, monkeypatch
+) -> None:
+    ctx, _, _ = setup_tts(tmp_path, monkeypatch, params={"dub_text": "nope"})
+    with pytest.raises(base.StageError, match="unknown dub_text"):
+        registry.create("tts_synthesize").run(ctx)
+
+
+def test_diarize_without_translation_reads_asr_and_writes_diarized(
+    tmp_path: Path, fake_client
+) -> None:
+    install_engine(tmp_path)
+    write_dub_config(tmp_path)
+    ctx, progress = make_ctx(tmp_path, tmp_path / "in.mp4")
+    write_asr_doc(ctx)
+    ctx.artifacts.path_for(1, "audio.wav").parent.mkdir(parents=True, exist_ok=True)
+    ctx.artifacts.path_for(1, "audio.wav").write_bytes(b"RIFF")
+
+    result = registry.create("diarize").run(ctx)
+
+    assert result.artifacts == ["07-speakers.json", "07-segments.diarized.json"]
+    speakers = ctx.artifacts.read_latest_json("speakers.json")
+    assert [s["speaker"] for s in speakers["segments"]] == ["S1", "S2", "S1"]
+    diarized = ctx.artifacts.read_latest_json("segments.diarized.json")
+    assert [s["speaker"] for s in diarized["segments"]] == ["S1", "S2", "S1"]
+    assert diarized["segments"][0]["source"] == "hello"
+    assert diarized["segments"][0]["start"] == 0.0
+
+
+def test_diarize_with_translation_keeps_target_in_diarized(
+    tmp_path: Path, fake_client
+) -> None:
+    install_engine(tmp_path)
+    write_dub_config(tmp_path)
+    ctx, _ = make_ctx(tmp_path, tmp_path / "in.mp4")
+    write_translation(ctx)
+    ctx.artifacts.path_for(1, "audio.wav").parent.mkdir(parents=True, exist_ok=True)
+    ctx.artifacts.path_for(1, "audio.wav").write_bytes(b"RIFF")
+
+    registry.create("diarize").run(ctx)
+
+    diarized = ctx.artifacts.read_latest_json("segments.diarized.json")
+    assert diarized["segments"][0]["target"] == "哈囉"
+    assert diarized["segments"][0]["speaker"] == "S1"
+
+
+def test_align_regen_uses_dub_text_source(tmp_path: Path, monkeypatch) -> None:
+    client = FakeClient(synth_duration=lambda call: 1.7)
+    monkeypatch.setattr(dub, "_make_client", lambda data_root, config: client)
+    ctx, _, _ = setup_tts(
+        tmp_path, monkeypatch, stage_index=8, params={"dub_text": "original"}
+    )
+    write_segments_doc(ctx)
+    # window 1.6s, clip 3.0s: regen kicks in and must speak the source text.
+    write_manifest(ctx, {2: 3.0})
+
+    registry.create("align_duration").run(ctx)
+
+    assert [c["text"] for c in client.synth_calls] == ["hi back"]

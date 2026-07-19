@@ -80,6 +80,76 @@ def _require_engine(data_root: Path) -> None:
         )
 
 
+DUB_TEXT_MODES = ("auto", "translation", "original")
+
+
+def _dub_text_mode(params: dict) -> str:
+    """What the dub stages speak: auto (target when translated, source
+    otherwise), translation (target only), or original (source only)."""
+    mode = params.get("dub_text") or "auto"
+    if mode not in DUB_TEXT_MODES:
+        raise StageError(
+            f"unknown dub_text: {mode}; expected one of {', '.join(DUB_TEXT_MODES)}"
+        )
+    return mode
+
+
+def _normalize_segments_doc(data: dict) -> dict:
+    """Common shape for translation/segments/asr docs: the text of an
+    untranslated doc lands in source, a translation adds target."""
+    segments = []
+    for seg in data["segments"]:
+        norm = {
+            "id": seg["id"],
+            "start": seg.get("start", 0.0),
+            "end": seg.get("end", 0.0),
+            "source": seg.get("source", seg.get("text", "")),
+        }
+        if "target" in seg:
+            norm["target"] = seg["target"]
+        if "speaker" in seg:
+            norm["speaker"] = seg["speaker"]
+        segments.append(norm)
+    return {
+        "language": data.get("language") or data.get("source_language"),
+        "target_language": data.get("target_language"),
+        "segments": segments,
+    }
+
+
+def _read_dub_text(ctx: StageContext) -> dict:
+    """Segments a dub stage works on, resolved through the fallback chain
+    translation.json -> segments.json -> asr.json as dub_text allows."""
+    mode = _dub_text_mode(ctx.params)
+    names = ["segments.json", "asr.json"]
+    if mode == "translation":
+        names = ["translation.json"]
+    elif mode == "auto":
+        names = ["translation.json", *names]
+    for name in names:
+        try:
+            return _normalize_segments_doc(ctx.artifacts.read_latest_json(name))
+        except FileNotFoundError:
+            continue
+    if mode == "translation":
+        raise StageError("dub_text=translation requires a translation artifact")
+    raise StageError("dub stages require a translation, segments or asr artifact")
+
+
+def _dub_segment_text(seg: dict, mode: str) -> str:
+    source = (seg.get("source") or "").strip()
+    if mode == "original":
+        return source
+    target = (seg.get("target") or "").strip()
+    return target if mode == "translation" else (target or source)
+
+
+def _dub_voice_language(doc: dict, mode: str) -> str | None:
+    if mode == "original":
+        return doc.get("language")
+    return doc.get("target_language") or doc.get("language")
+
+
 def _overlap(a0: float, a1: float, b0: float, b1: float) -> float:
     return max(0.0, min(a1, b1) - max(a0, b0))
 
@@ -129,24 +199,42 @@ def build_speakers_doc(segments: list[dict], turns: list[dict]) -> SpeakersDoc:
     return SpeakersDoc(speakers=speakers, segments=assignments)
 
 
+def _write_diarize_outputs(ctx: StageContext, doc: dict, speakers: SpeakersDoc) -> list[str]:
+    """speakers.json plus segments.diarized.json: the segments the stage read
+    with each one's speaker written back, so a transcript can carry speakers
+    even when no translation ever happens."""
+    speakers_path = ctx.artifacts.write_json(
+        ctx.stage_index + 1, "speakers.json", speakers.model_dump()
+    )
+    speaker_of = {a.id: a.speaker for a in speakers.segments}
+    diarized_path = ctx.artifacts.write_json(
+        ctx.stage_index + 1,
+        "segments.diarized.json",
+        {
+            "language": doc.get("language"),
+            "target_language": doc.get("target_language"),
+            "segments": [
+                {**seg, "speaker": speaker_of.get(seg["id"], "")}
+                for seg in doc["segments"]
+            ],
+        },
+    )
+    return [speakers_path.name, diarized_path.name]
+
+
 @registry.register
 class DiarizeStage:
     type = "diarize"
 
     def run(self, ctx: StageContext) -> StageResult:
-        try:
-            data = ctx.artifacts.read_latest_json("translation.json")
-        except FileNotFoundError as error:
-            raise StageError("diarize stage requires a translation artifact") from error
+        data = _read_dub_text(ctx)
         if _voice_mode(ctx.params) != "clone":
             # No per-speaker cloning ahead, so diarization (and its speaker
             # review pause) has nothing to contribute: one speaker covers all.
             doc = build_speakers_doc(data["segments"], [])
-            path = ctx.artifacts.write_json(
-                ctx.stage_index + 1, "speakers.json", doc.model_dump()
-            )
+            names = _write_diarize_outputs(ctx, data, doc)
             ctx.emit_progress(1, 1)
-            return StageResult(artifacts=[path.name], skip_pause=True)
+            return StageResult(artifacts=names, skip_pause=True)
         _require_engine(ctx.data_root)
         config = load_config(ctx.data_root)
         if not config.dubbing.hf_token:
@@ -177,11 +265,9 @@ class DiarizeStage:
             client.close()
 
         doc = build_speakers_doc(data["segments"], turns)
-        path = ctx.artifacts.write_json(
-            ctx.stage_index + 1, "speakers.json", doc.model_dump()
-        )
+        names = _write_diarize_outputs(ctx, data, doc)
         ctx.emit_progress(1, 1)
-        return StageResult(artifacts=[path.name])
+        return StageResult(artifacts=names)
 
 
 MAX_REF_SECONDS = 12.0
@@ -203,9 +289,9 @@ class TtsSynthesizeStage:
     type = "tts_synthesize"
 
     def run(self, ctx: StageContext) -> StageResult:
-        translation, speakers_doc = _read_dub_inputs(
-            ctx, "translation.json", "speakers.json"
-        )
+        text_doc = _read_dub_text(ctx)
+        dub_text = _dub_text_mode(ctx.params)
+        (speakers_doc,) = _read_dub_inputs(ctx, "speakers.json")
         mode = _voice_mode(ctx.params)
         if mode == "preview":
             if not preview.say_available():
@@ -217,7 +303,7 @@ class TtsSynthesizeStage:
         if not ffmpeg_available():
             raise StageError("ffmpeg/ffprobe not found on PATH")
         config = load_config(ctx.data_root)
-        segments = translation["segments"]
+        segments = text_doc["segments"]
         speakers = {s["id"]: s for s in speakers_doc["speakers"]}
         speaker_of = {a["id"]: a["speaker"] for a in speakers_doc["segments"]}
         default_speaker = next(iter(speakers), "")
@@ -266,7 +352,7 @@ class TtsSynthesizeStage:
         say_rate = int(ctx.params.get("preview_rate", preview.PREVIEW_BASE_RATE))
         if mode == "preview":
             say_voice = ctx.params.get("preview_voice") or preview.pick_voice(
-                preview.list_voices(), translation.get("target_language")
+                preview.list_voices(), _dub_voice_language(text_doc, dub_text)
             )
 
         manifest_path = ctx.artifacts.path_for(out_index, "dub-manifest.json")
@@ -295,11 +381,11 @@ class TtsSynthesizeStage:
                 speaker = speakers.get(speaker_id)
                 ext = "aiff" if mode == "preview" else "wav"
                 out_path = dub_dir / f"seg-{seg['id']}.{ext}"
-                text = (seg.get("target") or "").strip()
+                text = _dub_segment_text(seg, dub_text)
                 if not text:
                     entry = DubSegment(
                         id=seg["id"], speaker=speaker_id, status="failed",
-                        error="empty target text",
+                        error="empty dub text",
                     )
                 else:
                     try:
@@ -356,8 +442,10 @@ class AlignDurationStage:
     type = "align_duration"
 
     def run(self, ctx: StageContext) -> StageResult:
-        translation, speakers_doc, manifest = _read_dub_inputs(
-            ctx, "translation.json", "speakers.json", "dub-manifest.json"
+        text_doc = _read_dub_text(ctx)
+        dub_text = _dub_text_mode(ctx.params)
+        speakers_doc, manifest = _read_dub_inputs(
+            ctx, "speakers.json", "dub-manifest.json"
         )
         mode = _voice_mode(ctx.params)
         if mode == "preview":
@@ -377,10 +465,10 @@ class AlignDurationStage:
         say_rate = int(ctx.params.get("preview_rate", preview.PREVIEW_BASE_RATE))
         if mode == "preview":
             say_voice = ctx.params.get("preview_voice") or preview.pick_voice(
-                preview.list_voices(), translation.get("target_language")
+                preview.list_voices(), _dub_voice_language(text_doc, dub_text)
             )
 
-        seg_by_id = {s["id"]: s for s in translation["segments"]}
+        seg_by_id = {s["id"]: s for s in text_doc["segments"]}
         speakers = {s["id"]: s for s in speakers_doc["speakers"]}
         out_index = ctx.stage_index + 1
         out_dir = ctx.artifacts.path_for(out_index, "dub")
@@ -417,7 +505,7 @@ class AlignDurationStage:
                     try:
                         if mode == "preview":
                             duration = preview.synthesize_preview(
-                                (seg.get("target") or "").strip(),
+                                _dub_segment_text(seg, dub_text),
                                 regen_path,
                                 voice=say_voice,
                                 rate=preview.fit_rate(window, duration, base=say_rate),
@@ -437,7 +525,7 @@ class AlignDurationStage:
                             if voice_instruction:
                                 faster = f"speak faster; {voice_instruction}"
                             response = client.synthesize(
-                                (seg.get("target") or "").strip(),
+                                _dub_segment_text(seg, dub_text),
                                 out=regen_path,
                                 prompt_wav=prompt_wav,
                                 prompt_text=(speaker or {}).get("ref_text") or None

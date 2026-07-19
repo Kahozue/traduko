@@ -182,6 +182,23 @@ def recalc_stages_for_switches(record: TaskRecord, switches: "TaskSwitches") -> 
         record.status = TaskStatus.PENDING
 
 
+DUB_TEXT_MODES = ("auto", "translation", "original")
+
+
+def apply_dub_text_override(record: TaskRecord, dub_text: str | None) -> None:
+    """Per-task dub text source on the dub stages. None leaves things
+    untouched; "" or "auto" removes the override (auto is the default)."""
+    if dub_text is None:
+        return
+    for stage in record.stages:
+        if stage.type not in DUB_STAGE_TYPES:
+            continue
+        if dub_text and dub_text != "auto":
+            stage.params["dub_text"] = dub_text
+        else:
+            stage.params.pop("dub_text", None)
+
+
 class TaskStore:
     def __init__(self, root: Path, index: "TaskIndex | None" = None) -> None:
         self.root = root

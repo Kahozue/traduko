@@ -2484,3 +2484,35 @@ def test_patch_switches_translate_is_audio_only(tmp_path: Path) -> None:
         by_type = {stage["type"]: stage for stage in ok.json()["stages"]}
         assert by_type["diarize"]["status"] == "skipped"
         assert by_type["translate"]["status"] == "pending"
+
+
+def test_task_dub_text_override_create_update_and_validation(tmp_path: Path) -> None:
+    with service(tmp_path) as (client, headers, token):
+        response = client.post(
+            "/tasks",
+            json={
+                "input_path": str(make_input(tmp_path)),
+                "profile": "av-dub",
+                "dub_text": "original",
+            },
+            headers=headers,
+        )
+        assert response.status_code == 201, response.text
+        body = response.json()
+        dub_params = {
+            stage["type"]: stage["params"]
+            for stage in body["stages"]
+            if stage["type"] in ("diarize", "tts_synthesize", "align_duration")
+        }
+        assert all(p.get("dub_text") == "original" for p in dub_params.values())
+
+        url = f"/tasks/default/{body['id']}"
+        cleared = client.patch(url, json={"dub_text": "auto"}, headers=headers)
+        assert cleared.status_code == 200, cleared.text
+        assert all(
+            "dub_text" not in stage["params"] for stage in cleared.json()["stages"]
+        )
+
+        assert client.patch(
+            url, json={"dub_text": "gibberish"}, headers=headers
+        ).status_code == 422
