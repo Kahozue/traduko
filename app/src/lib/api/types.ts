@@ -46,6 +46,7 @@ export type TaskKind = "video" | "audio" | "document" | "comic";
 export interface ProfileInfo {
   name: string;
   kind: TaskKind;
+  stages: string[];
 }
 
 export interface PreflightCheck {

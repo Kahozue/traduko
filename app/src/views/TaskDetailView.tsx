@@ -156,6 +156,17 @@ export function TaskDetailView({
       queryClient.invalidateQueries({ queryKey: ["task", project, taskId] });
     },
   });
+  const [voiceMenuOpen, setVoiceMenuOpen] = useState(false);
+  const [draftVoiceMode, setDraftVoiceMode] = useState("");
+  const [draftVoiceInstruction, setDraftVoiceInstruction] = useState("");
+  const setVoiceMode = useMutation({
+    mutationFn: ({ mode, instruction }: { mode: string; instruction: string }) =>
+      api.setTaskVoiceMode(project, taskId, mode, instruction),
+    onSuccess: () => {
+      setVoiceMenuOpen(false);
+      queryClient.invalidateQueries({ queryKey: ["task", project, taskId] });
+    },
+  });
   const [modelDownload, setModelDownload] = useState<
     null | { model: string; mb: number; error?: string }
   >(null);
@@ -280,10 +291,22 @@ export function TaskDetailView({
     : asrProviderParam && !asrEngineParam
       ? (ASR_ENGINE_LABELS[asrProviderParam] ?? asrProviderParam)
       : t("task.asrEngine.auto");
+  // The dubbing chip switches the task's voice mode in place; the PDF chip
+  // stays informational until its engine grows choices.
+  const ttsStage = task.stages.find((stage) => stage.type === "tts_synthesize");
+  const voiceModeParam =
+    typeof ttsStage?.params.voice_mode === "string" ? ttsStage.params.voice_mode : "";
+  const voiceInstructionParam =
+    typeof ttsStage?.params.voice_instruction === "string"
+      ? ttsStage.params.voice_instruction
+      : "";
+  const voiceChipLabel =
+    voiceModeParam === "preview"
+      ? t("task.voiceMode.preview")
+      : voiceModeParam === "design"
+        ? `VoxCPM2 · ${t("task.voiceMode.design")}`
+        : `VoxCPM2 · ${t("task.voiceMode.clone")}`;
   const engineChips: string[] = [];
-  if (task.stages.some((stage) => stage.type === "tts_synthesize")) {
-    engineChips.push("VoxCPM2");
-  }
   if (task.stages.some((stage) => stage.type === "translate_pdf")) {
     engineChips.push("pdf2zh-next");
   }
@@ -526,6 +549,79 @@ export function TaskDetailView({
                     className={styles.primary}
                     disabled={setAsrEngine.isPending}
                     onClick={() => setAsrEngine.mutate(draftAsrEngine)}
+                  >
+                    {t("task.model.apply")}
+                  </button>
+                </div>
+              </div>
+            )}
+          </span>
+        )}
+        {ttsStage && (
+          <span className={styles.modelWrap}>
+            <button
+              type="button"
+              className={styles.modelChip}
+              disabled={modelLocked}
+              aria-expanded={voiceMenuOpen}
+              title={t("task.voiceMode.title")}
+              onClick={() => {
+                setDraftVoiceMode(voiceModeParam);
+                setDraftVoiceInstruction(voiceInstructionParam);
+                setVoiceMenuOpen((open) => !open);
+              }}
+            >
+              {voiceChipLabel}
+            </button>
+            {voiceMenuOpen && (
+              <div className={styles.modelMenu}>
+                <label className={styles.modelField}>
+                  {t("create.voiceMode")}
+                  <select
+                    className={styles.modelSelect}
+                    value={draftVoiceMode}
+                    onChange={(event) => setDraftVoiceMode(event.target.value)}
+                  >
+                    <option value="">{t("create.voiceMode.clone")}</option>
+                    <option value="design">{t("create.voiceMode.design")}</option>
+                    <option value="preview">{t("create.voiceMode.preview")}</option>
+                  </select>
+                </label>
+                {draftVoiceMode === "design" && (
+                  <label className={styles.modelField}>
+                    {t("create.voiceInstruction")}
+                    <input
+                      className={styles.modelInput}
+                      value={draftVoiceInstruction}
+                      placeholder={t("create.voiceInstruction.placeholder")}
+                      onChange={(event) =>
+                        setDraftVoiceInstruction(event.target.value)
+                      }
+                    />
+                  </label>
+                )}
+                <div className={styles.modelActions}>
+                  <button
+                    type="button"
+                    className={styles.secondary}
+                    disabled={setVoiceMode.isPending}
+                    onClick={() => setVoiceMode.mutate({ mode: "", instruction: "" })}
+                  >
+                    {t("task.model.reset")}
+                  </button>
+                  <button
+                    type="button"
+                    className={styles.primary}
+                    disabled={setVoiceMode.isPending}
+                    onClick={() =>
+                      setVoiceMode.mutate({
+                        mode: draftVoiceMode,
+                        instruction:
+                          draftVoiceMode === "design"
+                            ? draftVoiceInstruction.trim()
+                            : "",
+                      })
+                    }
                   >
                     {t("task.model.apply")}
                   </button>

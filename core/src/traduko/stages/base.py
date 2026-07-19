@@ -42,6 +42,9 @@ class StageContext:
 @dataclass
 class StageResult:
     artifacts: list[str] = field(default_factory=list)
+    # A stage that made its own review pointless (e.g. diarize short-circuited
+    # by a non-clone voice mode) sets this to skip the profile's pause_after.
+    skip_pause: bool = False
 
 
 @runtime_checkable

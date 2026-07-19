@@ -74,6 +74,9 @@ export function CreateTaskDialog({
   const [model, setModel] = useState("");
   // Per-task ASR engine override for the audio kind; empty follows defaults.
   const [asrEngine, setAsrEngine] = useState("");
+  // Dubbing voice mode for dub profiles; empty means the clone default.
+  const [voiceMode, setVoiceMode] = useState("");
+  const [voiceInstruction, setVoiceInstruction] = useState("");
   const { data: profiles } = useQuery({
     queryKey: ["profiles-detailed"],
     queryFn: () => api.profilesDetailed(),
@@ -113,6 +116,12 @@ export function CreateTaskDialog({
 
   const kindProfiles = kind ? (byKind.get(kind) ?? []) : [];
   const extension = inputPath.split(".").pop()?.toLowerCase() ?? "";
+  // Dub pipelines get the voice-mode picker. The optional chain also covers
+  // a core older than the stages field.
+  const isDubProfile =
+    kindProfiles
+      .find((info) => info.name === profile)
+      ?.stages?.includes("tts_synthesize") ?? false;
 
   // Keep the selected profile valid for the chosen kind, and route by input
   // extension where the pipelines differ: a .pdf only runs through
@@ -171,6 +180,10 @@ export function CreateTaskDialog({
         ...(providerSel !== "" ? { provider: providerSel } : {}),
         ...(model.trim() !== "" ? { model: model.trim() } : {}),
         ...(kind === "audio" && asrEngine !== "" ? { asr_engine: asrEngine } : {}),
+        ...(isDubProfile && voiceMode !== "" ? { voice_mode: voiceMode } : {}),
+        ...(isDubProfile && voiceMode === "design" && voiceInstruction.trim() !== ""
+          ? { voice_instruction: voiceInstruction.trim() }
+          : {}),
       }),
     onSuccess: (task) => {
       queryClient.invalidateQueries({ queryKey: ["tasks"] });
@@ -277,6 +290,37 @@ export function CreateTaskDialog({
               ))}
             </select>
           </label>
+        )}
+
+        {isDubProfile && (
+          <>
+            <label className={styles.label}>
+              {t("create.voiceMode")}
+              <select
+                className={styles.input}
+                value={voiceMode}
+                onChange={(event) => setVoiceMode(event.target.value)}
+              >
+                <option value="">{t("create.voiceMode.clone")}</option>
+                <option value="design">{t("create.voiceMode.design")}</option>
+                <option value="preview">{t("create.voiceMode.preview")}</option>
+              </select>
+            </label>
+            {voiceMode === "design" && (
+              <label className={styles.label}>
+                {t("create.voiceInstruction")}
+                <input
+                  className={styles.input}
+                  value={voiceInstruction}
+                  placeholder={t("create.voiceInstruction.placeholder")}
+                  onChange={(event) => setVoiceInstruction(event.target.value)}
+                />
+              </label>
+            )}
+            {voiceMode === "preview" && (
+              <p className={styles.hint}>{t("create.voiceMode.previewNote")}</p>
+            )}
+          </>
         )}
 
         {providerNames.length > 0 && (

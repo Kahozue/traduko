@@ -9,6 +9,7 @@ from pathlib import Path
 import json
 
 from ..config import CoreConfig, load_config
+from ..dubbing import preview
 from ..dubbing import setup as dubsetup
 from ..dubbing.align import plan_segment
 from ..dubbing.client import DubbingEngineClient, DubbingError
@@ -33,6 +34,7 @@ from ..media import (
     ffmpeg_available,
 )
 from ..media import run as run_media
+from ..tasks import VOICE_MODES
 from . import registry
 from .base import StageContext, StageError, StageResult
 
@@ -56,6 +58,17 @@ def _synth_options(config: CoreConfig, params: dict) -> dict:
         "denoise": bool(params.get("denoise", dubbing.denoise)),
     }
     return options
+
+
+def _voice_mode(params: dict) -> str:
+    """Task-level voice mode: clone the original speakers (default), shape
+    a voice from the instruction text, or macOS-say quick preview."""
+    mode = params.get("voice_mode") or "clone"
+    if mode not in VOICE_MODES:
+        raise StageError(
+            f"unknown voice_mode: {mode}; expected one of {', '.join(VOICE_MODES)}"
+        )
+    return mode
 
 
 def _require_engine(data_root: Path) -> None:
@@ -125,6 +138,15 @@ class DiarizeStage:
             data = ctx.artifacts.read_latest_json("translation.json")
         except FileNotFoundError as error:
             raise StageError("diarize stage requires a translation artifact") from error
+        if _voice_mode(ctx.params) != "clone":
+            # No per-speaker cloning ahead, so diarization (and its speaker
+            # review pause) has nothing to contribute: one speaker covers all.
+            doc = build_speakers_doc(data["segments"], [])
+            path = ctx.artifacts.write_json(
+                ctx.stage_index + 1, "speakers.json", doc.model_dump()
+            )
+            ctx.emit_progress(1, 1)
+            return StageResult(artifacts=[path.name], skip_pause=True)
         _require_engine(ctx.data_root)
         config = load_config(ctx.data_root)
         if not config.dubbing.hf_token:
@@ -184,7 +206,14 @@ class TtsSynthesizeStage:
         translation, speakers_doc = _read_dub_inputs(
             ctx, "translation.json", "speakers.json"
         )
-        _require_engine(ctx.data_root)
+        mode = _voice_mode(ctx.params)
+        if mode == "preview":
+            if not preview.say_available():
+                raise StageError(
+                    "system voice preview needs macOS with the say command"
+                )
+        else:
+            _require_engine(ctx.data_root)
         if not ffmpeg_available():
             raise StageError("ffmpeg/ffprobe not found on PATH")
         config = load_config(ctx.data_root)
@@ -200,36 +229,45 @@ class TtsSynthesizeStage:
         refs: dict[str, Path] = {}
         ref_names: list[str] = []
         # User-supplied per-speaker reference audio wins over the clip
-        # extracted from the original input.
+        # extracted from the original input. Only cloning needs references;
+        # design shapes the voice from the instruction, preview uses say.
         reference_wavs = ctx.params.get("reference_wavs") or {}
-        for speaker_id, speaker in speakers.items():
-            custom = reference_wavs.get(speaker_id)
-            if custom:
-                custom_path = Path(custom)
-                if not custom_path.exists():
-                    raise StageError(
-                        f"reference audio for {speaker_id} not found: {custom}"
-                    )
-                refs[speaker_id] = custom_path
-                continue
-            ref_path = ctx.artifacts.path_for(out_index, f"ref-{speaker_id}.wav")
-            duration = min(
-                max(speaker["ref_end"] - speaker["ref_start"], MIN_REF_SECONDS),
-                MAX_REF_SECONDS,
-            )
-            try:
-                run_media(
-                    build_extract_clip_cmd(
-                        Path(ctx.task.input_path),
-                        speaker["ref_start"],
-                        duration,
-                        ref_path,
-                    )
+        if mode == "clone":
+            for speaker_id, speaker in speakers.items():
+                custom = reference_wavs.get(speaker_id)
+                if custom:
+                    custom_path = Path(custom)
+                    if not custom_path.exists():
+                        raise StageError(
+                            f"reference audio for {speaker_id} not found: {custom}"
+                        )
+                    refs[speaker_id] = custom_path
+                    continue
+                ref_path = ctx.artifacts.path_for(out_index, f"ref-{speaker_id}.wav")
+                duration = min(
+                    max(speaker["ref_end"] - speaker["ref_start"], MIN_REF_SECONDS),
+                    MAX_REF_SECONDS,
                 )
-            except MediaError as error:
-                raise StageError(str(error)) from error
-            refs[speaker_id] = ref_path
-            ref_names.append(ref_path.name)
+                try:
+                    run_media(
+                        build_extract_clip_cmd(
+                            Path(ctx.task.input_path),
+                            speaker["ref_start"],
+                            duration,
+                            ref_path,
+                        )
+                    )
+                except MediaError as error:
+                    raise StageError(str(error)) from error
+                refs[speaker_id] = ref_path
+                ref_names.append(ref_path.name)
+
+        say_voice: str | None = None
+        say_rate = int(ctx.params.get("preview_rate", preview.PREVIEW_BASE_RATE))
+        if mode == "preview":
+            say_voice = ctx.params.get("preview_voice") or preview.pick_voice(
+                preview.list_voices(), translation.get("target_language")
+            )
 
         manifest_path = ctx.artifacts.path_for(out_index, "dub-manifest.json")
         done: dict[int, dict] = {}
@@ -243,7 +281,7 @@ class TtsSynthesizeStage:
                 ):
                     done[entry["id"]] = entry
 
-        client = _make_client(ctx.data_root, config)
+        client = None if mode == "preview" else _make_client(ctx.data_root, config)
         entries: list[DubSegment] = []
         last_error = ""
         try:
@@ -255,7 +293,8 @@ class TtsSynthesizeStage:
                     continue
                 speaker_id = speaker_of.get(seg["id"], default_speaker)
                 speaker = speakers.get(speaker_id)
-                out_path = dub_dir / f"seg-{seg['id']}.wav"
+                ext = "aiff" if mode == "preview" else "wav"
+                out_path = dub_dir / f"seg-{seg['id']}.{ext}"
                 text = (seg.get("target") or "").strip()
                 if not text:
                     entry = DubSegment(
@@ -264,19 +303,28 @@ class TtsSynthesizeStage:
                     )
                 else:
                     try:
-                        response = client.synthesize(
-                            text,
-                            out=out_path,
-                            prompt_wav=refs.get(speaker_id),
-                            prompt_text=(speaker or {}).get("ref_text") or None,
-                            instruction=ctx.params.get("voice_instruction") or None,
-                            **_synth_options(config, ctx.params),
-                        )
+                        if mode == "preview":
+                            duration = preview.synthesize_preview(
+                                text, out_path, voice=say_voice, rate=say_rate
+                            )
+                        else:
+                            prompt_wav = refs.get(speaker_id)
+                            response = client.synthesize(
+                                text,
+                                out=out_path,
+                                prompt_wav=prompt_wav,
+                                prompt_text=(speaker or {}).get("ref_text") or None
+                                if prompt_wav is not None
+                                else None,
+                                instruction=ctx.params.get("voice_instruction") or None,
+                                **_synth_options(config, ctx.params),
+                            )
+                            duration = response["duration"]
                         entry = DubSegment(
                             id=seg["id"],
                             speaker=speaker_id,
-                            file=f"{out_index:02d}-dub/seg-{seg['id']}.wav",
-                            duration=response["duration"],
+                            file=f"{out_index:02d}-dub/seg-{seg['id']}.{ext}",
+                            duration=duration,
                         )
                     except DubbingError as error:
                         last_error = str(error)
@@ -292,7 +340,8 @@ class TtsSynthesizeStage:
                 )
                 ctx.emit_progress(n + 1, len(segments))
         finally:
-            client.close()
+            if client is not None:
+                client.close()
 
         if not any(e.status == "synthesized" for e in entries):
             raise StageError(
@@ -310,12 +359,26 @@ class AlignDurationStage:
         translation, speakers_doc, manifest = _read_dub_inputs(
             ctx, "translation.json", "speakers.json", "dub-manifest.json"
         )
-        _require_engine(ctx.data_root)
+        mode = _voice_mode(ctx.params)
+        if mode == "preview":
+            if not preview.say_available():
+                raise StageError(
+                    "system voice preview needs macOS with the say command"
+                )
+        else:
+            _require_engine(ctx.data_root)
         if not ffmpeg_available():
             raise StageError("ffmpeg/ffprobe not found on PATH")
         config = load_config(ctx.data_root)
         tolerance = ctx.params.get("tolerance", 1.1)
         max_tempo = ctx.params.get("max_tempo", 1.4)
+
+        say_voice: str | None = None
+        say_rate = int(ctx.params.get("preview_rate", preview.PREVIEW_BASE_RATE))
+        if mode == "preview":
+            say_voice = ctx.params.get("preview_voice") or preview.pick_voice(
+                preview.list_voices(), translation.get("target_language")
+            )
 
         seg_by_id = {s["id"]: s for s in translation["segments"]}
         speakers = {s["id"]: s for s in speakers_doc["speakers"]}
@@ -323,7 +386,7 @@ class AlignDurationStage:
         out_dir = ctx.artifacts.path_for(out_index, "dub")
         out_dir.mkdir(parents=True, exist_ok=True)
 
-        client = _make_client(ctx.data_root, config)
+        client = None if mode == "preview" else _make_client(ctx.data_root, config)
         timeline: list[TimelineSegment] = []
         total = len(manifest["segments"])
         try:
@@ -349,30 +412,42 @@ class AlignDurationStage:
                     can_regen=True,
                 )
                 if plan["action"] == "regen":
-                    regen_path = out_dir / f"seg-{entry['id']}.regen.wav"
-                    speaker = speakers.get(entry.get("speaker", ""))
-                    prompt_wav: Path | None = None
+                    regen_ext = "aiff" if mode == "preview" else "wav"
+                    regen_path = out_dir / f"seg-{entry['id']}.regen.{regen_ext}"
                     try:
-                        prompt_wav = ctx.artifacts.latest_path(
-                            f"ref-{entry.get('speaker', '')}.wav"
-                        )
-                    except FileNotFoundError:
-                        prompt_wav = None
-                    try:
-                        faster = "speak faster"
-                        voice_instruction = ctx.params.get("voice_instruction")
-                        if voice_instruction:
-                            faster = f"speak faster; {voice_instruction}"
-                        response = client.synthesize(
-                            (seg.get("target") or "").strip(),
-                            out=regen_path,
-                            prompt_wav=prompt_wav,
-                            prompt_text=(speaker or {}).get("ref_text") or None,
-                            instruction=faster,
-                            **_synth_options(config, ctx.params),
-                        )
-                        duration = response["duration"]
-                        file = f"{out_index:02d}-dub/seg-{entry['id']}.regen.wav"
+                        if mode == "preview":
+                            duration = preview.synthesize_preview(
+                                (seg.get("target") or "").strip(),
+                                regen_path,
+                                voice=say_voice,
+                                rate=preview.fit_rate(window, duration, base=say_rate),
+                            )
+                        else:
+                            speaker = speakers.get(entry.get("speaker", ""))
+                            prompt_wav: Path | None = None
+                            if mode == "clone":
+                                try:
+                                    prompt_wav = ctx.artifacts.latest_path(
+                                        f"ref-{entry.get('speaker', '')}.wav"
+                                    )
+                                except FileNotFoundError:
+                                    prompt_wav = None
+                            faster = "speak faster"
+                            voice_instruction = ctx.params.get("voice_instruction")
+                            if voice_instruction:
+                                faster = f"speak faster; {voice_instruction}"
+                            response = client.synthesize(
+                                (seg.get("target") or "").strip(),
+                                out=regen_path,
+                                prompt_wav=prompt_wav,
+                                prompt_text=(speaker or {}).get("ref_text") or None
+                                if prompt_wav is not None
+                                else None,
+                                instruction=faster,
+                                **_synth_options(config, ctx.params),
+                            )
+                            duration = response["duration"]
+                        file = f"{out_index:02d}-dub/seg-{entry['id']}.regen.{regen_ext}"
                         regenerated = True
                     except DubbingError:
                         pass  # keep the original clip; atempo may still fit it
@@ -407,7 +482,8 @@ class AlignDurationStage:
                 )
                 ctx.emit_progress(n + 1, total)
         finally:
-            client.close()
+            if client is not None:
+                client.close()
 
         path = ctx.artifacts.write_json(
             out_index,

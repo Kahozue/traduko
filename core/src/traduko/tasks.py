@@ -57,6 +57,31 @@ def apply_asr_engine_override(record: TaskRecord, engine: str | None) -> None:
             stage.params.pop("engine", None)
 
 
+VOICE_MODES = ("clone", "design", "preview")
+DUB_STAGE_TYPES = frozenset({"diarize", "tts_synthesize", "align_duration"})
+VOICE_INSTRUCTION_STAGE_TYPES = frozenset({"tts_synthesize", "align_duration"})
+
+
+def apply_voice_mode_override(
+    record: TaskRecord, mode: str | None, instruction: str | None = None
+) -> None:
+    """Per-task dubbing voice mode on the dub stages. None leaves things
+    untouched; "" or "clone" removes the override (clone is the default).
+    The voice-design instruction rides on the synthesizing stages, with the
+    same None/"" semantics."""
+    for stage in record.stages:
+        if mode is not None and stage.type in DUB_STAGE_TYPES:
+            if mode and mode != "clone":
+                stage.params["voice_mode"] = mode
+            else:
+                stage.params.pop("voice_mode", None)
+        if instruction is not None and stage.type in VOICE_INSTRUCTION_STAGE_TYPES:
+            if instruction:
+                stage.params["voice_instruction"] = instruction
+            else:
+                stage.params.pop("voice_instruction", None)
+
+
 class TaskStore:
     def __init__(self, root: Path, index: "TaskIndex | None" = None) -> None:
         self.root = root

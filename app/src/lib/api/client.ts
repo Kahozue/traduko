@@ -50,6 +50,10 @@ export interface TaskCreateBody {
   model?: string;
   // Per-task ASR engine override written into asr stage params.
   asr_engine?: string;
+  // Per-task dubbing voice mode (clone/design/preview) and the design-mode
+  // voice description, written into the dub stages' params.
+  voice_mode?: string;
+  voice_instruction?: string;
 }
 
 export class ApiClient {
@@ -197,6 +201,19 @@ export class ApiClient {
     return this.request(`/tasks/${project}/${taskId}`, {
       method: "PATCH",
       body: JSON.stringify({ asr_engine: engine }),
+    });
+  }
+
+  // Per-task dubbing voice mode; empty strings restore the clone default.
+  setTaskVoiceMode(
+    project: string,
+    taskId: string,
+    mode: string,
+    instruction: string,
+  ): Promise<TaskRecord> {
+    return this.request(`/tasks/${project}/${taskId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ voice_mode: mode, voice_instruction: instruction }),
     });
   }
 

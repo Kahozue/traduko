@@ -86,5 +86,11 @@ def list_profiles_detailed(root: Path) -> list[dict]:
             profile = load_profile(root, path.stem)
         except Exception:  # noqa: BLE001 - a malformed profile must not break the list
             continue
-        rows.append({"name": path.stem, "kind": profile_kind(profile)})
+        rows.append(
+            {
+                "name": path.stem,
+                "kind": profile_kind(profile),
+                "stages": [stage.type for stage in profile.stages],
+            }
+        )
     return rows

@@ -134,3 +134,48 @@ def test_apply_model_override_none_leaves_untouched() -> None:
     apply_model_override(task, provider=None, model="glm-4")
     assert task.stages[1].params["provider"] == "deepseek"
     assert task.stages[1].params["model"] == "glm-4"
+
+
+def _dub_stages():
+    from traduko.models import StageRecord
+
+    return [
+        StageRecord(type="translate", params={"provider": "fake"}),
+        StageRecord(type="diarize", pause_after=True),
+        StageRecord(type="tts_synthesize"),
+        StageRecord(type="align_duration"),
+        StageRecord(type="mix_audio"),
+    ]
+
+
+def test_apply_voice_mode_override_targets_dub_stages() -> None:
+    from traduko.models import TaskRecord, utc_now_iso
+    from traduko.tasks import apply_voice_mode_override
+
+    now = utc_now_iso()
+    task = TaskRecord(
+        id="t", project="p", input_path="in.mp4", profile="x",
+        stages=_dub_stages(), created_at=now, updated_at=now,
+    )
+    apply_voice_mode_override(task, "preview", None)
+    by_type = {s.type: s for s in task.stages}
+    for stage_type in ("diarize", "tts_synthesize", "align_duration"):
+        assert by_type[stage_type].params["voice_mode"] == "preview"
+    assert "voice_mode" not in by_type["mix_audio"].params
+    assert "voice_mode" not in by_type["translate"].params
+
+    apply_voice_mode_override(task, "design", "沉穩男聲")
+    assert by_type["tts_synthesize"].params["voice_instruction"] == "沉穩男聲"
+    assert by_type["align_duration"].params["voice_instruction"] == "沉穩男聲"
+    assert "voice_instruction" not in by_type["diarize"].params
+
+    # "clone" and "" both mean: back to the default, no override params.
+    apply_voice_mode_override(task, "clone", "")
+    for stage_type in ("diarize", "tts_synthesize", "align_duration"):
+        assert "voice_mode" not in by_type[stage_type].params
+        assert "voice_instruction" not in by_type[stage_type].params
+
+    # None leaves everything untouched.
+    apply_voice_mode_override(task, "design", None)
+    apply_voice_mode_override(task, None, None)
+    assert by_type["tts_synthesize"].params["voice_mode"] == "design"

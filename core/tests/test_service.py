@@ -1411,6 +1411,10 @@ def test_profiles_detailed_classifies_kinds(tmp_path: Path) -> None:
         assert by_name["av-default"] == "video"
         assert by_name["novel-translate"] == "document"
         assert by_name["translate-pdf"] == "document"
+        # Stage types ride along so the app can tell dub pipelines apart.
+        stages = {row["name"]: row["stages"] for row in rows}
+        assert "tts_synthesize" in stages["av-dub"]
+        assert "tts_synthesize" not in stages["subtitle-translate"]
 
 
 def test_dubbing_status_install_and_test_flow(tmp_path: Path) -> None:
@@ -1659,6 +1663,68 @@ def test_create_and_patch_asr_engine(tmp_path: Path) -> None:
         reset = client.patch(url, json={"asr_engine": ""}, headers=headers)
         by_type = {s["type"]: s for s in reset.json()["stages"]}
         assert "engine" not in by_type["asr"]["params"]
+
+
+def test_create_and_patch_voice_mode(tmp_path: Path) -> None:
+    with service(tmp_path) as (client, headers, token):
+        create_profile(
+            tmp_path,
+            "with-dub",
+            ["diarize", "tts_synthesize", "align_duration", "mix_audio"],
+        )
+        response = client.post(
+            "/tasks",
+            json={
+                "input_path": str(make_input(tmp_path)),
+                "profile": "with-dub",
+                "voice_mode": "preview",
+            },
+            headers=headers,
+        )
+        assert response.status_code == 201, response.text
+        task = response.json()
+        by_type = {s["type"]: s for s in task["stages"]}
+        for stage_type in ("diarize", "tts_synthesize", "align_duration"):
+            assert by_type[stage_type]["params"]["voice_mode"] == "preview"
+        assert "voice_mode" not in by_type["mix_audio"]["params"]
+
+        url = f"/tasks/default/{task['id']}"
+        patched = client.patch(
+            url,
+            json={"voice_mode": "design", "voice_instruction": "沉穩男聲"},
+            headers=headers,
+        )
+        assert patched.status_code == 200
+        by_type = {s["type"]: s for s in patched.json()["stages"]}
+        assert by_type["diarize"]["params"]["voice_mode"] == "design"
+        assert by_type["tts_synthesize"]["params"]["voice_instruction"] == "沉穩男聲"
+        assert by_type["align_duration"]["params"]["voice_instruction"] == "沉穩男聲"
+        # The instruction stays off the diarize stage, which never speaks.
+        assert "voice_instruction" not in by_type["diarize"]["params"]
+
+        # Empty strings reset to the clone default and clear the instruction.
+        reset = client.patch(
+            url, json={"voice_mode": "", "voice_instruction": ""}, headers=headers
+        )
+        by_type = {s["type"]: s for s in reset.json()["stages"]}
+        assert "voice_mode" not in by_type["diarize"]["params"]
+        assert "voice_instruction" not in by_type["tts_synthesize"]["params"]
+
+
+def test_voice_mode_rejects_unknown_values(tmp_path: Path) -> None:
+    with service(tmp_path) as (client, headers, token):
+        create_profile(tmp_path, "dub-v", ["tts_synthesize"])
+        response = client.post(
+            "/tasks",
+            json={
+                "input_path": str(make_input(tmp_path)),
+                "profile": "dub-v",
+                "voice_mode": "loud",
+            },
+            headers=headers,
+        )
+        assert response.status_code == 422
+        assert "voice_mode" in response.json()["detail"]
 
 
 def test_dubbing_model_endpoints(tmp_path: Path) -> None:

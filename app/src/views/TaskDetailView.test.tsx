@@ -546,3 +546,70 @@ test("asr chip switches the engine in place", async () => {
     expect(setTaskAsrEngine).toHaveBeenCalledWith("default", "t1", "openai_gpt4o"),
   );
 });
+
+test("voice chip switches the dubbing mode in place", async () => {
+  const dubTask: TaskRecord = {
+    ...task,
+    stages: [
+      ...task.stages,
+      {
+        type: "tts_synthesize",
+        status: "pending",
+        params: {},
+        pause_after: false,
+        artifacts: [],
+        error: null,
+      },
+    ],
+  };
+  const setTaskVoiceMode = vi.fn().mockResolvedValue(dubTask);
+  const api: Partial<ApiClient> = {
+    showTask: vi.fn().mockResolvedValue(dubTask),
+    getConfig: vi.fn().mockResolvedValue(CONFIG),
+    setTaskVoiceMode,
+  };
+  renderWithConnection(
+    <TaskDetailView project="default" taskId="t1" onBack={() => {}} onOpenEditor={() => {}} />,
+    { api },
+  );
+  const chip = await screen.findByRole("button", { name: /VoxCPM2 · 克隆原聲/ });
+  await userEvent.click(chip);
+  await userEvent.selectOptions(screen.getByLabelText("聲音模式"), "design");
+  await userEvent.type(screen.getByLabelText("聲音描述"), "沉穩男聲");
+  await userEvent.click(screen.getByRole("button", { name: "套用" }));
+  await waitFor(() =>
+    expect(setTaskVoiceMode).toHaveBeenCalledWith("default", "t1", "design", "沉穩男聲"),
+  );
+});
+
+test("voice chip reflects the preview mode and resets to clone", async () => {
+  const dubTask: TaskRecord = {
+    ...task,
+    stages: [
+      {
+        type: "tts_synthesize",
+        status: "pending",
+        params: { voice_mode: "preview" },
+        pause_after: false,
+        artifacts: [],
+        error: null,
+      },
+    ],
+  };
+  const setTaskVoiceMode = vi.fn().mockResolvedValue(dubTask);
+  const api: Partial<ApiClient> = {
+    showTask: vi.fn().mockResolvedValue(dubTask),
+    getConfig: vi.fn().mockResolvedValue(CONFIG),
+    setTaskVoiceMode,
+  };
+  renderWithConnection(
+    <TaskDetailView project="default" taskId="t1" onBack={() => {}} onOpenEditor={() => {}} />,
+    { api },
+  );
+  const chip = await screen.findByRole("button", { name: /系統語音預覽/ });
+  await userEvent.click(chip);
+  await userEvent.click(screen.getByRole("button", { name: "還原自動" }));
+  await waitFor(() =>
+    expect(setTaskVoiceMode).toHaveBeenCalledWith("default", "t1", "", ""),
+  );
+});

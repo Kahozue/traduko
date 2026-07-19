@@ -187,10 +187,12 @@ def write_speakers(ctx, index: int = 7) -> None:
     )
 
 
-def setup_tts(tmp_path, monkeypatch, stage_index=7):
+def setup_tts(tmp_path, monkeypatch, stage_index=7, params=None):
     install_engine(tmp_path)
     write_dub_config(tmp_path)
-    ctx, progress = make_ctx(tmp_path, tmp_path / "in.mp4", stage_index=stage_index)
+    ctx, progress = make_ctx(
+        tmp_path, tmp_path / "in.mp4", stage_index=stage_index, params=params
+    )
     write_translation(ctx)
     write_speakers(ctx)
     commands: list[list[str]] = []
@@ -574,3 +576,157 @@ def test_reference_wavs_param_overrides_extraction(
     assert s1_call["prompt_wav"] == str(custom)
     assert not any("ref-S1" in " ".join(cmd) for cmd in commands)
     assert any("ref-S2" in " ".join(cmd) for cmd in commands)
+
+
+# --- voice modes (v3-09): design and preview branch off the clone default ---
+
+
+def setup_preview_engine(monkeypatch, available=True, duration=1.0):
+    """Patch the say-based engine: record synth calls, never spawn say."""
+    from traduko.dubbing.preview import SayVoice
+
+    say_calls: list[dict] = []
+
+    def fake_say(text, out, voice=None, rate=180, runner=None):
+        say_calls.append(
+            {"text": text, "out": str(out), "voice": voice, "rate": rate}
+        )
+        Path(out).write_bytes(b"AIFF")
+        return duration(text) if callable(duration) else duration
+
+    monkeypatch.setattr(dub.preview, "say_available", lambda: available)
+    monkeypatch.setattr(
+        dub.preview,
+        "list_voices",
+        lambda runner=None: [SayVoice(name="Mei-Jia", locale="zh_TW")],
+    )
+    monkeypatch.setattr(dub.preview, "synthesize_preview", fake_say)
+    return say_calls
+
+
+def test_diarize_design_mode_skips_engine_and_review(
+    tmp_path: Path, fake_client
+) -> None:
+    # No engine installed, no hf token: neither may be required off-clone.
+    write_dub_config(tmp_path, hf_token="")
+    ctx, progress = make_ctx(
+        tmp_path, tmp_path / "in.mp4", params={"voice_mode": "design"}
+    )
+    write_translation(ctx)
+    result = registry.create("diarize").run(ctx)
+    assert result.skip_pause is True
+    doc = ctx.artifacts.read_latest_json("speakers.json")
+    assert [s["speaker"] for s in doc["segments"]] == ["S1", "S1", "S1"]
+    assert fake_client.diarized == []
+    assert progress[-1] == (1, 1)
+
+
+def test_unknown_voice_mode_rejected(tmp_path: Path, fake_client) -> None:
+    write_dub_config(tmp_path)
+    ctx, _ = make_ctx(tmp_path, tmp_path / "in.mp4", params={"voice_mode": "loud"})
+    write_translation(ctx)
+    with pytest.raises(base.StageError, match="unknown voice_mode.*clone"):
+        registry.create("diarize").run(ctx)
+
+
+def test_tts_design_mode_shapes_voice_from_instruction_only(
+    tmp_path: Path, fake_client, monkeypatch
+) -> None:
+    ctx, _, commands = setup_tts(
+        tmp_path,
+        monkeypatch,
+        params={"voice_mode": "design", "voice_instruction": "少女聲線"},
+    )
+    registry.create("tts_synthesize").run(ctx)
+    # No reference clips are extracted and none reach the engine.
+    assert not any("ref-" in " ".join(cmd) for cmd in commands)
+    assert all(c["prompt_wav"] is None for c in fake_client.synth_calls)
+    assert all(c["prompt_text"] is None for c in fake_client.synth_calls)
+    assert all(c["instruction"] == "少女聲線" for c in fake_client.synth_calls)
+
+
+def test_tts_preview_mode_uses_say_without_engine(
+    tmp_path: Path, monkeypatch
+) -> None:
+    say_calls = setup_preview_engine(monkeypatch)
+    # No dubbing engine installed at all: preview must not require it.
+    write_dub_config(tmp_path)
+    ctx, progress = make_ctx(
+        tmp_path, tmp_path / "in.mp4", stage_index=7,
+        params={"voice_mode": "preview"},
+    )
+    write_translation(ctx)
+    write_speakers(ctx)
+    monkeypatch.setattr(dub, "ffmpeg_available", lambda: True)
+    monkeypatch.setattr(
+        dub, "_make_client",
+        lambda data_root, config: pytest.fail("preview must not spawn the engine"),
+    )
+    result = registry.create("tts_synthesize").run(ctx)
+    assert "08-dub-manifest.json" in result.artifacts
+    manifest = ctx.artifacts.read_latest_json("dub-manifest.json")
+    assert [s["status"] for s in manifest["segments"]] == ["synthesized"] * 3
+    assert manifest["segments"][0]["file"] == "08-dub/seg-1.aiff"
+    # Voice picked from the translation's target language, base rate applied.
+    assert all(c["voice"] == "Mei-Jia" for c in say_calls)
+    assert all(c["rate"] == 180 for c in say_calls)
+    assert progress[-1] == (3, 3)
+
+
+def test_tts_preview_mode_needs_say(tmp_path: Path, monkeypatch) -> None:
+    setup_preview_engine(monkeypatch, available=False)
+    write_dub_config(tmp_path)
+    ctx, _ = make_ctx(
+        tmp_path, tmp_path / "in.mp4", stage_index=7,
+        params={"voice_mode": "preview"},
+    )
+    write_translation(ctx)
+    write_speakers(ctx)
+    with pytest.raises(base.StageError, match="needs macOS"):
+        registry.create("tts_synthesize").run(ctx)
+
+
+def test_align_preview_regen_scales_rate_deterministically(
+    tmp_path: Path, monkeypatch
+) -> None:
+    # seg2 window 1.6s, first pass 3.0s: regen at fit_rate, no VoxCPM.
+    say_calls = setup_preview_engine(monkeypatch, duration=lambda text: 1.5)
+    write_dub_config(tmp_path)
+    ctx, _ = make_ctx(
+        tmp_path, tmp_path / "in.mp4", stage_index=8,
+        params={"voice_mode": "preview"},
+    )
+    write_translation(ctx)
+    write_speakers(ctx)
+    monkeypatch.setattr(dub, "run_media", lambda cmd: None)
+    monkeypatch.setattr(dub, "ffmpeg_available", lambda: True)
+    monkeypatch.setattr(
+        dub, "_make_client",
+        lambda data_root, config: pytest.fail("preview must not spawn the engine"),
+    )
+    write_manifest(ctx, {2: 3.0})
+    registry.create("align_duration").run(ctx)
+    timeline = ctx.artifacts.read_latest_json("dub-timeline.json")
+    seg = timeline["segments"][0]
+    assert seg["regenerated"] is True
+    assert seg["file"] == "09-dub/seg-2.regen.aiff"
+    from traduko.dubbing.preview import fit_rate
+
+    assert say_calls[0]["rate"] == fit_rate(1.6, 3.0, base=180)
+    assert say_calls[0]["voice"] == "Mei-Jia"
+
+
+def test_align_design_regen_keeps_instruction_without_references(
+    tmp_path: Path, monkeypatch
+) -> None:
+    client = FakeClient(synth_duration=1.0)
+    monkeypatch.setattr(dub, "_make_client", lambda data_root, config: client)
+    ctx, _, _ = setup_tts(
+        tmp_path, monkeypatch, stage_index=8, params={"voice_mode": "design"}
+    )
+    write_manifest(ctx, {2: 3.0})
+    registry.create("align_duration").run(ctx)
+    call = client.synth_calls[0]
+    assert call["instruction"] == "speak faster"
+    assert call["prompt_wav"] is None
+    assert call["prompt_text"] is None

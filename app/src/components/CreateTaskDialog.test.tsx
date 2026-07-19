@@ -13,9 +13,9 @@ import { renderWithConnection } from "../test/helpers";
 import { CreateTaskDialog } from "./CreateTaskDialog";
 
 const DETAILED: ProfileInfo[] = [
-  { name: "av-default", kind: "video" },
-  { name: "subtitle-translate", kind: "video" },
-  { name: "novel-translate", kind: "document" },
+  { name: "av-default", kind: "video", stages: ["extract_audio", "asr", "translate"] },
+  { name: "subtitle-translate", kind: "video", stages: ["ingest_subtitle", "translate"] },
+  { name: "novel-translate", kind: "document", stages: ["ingest_document", "translate_chunks"] },
 ];
 
 test("picks file, selects a video profile and submits", async () => {
@@ -188,7 +188,7 @@ test("audio kind offers profiles and a per-task ASR engine", async () => {
   const api: Partial<ApiClient> = {
     profilesDetailed: vi.fn().mockResolvedValue([
       ...DETAILED,
-      { name: "audio-transcribe", kind: "audio" } as ProfileInfo,
+      { name: "audio-transcribe", kind: "audio", stages: ["extract_audio", "asr"] },
     ]),
     createTask,
   };
@@ -211,4 +211,71 @@ test("audio kind offers profiles and a per-task ASR engine", async () => {
       }),
     ),
   );
+});
+
+test("dub profile offers the voice mode; design carries the instruction", async () => {
+  openMock.mockResolvedValue("/tmp/in.mp4");
+  const createTask = vi.fn().mockResolvedValue({ id: "d9", project: "default" });
+  const api: Partial<ApiClient> = {
+    profilesDetailed: vi.fn().mockResolvedValue([
+      ...DETAILED,
+      {
+        name: "av-dub",
+        kind: "video",
+        stages: ["extract_audio", "asr", "translate", "diarize", "tts_synthesize"],
+      },
+    ]),
+    createTask,
+  };
+  renderWithConnection(<CreateTaskDialog onClose={() => {}} onCreated={() => {}} />, { api });
+
+  await waitFor(() => expect(screen.getByLabelText("管線設定檔")).toBeInTheDocument());
+  // Non-dub profiles show no voice mode field.
+  expect(screen.queryByLabelText("聲音模式")).toBeNull();
+  await userEvent.selectOptions(screen.getByLabelText("管線設定檔"), "av-dub");
+  await userEvent.selectOptions(screen.getByLabelText("聲音模式"), "design");
+  await userEvent.type(screen.getByLabelText("聲音描述"), "沉穩的年輕男聲");
+  await userEvent.click(screen.getByText("選擇檔案"));
+  await waitFor(() => expect(screen.getByDisplayValue("/tmp/in.mp4")).toBeInTheDocument());
+  await userEvent.click(screen.getByText("建立"));
+  await waitFor(() =>
+    expect(createTask).toHaveBeenCalledWith(
+      expect.objectContaining({
+        profile: "av-dub",
+        voice_mode: "design",
+        voice_instruction: "沉穩的年輕男聲",
+      }),
+    ),
+  );
+});
+
+test("preview voice mode shows its note and skips the instruction", async () => {
+  openMock.mockResolvedValue("/tmp/in.mp4");
+  const createTask = vi.fn().mockResolvedValue({ id: "d10", project: "default" });
+  const api: Partial<ApiClient> = {
+    profilesDetailed: vi.fn().mockResolvedValue([
+      {
+        name: "av-dub",
+        kind: "video",
+        stages: ["diarize", "tts_synthesize", "align_duration"],
+      },
+    ]),
+    createTask,
+  };
+  renderWithConnection(<CreateTaskDialog onClose={() => {}} onCreated={() => {}} />, { api });
+
+  await waitFor(() => expect(screen.getByLabelText("聲音模式")).toBeInTheDocument());
+  await userEvent.selectOptions(screen.getByLabelText("聲音模式"), "preview");
+  expect(screen.getByText(/macOS 系統語音/)).toBeInTheDocument();
+  expect(screen.queryByLabelText("聲音描述")).toBeNull();
+  await userEvent.click(screen.getByText("選擇檔案"));
+  await waitFor(() => expect(screen.getByDisplayValue("/tmp/in.mp4")).toBeInTheDocument());
+  await userEvent.click(screen.getByText("建立"));
+  await waitFor(() =>
+    expect(createTask).toHaveBeenCalledWith(
+      expect.objectContaining({ voice_mode: "preview" }),
+    ),
+  );
+  const body = createTask.mock.calls[0][0];
+  expect(body.voice_instruction).toBeUndefined();
 });

@@ -115,7 +115,7 @@ class PipelineExecutor:
             remaining = any(
                 s.status != StageStatus.COMPLETED for s in record.stages[i + 1 :]
             )
-            if stage_record.pause_after and remaining:
+            if stage_record.pause_after and remaining and not result.skip_pause:
                 transition(record, TaskStatus.WAITING_REVIEW)
                 self.store.save(record)
                 self._emit(record, "task_waiting_review", {"stage_index": i})

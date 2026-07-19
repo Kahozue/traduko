@@ -96,6 +96,26 @@ def test_pause_after_creates_checkpoint_then_resumes(tmp_path: Path) -> None:
     assert resumed.status == TaskStatus.COMPLETED
 
 
+def test_skip_pause_result_overrides_pause_after(tmp_path: Path) -> None:
+    @registry.register
+    class SkipPauseStage:
+        type = "skip_pause_mark"
+
+        def run(self, ctx: base.StageContext) -> base.StageResult:
+            return base.StageResult(skip_pause=True)
+
+    store, bus, events, record = build(
+        tmp_path,
+        [
+            ProfileStage(type="skip_pause_mark", pause_after=True),
+            ProfileStage(type="mark"),
+        ],
+    )
+    result = PipelineExecutor(store, bus, tmp_path).run(record)
+    assert result.status == TaskStatus.COMPLETED
+    assert all(e.type != "task_waiting_review" for e in events)
+
+
 def test_cancel_before_stage(tmp_path: Path) -> None:
     store, bus, events, record = build(tmp_path, [ProfileStage(type="mark")])
     cancel = CancelToken()

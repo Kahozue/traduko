@@ -73,7 +73,12 @@ from .. import proposals, skillhub
 from ..skillhub import SkillsManager, SkillValidationError
 from ..styles import SubtitleStyle
 from ..styles_render import render_style_frame
-from ..tasks import apply_asr_engine_override, apply_model_override
+from ..tasks import (
+    VOICE_MODES,
+    apply_asr_engine_override,
+    apply_model_override,
+    apply_voice_mode_override,
+)
 from ..sync.engine import (
     SyncConfigError,
     SyncEngine,
@@ -277,6 +282,18 @@ class TaskCreateRequest(BaseModel):
     model: str | None = None
     # Optional per-task ASR engine override, written into asr stage params.
     asr_engine: str | None = None
+    # Optional per-task dubbing voice mode (clone/design/preview) plus the
+    # design-mode voice description, written into the dub stages' params.
+    voice_mode: str | None = None
+    voice_instruction: str | None = None
+
+
+def _validate_voice_mode(mode: str | None) -> None:
+    if mode and mode not in VOICE_MODES:
+        raise HTTPException(
+            status_code=422,
+            detail=f"voice_mode must be one of: {', '.join(VOICE_MODES)}",
+        )
 
 
 def _load_task(ws: Workspace, project: str, task_id: str) -> TaskRecord:
@@ -308,6 +325,7 @@ def create_task(request: Request, body: TaskCreateRequest) -> dict:
         raise HTTPException(
             status_code=404, detail=f"profile not found: {body.profile}"
         ) from None
+    _validate_voice_mode(body.voice_mode)
     record = ws.store.create(
         project=body.project or ws.config.default_project,
         input_path=str(input_path.resolve()),
@@ -315,9 +333,18 @@ def create_task(request: Request, body: TaskCreateRequest) -> dict:
         stages=stage_records_from(profile),
         name=body.name,
     )
-    if body.provider or body.model or body.asr_engine:
+    if (
+        body.provider
+        or body.model
+        or body.asr_engine
+        or body.voice_mode
+        or body.voice_instruction
+    ):
         apply_model_override(record, body.provider or None, body.model or None)
         apply_asr_engine_override(record, body.asr_engine or None)
+        apply_voice_mode_override(
+            record, body.voice_mode or None, body.voice_instruction or None
+        )
         ws.store.save(record)
     return record.model_dump()
 
@@ -353,6 +380,9 @@ class TaskUpdateRequest(BaseModel):
     model: str | None = None
     # Per-task ASR engine; "" removes the override, None leaves as is.
     asr_engine: str | None = None
+    # Per-task dubbing voice mode; ""/"clone" removes the override.
+    voice_mode: str | None = None
+    voice_instruction: str | None = None
 
 
 @router.patch("/tasks/{project}/{task_id}")
@@ -367,11 +397,15 @@ def update_task(
         and body.provider is None
         and body.model is None
         and body.asr_engine is None
+        and body.voice_mode is None
+        and body.voice_instruction is None
     ):
         raise HTTPException(
             status_code=422,
-            detail="name, project, provider, model or asr_engine required",
+            detail="name, project, provider, model, asr_engine, "
+            "voice_mode or voice_instruction required",
         )
+    _validate_voice_mode(body.voice_mode)
     name_changed = False
     if body.name is not None:
         name = body.name.strip()
@@ -384,12 +418,15 @@ def update_task(
         body.provider is not None
         or body.model is not None
         or body.asr_engine is not None
+        or body.voice_mode is not None
+        or body.voice_instruction is not None
     ):
         worker: TaskWorker = request.app.state.worker
         if worker.is_active(project, task_id):
             raise HTTPException(status_code=409, detail="task is queued or running")
         apply_model_override(record, body.provider, body.model)
         apply_asr_engine_override(record, body.asr_engine)
+        apply_voice_mode_override(record, body.voice_mode, body.voice_instruction)
         model_changed = True
     if body.project is not None:
         new_project = body.project.strip()
