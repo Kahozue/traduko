@@ -37,7 +37,7 @@ The project is an orchestration layer over existing tools rather than a new engi
 - Settings, prompts, glossaries, and task records can be synced between machines through a shared local folder (for example a Dropbox directory) or WebDAV. Glossary changes are merged row by row; conflicting rows are left for a manual decision. Tasks from other machines are shown read-only.
 - All tasks, artifacts, and settings are human-readable files under the data directory. SQLite serves only as an index and can be rebuilt from the files at any time.
 
-The interface language is currently Traditional Chinese.
+The interface language can be switched between Traditional Chinese, English, and Japanese.
 
 ## Architecture
 
@@ -99,7 +99,7 @@ The bundled core does not include faster-whisper; run the core from a Python env
 
 ## Usage
 
-On first start the data directory is seeded with default profiles (`av-default`, `subtitle-translate`, `novel-translate`, `av-dub`, `translate-pdf`), prompt templates, subtitle styles, and a pricing table. All of these are commented plain-text files and can be edited.
+On first start the data directory is seeded with default profiles (`av-default`, `av-dub`, `subtitle-translate`, `novel-translate`, `translate-pdf`, `audio-transcribe`, `audio-translate`, `audio-dub`), prompt templates, subtitle styles, and a pricing table. All of these are commented plain-text files and can be edited.
 
 CLI basics:
 
@@ -129,6 +129,4 @@ cd app/src-tauri && cargo test      # Rust shell tests
 
 ## Roadmap
 
-- TTS dubbing
-- Native Anthropic and Gemini adapters
 - Comic translation pipeline

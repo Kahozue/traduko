@@ -363,7 +363,12 @@ export function TasksView({
       )}
       {!hasSelection && bulkNote && <p className={styles.bulkNoteLine}>{bulkNote}</p>}
 
-      {rows && rows.length === 0 && statusFilter === "" ? (
+      {taskKind === "comic" && rows && rows.length === 0 ? (
+        // The comic pipeline is not implemented yet (its create option is
+        // disabled), so its domain view gets a placeholder instead of the
+        // generic drag-a-video onboarding guide.
+        <div className={styles.empty}>{t("tasks.domainUnavailable")}</div>
+      ) : rows && rows.length === 0 && statusFilter === "" ? (
         <EmptyGuide onOpenSettings={onOpenSettings} />
       ) : rows && rows.length === 0 ? (
         <div className={styles.empty}>{t("tasks.empty")}</div>

@@ -13,6 +13,7 @@ export const zhTW = {
   "tasks.title": "任務",
   "tasks.create": "新增任務",
   "tasks.empty": "尚無任務，點右上角新增",
+  "tasks.domainUnavailable": "此任務域尚未開放，漫畫翻譯管線正在規劃中",
   "tasks.filter.all": "全部狀態",
   "tasks.col.task": "任務",
   "tasks.col.profile": "管線設定檔",

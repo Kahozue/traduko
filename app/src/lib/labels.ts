@@ -24,6 +24,8 @@ const STAGE_TYPE_KEYS: Record<string, MessageKey> = {
   mix_audio: "stage.mix_audio",
   mux: "stage.mux",
   translate_pdf: "stage.translate_pdf",
+  export_transcript: "stage.export_transcript",
+  export_audio: "stage.export_audio",
 };
 
 const STAGE_STATUS_KEYS: Record<string, MessageKey> = {

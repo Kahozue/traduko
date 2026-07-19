@@ -17,6 +17,7 @@ export const en: Record<MessageKey, string> = {
   "tasks.title": "Tasks",
   "tasks.create": "New task",
   "tasks.empty": "No tasks yet — create one from the top right",
+  "tasks.domainUnavailable": "This task domain is not available yet; the comic pipeline is planned",
   "tasks.filter.all": "All statuses",
   "tasks.col.task": "Task",
   "tasks.col.profile": "Pipeline profile",

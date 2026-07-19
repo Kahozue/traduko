@@ -124,11 +124,15 @@ function normalize(config: CoreConfigDoc): CoreConfigDoc {
 
 export function SettingsView({
   initialTab,
+  onTabChange,
   onEditSkill,
 }: {
   // Where to land when the view opens; the skill editor's back path uses
   // this to return to the agent tab.
   initialTab?: SettingsTab;
+  // Reports tab switches so App can keep the active tab in its view state;
+  // a locale switch remounts this view and lands back on the same tab.
+  onTabChange?: (tab: SettingsTab) => void;
   onEditSkill?: (name: string) => void;
 } = {}) {
   const api = useApi();
@@ -216,12 +220,17 @@ export function SettingsView({
   if (!agentValid) invalidTabs.push("agent");
   if (!channelsValid || !botValid || !syncValid) invalidTabs.push("integrations");
 
+  function selectTab(next: TabId) {
+    setTab(next);
+    onTabChange?.(next);
+  }
+
   function onTabKeyDown(event: React.KeyboardEvent) {
     if (event.key !== "ArrowRight" && event.key !== "ArrowLeft") return;
     event.preventDefault();
     const delta = event.key === "ArrowRight" ? 1 : -1;
     const next = TABS[(TABS.indexOf(tab) + delta + TABS.length) % TABS.length];
-    setTab(next);
+    selectTab(next);
     document.getElementById(`settings-tab-${next}`)?.focus();
   }
 
@@ -291,7 +300,7 @@ export function SettingsView({
             aria-controls={`settings-panel-${id}`}
             tabIndex={tab === id ? 0 : -1}
             className={styles.tab}
-            onClick={() => setTab(id)}
+            onClick={() => selectTab(id)}
           >
             {t(TAB_LABELS[id])}
           </button>
@@ -372,15 +381,24 @@ export function SettingsView({
         className={styles.panel}
       >
         {/* Same engine assets as the video tab; only the audio-domain
-           default engine choice differs (design-language 1.2 ruling). */}
+           default engine choice differs (design-language 1.2 ruling). The
+           dubbing engine is shared by audio-dub, so it renders here too. */}
         {draft && (
-          <AsrSection
-            domain="audio"
-            asr={draft.asr}
-            onChange={(value) =>
-              setDraft((prev) => (prev ? { ...prev, asr: value } : prev))
-            }
-          />
+          <>
+            <AsrSection
+              domain="audio"
+              asr={draft.asr}
+              onChange={(value) =>
+                setDraft((prev) => (prev ? { ...prev, asr: value } : prev))
+              }
+            />
+            <DubbingSection
+              dubbing={draft.dubbing}
+              onChange={(value) =>
+                setDraft((prev) => (prev ? { ...prev, dubbing: value } : prev))
+              }
+            />
+          </>
         )}
       </div>
 

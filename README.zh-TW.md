@@ -37,7 +37,7 @@ Traduko 對影片、音訊或字幕檔執行可設定的管線：抽取音軌、
 - 設定、提示詞、名詞表與任務紀錄可以透過共享資料夾（例如 Dropbox 目錄）或 WebDAV 在多台機器間同步。名詞表逐列合併，衝突的列留給人工決定；其他機器的任務以唯讀顯示。
 - 所有任務、產物與設定都是資料目錄下人類可讀的檔案。SQLite 只作為索引，隨時可以從檔案重建。
 
-介面語言目前為繁體中文。
+介面語言可切換繁體中文、English、日本語。
 
 ## 架構
 
@@ -99,7 +99,7 @@ cd app && pnpm tauri build
 
 ## 使用
 
-首次啟動會在資料目錄產生預設 profile（`av-default`、`subtitle-translate`、`novel-translate`、`av-dub`、`translate-pdf`）、提示詞模板、字幕樣式與計價表。這些都是帶註解的純文字檔，可以直接修改。
+首次啟動會在資料目錄產生預設 profile（`av-default`、`av-dub`、`subtitle-translate`、`novel-translate`、`translate-pdf`、`audio-transcribe`、`audio-translate`、`audio-dub`）、提示詞模板、字幕樣式與計價表。這些都是帶註解的純文字檔，可以直接修改。
 
 CLI 基本操作：
 
@@ -129,6 +129,4 @@ cd app/src-tauri && cargo test      # Rust 殼測試
 
 ## 路線圖
 
-- TTS 配音
-- Anthropic 與 Gemini 原生 adapter
 - 漫畫翻譯管線

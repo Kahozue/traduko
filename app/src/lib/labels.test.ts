@@ -1,4 +1,5 @@
 import { describe, expect, test } from "vitest";
+import seeds from "../../../core/src/traduko/seeds.py?raw";
 import {
   eventTypeLabel,
   stageListLabels,
@@ -16,6 +17,21 @@ describe("stageTypeLabel", () => {
 
   test("falls back to the raw type for unknown stages", () => {
     expect(stageTypeLabel("my_custom_stage")).toBe("my_custom_stage");
+  });
+
+  // Every stage type shipped in the core's seed profiles must have a label
+  // key wired up, so a new pipeline stage cannot leak a raw English ID into
+  // the stage list again (QA v3 M1: export_transcript/export_audio).
+  test("covers every stage type in the core seed profiles", () => {
+    const types = new Set(
+      [...seeds.matchAll(/^\s*- type: (\w+)$/gm)].map((match) => match[1]),
+    );
+    expect(types.size).toBeGreaterThan(0);
+    for (const type of types) {
+      expect(stageTypeLabel(type), `missing label for stage type "${type}"`).not.toBe(
+        type,
+      );
+    }
   });
 });
 

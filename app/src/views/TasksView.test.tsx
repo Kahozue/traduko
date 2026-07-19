@@ -154,6 +154,17 @@ test("shows first-run guide when there are no tasks", async () => {
   expect(onOpenSettings).toHaveBeenCalled();
 });
 
+test("comic domain shows a not-yet-available placeholder instead of the guide", async () => {
+  const api: Partial<ApiClient> = { listTasks: vi.fn().mockResolvedValue([]) };
+  renderWithConnection(<TasksView onOpenTask={() => {}} taskKind="comic" />, { api });
+  await waitFor(() =>
+    expect(
+      screen.getByText("此任務域尚未開放，漫畫翻譯管線正在規劃中"),
+    ).toBeInTheDocument(),
+  );
+  expect(screen.queryByText("還沒有任務")).not.toBeInTheDocument();
+});
+
 test("create signal opens the dialog with a dropped path", async () => {
   const api: Partial<ApiClient> = {
     listTasks: vi.fn().mockResolvedValue([]),

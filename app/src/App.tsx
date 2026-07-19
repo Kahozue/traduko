@@ -51,11 +51,18 @@ function ConnectionGate() {
   );
 }
 
-function Main() {
+function Main({
+  view,
+  setView,
+  taskKind,
+  setTaskKind,
+}: {
+  view: View;
+  setView: (view: View) => void;
+  taskKind: TaskKind | null;
+  setTaskKind: (kind: TaskKind | null) => void;
+}) {
   const conn = useConnection();
-  const [view, setView] = useState<View>({ name: "tasks" });
-  // Task-kind filter for the sidebar's unified views; null means "all".
-  const [taskKind, setTaskKind] = useState<TaskKind | null>(null);
   // Bumped by Cmd+N or a file drop; TasksView reacts by opening the create
   // dialog (with droppedPath prefilled when set).
   const [createSignal, setCreateSignal] = useState(0);
@@ -207,6 +214,7 @@ function renderView(
       return (
         <SettingsView
           initialTab={view.tab}
+          onTabChange={(tab) => setView({ name: "settings", tab })}
           onEditSkill={(name) => setView({ name: "skill-editor", skill: name })}
         />
       );
@@ -217,11 +225,17 @@ export default function App() {
   // Keying the tree by locale remounts everything on a language switch, so
   // every t() call re-evaluates without per-component subscriptions.
   const locale = useLocale();
+  // Navigation state lives above the locale-keyed remount so switching the
+  // interface language keeps the user on the view (and settings tab) they
+  // were on instead of resetting to the task list.
+  const [view, setView] = useState<View>({ name: "tasks" });
+  // Task-kind filter for the sidebar's unified views; null means "all".
+  const [taskKind, setTaskKind] = useState<TaskKind | null>(null);
   return (
     <QueryClientProvider client={queryClient}>
       <ConnectionProvider>
         <ErrorBoundary key={locale}>
-          <Main />
+          <Main view={view} setView={setView} taskKind={taskKind} setTaskKind={setTaskKind} />
         </ErrorBoundary>
       </ConnectionProvider>
     </QueryClientProvider>

@@ -17,6 +17,7 @@ export const ja: Record<MessageKey, string> = {
   "tasks.title": "タスク",
   "tasks.create": "新規タスク",
   "tasks.empty": "タスクはまだありません。右上から作成できます",
+  "tasks.domainUnavailable": "このタスクドメインはまだ利用できません。コミック翻訳パイプラインは計画中です",
   "tasks.filter.all": "すべての状態",
   "tasks.col.task": "タスク",
   "tasks.col.profile": "パイプラインプロファイル",

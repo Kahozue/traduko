@@ -1,4 +1,4 @@
-import { screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ComponentProps } from "react";
 import { expect, test, vi } from "vitest";
@@ -105,6 +105,23 @@ test("tabs render in order and default to the general tab", async () => {
   for (const el of screen.getAllByText("語音辨識")) {
     expect(el).not.toBeVisible();
   }
+});
+
+test("the audio tab shows both the ASR and dubbing engine sections", async () => {
+  setup();
+  await screen.findByLabelText("預設專案");
+  await userEvent.click(screen.getByRole("tab", { name: "音頻" }));
+  const audioPanel = document.getElementById("settings-panel-audio")!;
+  expect(within(audioPanel).getByText("語音辨識")).toBeInTheDocument();
+  expect(within(audioPanel).getByText("配音引擎")).toBeInTheDocument();
+});
+
+test("tab switches report through onTabChange", async () => {
+  const onTabChange = vi.fn();
+  setup({}, { onTabChange });
+  await screen.findByLabelText("預設專案");
+  await userEvent.click(screen.getByRole("tab", { name: "音頻" }));
+  expect(onTabChange).toHaveBeenCalledWith("audio");
 });
 
 test("switching to the video tab reveals the ASR section", async () => {
