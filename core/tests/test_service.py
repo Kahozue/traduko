@@ -740,6 +740,20 @@ def test_delete_missing_task_is_404(tmp_path: Path) -> None:
         assert client.delete("/tasks/default/none", headers=headers).status_code == 404
 
 
+def test_delete_orphan_index_row(tmp_path: Path) -> None:
+    import shutil
+
+    with service(tmp_path) as (client, headers, token):
+        task_id = create_task(client, headers, tmp_path)
+        # Simulate a task whose directory vanished but whose index row remains
+        # (e.g. an interrupted delete): it still shows up in the list, so the
+        # user must be able to clear it.
+        shutil.rmtree(tmp_path / "projects" / "default" / "tasks" / task_id)
+        assert [t["id"] for t in client.get("/tasks", headers=headers).json()] == [task_id]
+        assert client.delete(f"/tasks/default/{task_id}", headers=headers).status_code == 200
+        assert client.get("/tasks", headers=headers).json() == []
+
+
 def test_delete_and_move_reject_active_task(tmp_path: Path) -> None:
     ServiceGateStage.gate = threading.Event()
     ServiceGateStage.started = threading.Event()

@@ -481,7 +481,12 @@ def delete_task(
     request: Request, project: str, task_id: str, force: bool = False
 ) -> dict:
     ws: Workspace = request.app.state.workspace
-    _load_task(ws, project, task_id)
+    # Deletable if it exists on disk or lingers in the index; the latter clears
+    # an orphan row whose directory is already gone. Truly unknown ids 404.
+    on_disk = (ws.store.task_dir(project, task_id) / "task.json").exists()
+    indexed = any(row["id"] == task_id for row in ws.index.list())
+    if not on_disk and not indexed:
+        raise HTTPException(status_code=404, detail=f"task not found: {project}/{task_id}")
     worker: TaskWorker = request.app.state.worker
     if worker.is_active(project, task_id):
         if not force:

@@ -128,10 +128,12 @@ class TaskStore:
             self.index.upsert(record)
 
     def delete(self, project: str, task_id: str) -> None:
+        # Tolerate a missing directory so a stale index row (an orphan left by
+        # an interrupted delete) still gets purged instead of wedging the task
+        # in the list forever.
         task_dir = self.task_dir(project, task_id)
-        if not (task_dir / "task.json").exists():
-            raise FileNotFoundError(task_dir / "task.json")
-        shutil.rmtree(task_dir)
+        if task_dir.exists():
+            shutil.rmtree(task_dir)
         if self.index is not None:
             self.index.delete(task_id)
 
