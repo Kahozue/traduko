@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from .migrate import migrate_legacy_glossaries
 from .models import GlossaryEntry, GlossaryTableMeta
 from .prompt import format_for_prompt, relevant_entries
 from .store import GlossaryStore
@@ -31,4 +32,5 @@ __all__ = [
     "format_for_prompt",
     "relevant_entries",
     "load_glossary",
+    "migrate_legacy_glossaries",
 ]
