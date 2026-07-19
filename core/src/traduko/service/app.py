@@ -345,7 +345,10 @@ def send_test_notification(request: Request, body: NotifyTestRequest) -> dict:
 
 
 class TaskCreateRequest(BaseModel):
-    input_path: str
+    # Optional only for an audio compose task, whose input is the transcript
+    # itself: the caller cannot know an artifact's path, so the server fills
+    # it in from the resolved transcript.
+    input_path: str = ""
     profile: str
     project: str | None = None
     name: str | None = None
@@ -366,10 +369,10 @@ class TaskCreateRequest(BaseModel):
     base_audio: str | None = None
 
 
-def _compose_transcript_params(source: dict | None) -> dict:
-    """Validated params.transcript for an ingest_transcript stage. Kept next
-    to the stage's own contract in stages/av.py: rejecting a malformed source
-    at creation beats failing the first run."""
+def _compose_transcript_params(root: Path, source: dict | None) -> tuple[dict, Path]:
+    """(params.transcript, the file it resolves to) for an ingest_transcript
+    stage. Kept next to the stage's own contract in stages/av.py: rejecting a
+    malformed source at creation beats failing the first run."""
     if not source:
         raise HTTPException(
             status_code=422,
@@ -386,7 +389,7 @@ def _compose_transcript_params(source: dict | None) -> dict:
             raise HTTPException(
                 status_code=422, detail=f"transcript not found: {path}"
             )
-        return {"kind": "file", "path": str(path.resolve())}
+        return {"kind": "file", "path": str(path.resolve())}, path.resolve()
     if kind == "task":
         for field in ("project", "task_id", "file"):
             if not source.get(field):
@@ -400,40 +403,42 @@ def _compose_transcript_params(source: dict | None) -> dict:
                 status_code=422,
                 detail=f"transcript.file must be a bare artifact name: {file}",
             )
-        return {
+        params = {
             "kind": "task",
             "project": str(source["project"]),
             "task_id": str(source["task_id"]),
             "file": file,
         }
+        path = (
+            root / "projects" / params["project"] / "tasks" / params["task_id"]
+            / "artifacts" / file
+        )
+        if not path.exists():
+            raise HTTPException(
+                status_code=422, detail=f"transcript artifact not found: {path}"
+            )
+        return params, path.resolve()
     raise HTTPException(
         status_code=422, detail=f"transcript.kind must be file or task, got: {kind}"
     )
 
 
 def _compose_inputs(
-    profile: Profile, body: TaskCreateRequest, input_path: Path
+    root: Path, profile: Profile, body: TaskCreateRequest
 ) -> dict | None:
     """Validated compose inputs, or None for a profile that ingests no
     transcript. Runs before the task is created so a rejected request leaves
-    nothing on disk. A compose task's input is the media being dubbed, so a
-    profile that muxes back into video has to be given a video."""
-    types = {stage.type for stage in profile.stages}
-    if "ingest_transcript" not in types:
+    nothing on disk."""
+    if not any(stage.type == "ingest_transcript" for stage in profile.stages):
         return None
-    transcript = _compose_transcript_params(body.transcript)
-    if types & {"mux", "hardburn"} and media_kind_of(input_path) != "video":
-        raise HTTPException(
-            status_code=422,
-            detail=f"this profile needs a video file as input: {input_path}",
-        )
+    transcript, resolved = _compose_transcript_params(root, body.transcript)
     base_audio = None
     if body.base_audio:
         bed = Path(body.base_audio)
         if not bed.exists():
             raise HTTPException(status_code=422, detail=f"base audio not found: {bed}")
         base_audio = str(bed.resolve())
-    return {"transcript": transcript, "base_audio": base_audio}
+    return {"transcript": transcript, "base_audio": base_audio, "resolved": resolved}
 
 
 def _apply_compose_inputs(record: TaskRecord, inputs: dict | None) -> None:
@@ -482,9 +487,6 @@ def list_tasks(
 @router.post("/tasks", status_code=201)
 def create_task(request: Request, body: TaskCreateRequest) -> dict:
     ws: Workspace = request.app.state.workspace
-    input_path = Path(body.input_path)
-    if not input_path.exists():
-        raise HTTPException(status_code=400, detail=f"input not found: {input_path}")
     try:
         profile = load_profile(ws.root, body.profile)
     except FileNotFoundError:
@@ -493,7 +495,25 @@ def create_task(request: Request, body: TaskCreateRequest) -> dict:
         ) from None
     _validate_voice_mode(body.voice_mode)
     _validate_dub_text(body.dub_text)
-    compose = _compose_inputs(profile, body, input_path)
+    compose = _compose_inputs(ws.root, profile, body)
+    # An audio compose task has no media input at all, so the transcript
+    # stands in as the input: preflight has a real file to check and the
+    # default task name has something to read.
+    if body.input_path:
+        input_path = Path(body.input_path)
+    elif compose is not None:
+        input_path = compose["resolved"]
+    else:
+        raise HTTPException(status_code=400, detail="input_path is required")
+    if not input_path.exists():
+        raise HTTPException(status_code=400, detail=f"input not found: {input_path}")
+    if any(stage.type in ("mux", "hardburn") for stage in profile.stages) and (
+        compose is not None and media_kind_of(input_path) != "video"
+    ):
+        raise HTTPException(
+            status_code=422,
+            detail=f"this profile needs a video file as input: {input_path}",
+        )
     record = ws.store.create(
         project=body.project or ws.config.default_project,
         input_path=str(input_path.resolve()),

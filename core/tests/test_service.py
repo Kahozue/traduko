@@ -3373,6 +3373,12 @@ def test_create_audio_compose_task_from_a_transcript(tmp_path: Path) -> None:
 def test_create_compose_task_from_another_tasks_artifact(tmp_path: Path) -> None:
     with service(tmp_path) as (client, headers, token):
         transcript = make_transcript(tmp_path)
+        artifact = (
+            tmp_path / "projects" / "default" / "tasks" / "t-source" / "artifacts"
+            / "06-subtitles.srt"
+        )
+        artifact.parent.mkdir(parents=True, exist_ok=True)
+        artifact.write_text(SRT, encoding="utf-8")
         source = {
             "kind": "task",
             "project": "default",
@@ -3486,3 +3492,59 @@ def test_create_compose_task_rejects_a_bad_transcript_source(tmp_path: Path) -> 
 
         assert response.status_code == 422, response.text
         assert "path" in response.json()["detail"]
+
+
+def test_audio_compose_input_path_defaults_to_the_transcript(tmp_path: Path) -> None:
+    # The app cannot know an artifact's absolute path, so an audio compose
+    # task may omit input_path and let the transcript itself stand in.
+    with service(tmp_path) as (client, headers, token):
+        artifact = (
+            tmp_path / "projects" / "default" / "tasks" / "t-src" / "artifacts"
+            / "06-subtitles.srt"
+        )
+        artifact.parent.mkdir(parents=True, exist_ok=True)
+        artifact.write_text(SRT, encoding="utf-8")
+        response = client.post(
+            "/tasks",
+            json={
+                "profile": "audio-compose",
+                "transcript": {
+                    "kind": "task",
+                    "project": "default",
+                    "task_id": "t-src",
+                    "file": "06-subtitles.srt",
+                },
+            },
+            headers=headers,
+        )
+
+        assert response.status_code == 201, response.text
+        assert response.json()["input_path"] == str(artifact.resolve())
+
+
+def test_compose_task_artifact_that_does_not_exist_is_rejected(tmp_path: Path) -> None:
+    with service(tmp_path) as (client, headers, token):
+        response = client.post(
+            "/tasks",
+            json={
+                "profile": "audio-compose",
+                "transcript": {
+                    "kind": "task",
+                    "project": "default",
+                    "task_id": "t-gone",
+                    "file": "06-subtitles.srt",
+                },
+            },
+            headers=headers,
+        )
+
+        assert response.status_code == 422, response.text
+        assert "06-subtitles.srt" in response.json()["detail"]
+
+
+def test_task_without_an_input_path_is_still_rejected(tmp_path: Path) -> None:
+    with service(tmp_path) as (client, headers, token):
+        response = client.post(
+            "/tasks", json={"profile": "subtitle-translate"}, headers=headers
+        )
+        assert response.status_code == 400, response.text
