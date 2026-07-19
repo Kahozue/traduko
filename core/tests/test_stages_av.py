@@ -6,6 +6,7 @@ from traduko.artifacts import ArtifactStore
 from traduko.asr import AsrResult, AsrSegment, register_asr
 from traduko.config import BudgetConfig, CoreConfig, save_config
 from traduko.events import EventBus
+from traduko.glossary import GlossaryEntry, GlossaryStore
 from traduko.models import StageRecord, TaskRecord, utc_now_iso
 from traduko.stages import base, registry
 
@@ -13,12 +14,21 @@ from traduko.stages import base, registry
 @register_asr("fake-asr")
 class FakeAsr:
     last_audio_path: Path | None = None
+    last_glossary_terms: list[str] | None = None
 
     def __init__(self, **_params) -> None:
         pass
 
-    def transcribe(self, audio_path, *, language=None, on_progress=None):
+    def transcribe(
+        self,
+        audio_path,
+        *,
+        language=None,
+        on_progress=None,
+        glossary_terms=None,
+    ):
         FakeAsr.last_audio_path = audio_path
+        FakeAsr.last_glossary_terms = glossary_terms
         if on_progress:
             on_progress(2.0, 2.0)
         return AsrResult(
@@ -250,6 +260,64 @@ def test_asr_stage_resolves_engine_from_config(tmp_path: Path, monkeypatch) -> N
     assert captured["engine"] == "faster_whisper"
     data = ctx.artifacts.read_latest_json("asr.json")
     assert data["timestamps"] is True
+
+
+def test_asr_stage_passes_deduped_glossary_terms_to_capable_engine(
+    tmp_path: Path, monkeypatch
+) -> None:
+    store = GlossaryStore(tmp_path)
+    first = store.create_table("First", "video")
+    second = store.create_table("Second", "general")
+    store.write_entries(
+        first.id,
+        [
+            GlossaryEntry(source=f"Term {index}", target=f"譯名 {index}")
+            for index in range(100)
+        ]
+        + [GlossaryEntry(source="Duplicate", target="第一")],
+    )
+    store.write_entries(
+        second.id,
+        [
+            GlossaryEntry(source="Duplicate", target="第二"),
+            GlossaryEntry(source="Over limit", target="超限"),
+        ],
+    )
+    monkeypatch.setattr(
+        "traduko.stages.av.engine_provider",
+        lambda engine_id, config: ("fake-asr", {}, True),
+    )
+    src = tmp_path / "in.wav"
+    src.write_bytes(b"RIFF")
+    ctx, _ = make_ctx(tmp_path, src, params={"engine": "faster_whisper"})
+
+    registry.create("asr").run(ctx)
+
+    assert FakeAsr.last_glossary_terms == [f"Term {index}" for index in range(100)]
+
+
+@pytest.mark.parametrize(
+    ("engine", "asr_mode"),
+    [("cloud_custom", "auto"), ("faster_whisper", "off")],
+)
+def test_asr_stage_omits_glossary_terms_when_bias_is_unavailable_or_disabled(
+    tmp_path: Path, monkeypatch, engine: str, asr_mode: str
+) -> None:
+    store = GlossaryStore(tmp_path)
+    table = store.create_table("Terms", "video")
+    store.write_entries(table.id, [GlossaryEntry(source="Traduko", target="譯者")])
+    monkeypatch.setattr(
+        "traduko.stages.av.engine_provider",
+        lambda engine_id, config: ("fake-asr", {}, True),
+    )
+    src = tmp_path / "in.wav"
+    src.write_bytes(b"RIFF")
+    ctx, _ = make_ctx(tmp_path, src, params={"engine": engine})
+    ctx.task.glossary.asr_mode = asr_mode
+
+    registry.create("asr").run(ctx)
+
+    assert FakeAsr.last_glossary_terms is None
 
 
 def test_asr_stage_records_missing_timestamps_and_speaker(

@@ -11,7 +11,7 @@ from pathlib import Path
 import yaml
 
 from ..asr import AsrError, create_asr
-from ..asr.engines import engine_provider, resolve_engine
+from ..asr.engines import engine_glossary_bias, engine_provider, resolve_engine
 from ..budget import BudgetExceededError, BudgetMeter
 from ..config import load_config
 from ..fsutil import atomic_write_text
@@ -135,12 +135,30 @@ class AsrStage:
                 raise PauseRequested(str(error)) from error
         try:
             provider = create_asr(provider_name, **options)
+            transcribe_options = {}
+            if (
+                engine_id is not None
+                and engine_glossary_bias(engine_id)
+                and ctx.task.glossary.asr_mode != "off"
+            ):
+                seen: set[str] = set()
+                glossary_terms: list[str] = []
+                for entry in resolve_effective_glossary(ctx.data_root, ctx.task):
+                    if entry.source in seen:
+                        continue
+                    seen.add(entry.source)
+                    glossary_terms.append(entry.source)
+                    if len(glossary_terms) == 100:
+                        break
+                if glossary_terms:
+                    transcribe_options["glossary_terms"] = glossary_terms
             result = provider.transcribe(
                 audio_path,
                 language=language,
                 on_progress=lambda current, total: ctx.emit_progress(
                     round(current), round(total)
                 ),
+                **transcribe_options,
             )
         except AsrError as error:
             raise StageError(str(error)) from error

@@ -132,11 +132,16 @@ def test_chunks_shift_offsets_and_chain_prompts(tmp_path: Path) -> None:
     provider._prepare = lambda path: ([(first, 0.0), (second, 600.0)], 630.0)
     progress: list[tuple[float, float]] = []
     result = provider.transcribe(
-        first, language="zh", on_progress=lambda c, t: progress.append((c, t))
+        first,
+        language="zh",
+        glossary_terms=["Traduko", "桐人"],
+        on_progress=lambda c, t: progress.append((c, t)),
     )
     assert [s.start for s in result.segments] == [0.0, 601.0]
     # Continuation: the second request's prompt carries the first chunk's tail.
     assert "第一塊結尾句".encode() in requests[1]
+    assert all("Traduko".encode() in request for request in requests)
+    assert all("桐人".encode() in request for request in requests)
     # zh prompt bias present on the first request too.
     assert "繁體中文".encode() in requests[0]
     assert progress[-1] == (630.0, 630.0)

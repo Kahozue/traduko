@@ -17,16 +17,17 @@ class EngineInfo:
     id: str
     kind: str  # local | cloud
     timestamps: bool
+    glossary_bias: bool
 
 
 ENGINES: tuple[EngineInfo, ...] = (
-    EngineInfo("faster_whisper", "local", True),
-    EngineInfo("macos_native", "local", True),
-    EngineInfo("openai_whisper", "cloud", True),
-    EngineInfo("openai_gpt4o_diarize", "cloud", True),
-    EngineInfo("openai_gpt4o", "cloud", False),
-    EngineInfo("openai_gpt4o_mini", "cloud", False),
-    EngineInfo("cloud_custom", "cloud", True),
+    EngineInfo("faster_whisper", "local", True, True),
+    EngineInfo("macos_native", "local", True, True),
+    EngineInfo("openai_whisper", "cloud", True, True),
+    EngineInfo("openai_gpt4o_diarize", "cloud", True, True),
+    EngineInfo("openai_gpt4o", "cloud", False, True),
+    EngineInfo("openai_gpt4o_mini", "cloud", False, True),
+    EngineInfo("cloud_custom", "cloud", True, False),
 )
 
 _BY_ID = {engine.id: engine for engine in ENGINES}
@@ -35,6 +36,11 @@ _BY_ID = {engine.id: engine for engine in ENGINES}
 def engine_timestamps(engine_id: str) -> bool:
     engine = _BY_ID.get(engine_id)
     return engine.timestamps if engine else True
+
+
+def engine_glossary_bias(engine_id: str) -> bool:
+    engine = _BY_ID.get(engine_id)
+    return engine.glossary_bias if engine else False
 
 
 def resolve_engine(params: dict, config: CoreConfig) -> str | None:

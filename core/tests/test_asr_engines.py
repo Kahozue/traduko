@@ -29,6 +29,22 @@ def test_engine_catalog_marks_timestamp_capability() -> None:
     assert engine_timestamps("openai_gpt4o_diarize") is True
 
 
+def test_engine_catalog_marks_glossary_bias_capability() -> None:
+    flags = {engine.id: engine.glossary_bias for engine in ENGINES}
+    assert flags["cloud_custom"] is False
+    assert all(
+        flags[engine_id]
+        for engine_id in (
+            "faster_whisper",
+            "macos_native",
+            "openai_whisper",
+            "openai_gpt4o_diarize",
+            "openai_gpt4o",
+            "openai_gpt4o_mini",
+        )
+    )
+
+
 def test_resolve_engine_explicit_auto_and_default() -> None:
     config = make_config(engine="openai_whisper", audio_engine="openai_gpt4o")
     assert resolve_engine({"engine": "macos_native"}, config) == "macos_native"

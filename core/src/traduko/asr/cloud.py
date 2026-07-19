@@ -151,6 +151,7 @@ class OpenAICloudProvider:
         *,
         language: str | None = None,
         on_progress: Callable[[float, float], None] | None = None,
+        glossary_terms: list[str] | None = None,
     ) -> AsrResult:
         if not self.api_key and "api.openai.com" in self.base_url:
             raise AsrError(
@@ -165,6 +166,8 @@ class OpenAICloudProvider:
         previous_text = ""
         for index, (chunk_path, offset) in enumerate(chunks):
             prompt_parts = []
+            if glossary_terms:
+                prompt_parts.append(" ".join(glossary_terms))
             if self.zh_prompt and (language or "").startswith("zh"):
                 prompt_parts.append(_ZH_PROMPT)
             if previous_text:

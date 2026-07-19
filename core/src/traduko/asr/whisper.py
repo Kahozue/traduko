@@ -26,6 +26,7 @@ class FasterWhisperProvider:
         *,
         language: str | None = None,
         on_progress: Callable[[float, float], None] | None = None,
+        glossary_terms: list[str] | None = None,
     ) -> AsrResult:
         try:
             from faster_whisper import WhisperModel
@@ -38,7 +39,10 @@ class FasterWhisperProvider:
             self.model_size, device=self.device, compute_type=self.compute_type
         )
         raw_segments, info = model.transcribe(
-            str(audio_path), language=language, vad_filter=True
+            str(audio_path),
+            language=language,
+            vad_filter=True,
+            initial_prompt=" ".join(glossary_terms) if glossary_terms else None,
         )
         duration = float(getattr(info, "duration", 0.0) or 0.0)
         segments: list[AsrSegment] = []

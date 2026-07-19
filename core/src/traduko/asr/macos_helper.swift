@@ -100,14 +100,14 @@ func runAssets(localeHint: String) async {
 }
 
 @available(macOS 26, *)
-func runTranscribe(path: String, localeHint: String) async {
+func runTranscribe(path: String, localeHint: String, contextualStrings: [String]) async {
     let url = URL(fileURLWithPath: path)
     guard FileManager.default.fileExists(atPath: path) else {
         fail("file not found: \(path)")
     }
     let supported = await SpeechTranscriber.supportedLocales
     if let locale = resolveLocale(hint: localeHint, supported: supported) {
-        await transcribeSpeech(url: url, locale: locale)
+        await transcribeSpeech(url: url, locale: locale, contextualStrings: contextualStrings)
         return
     }
     // Language outside SpeechTranscriber's list: fall back to the wider
@@ -116,11 +116,11 @@ func runTranscribe(path: String, localeHint: String) async {
     guard let locale = resolveLocale(hint: localeHint, supported: dictationSupported) else {
         fail("locale not supported: \(localeHint)")
     }
-    await transcribeDictation(url: url, locale: locale)
+    await transcribeDictation(url: url, locale: locale, contextualStrings: contextualStrings)
 }
 
 @available(macOS 26, *)
-func transcribeSpeech(url: URL, locale: Locale) async {
+func transcribeSpeech(url: URL, locale: Locale, contextualStrings: [String]) async {
     do {
         let transcriber = SpeechTranscriber(
             locale: locale,
@@ -132,6 +132,9 @@ func transcribeSpeech(url: URL, locale: Locale) async {
             try await request.downloadAndInstall()
         }
         let analyzer = SpeechAnalyzer(modules: [transcriber])
+        let context = AnalysisContext()
+        context.contextualStrings[.general] = contextualStrings
+        try await analyzer.setContext(context)
         let file = try AVAudioFile(forReading: url)
         let collector = Task {
             var lastEnd = 0.0
@@ -149,7 +152,7 @@ func transcribeSpeech(url: URL, locale: Locale) async {
         if let lastSample = try await analyzer.analyzeSequence(from: file) {
             try await analyzer.finalizeAndFinish(through: lastSample)
         } else {
-            try await analyzer.cancelAndFinishNow()
+            await analyzer.cancelAndFinishNow()
         }
         let duration = try await collector.value
         emit(["done": true, "duration": duration, "locale": bcp47(locale)])
@@ -159,7 +162,7 @@ func transcribeSpeech(url: URL, locale: Locale) async {
 }
 
 @available(macOS 26, *)
-func transcribeDictation(url: URL, locale: Locale) async {
+func transcribeDictation(url: URL, locale: Locale, contextualStrings: [String]) async {
     do {
         let transcriber = DictationTranscriber(
             locale: locale,
@@ -172,6 +175,9 @@ func transcribeDictation(url: URL, locale: Locale) async {
             try await request.downloadAndInstall()
         }
         let analyzer = SpeechAnalyzer(modules: [transcriber])
+        let context = AnalysisContext()
+        context.contextualStrings[.general] = contextualStrings
+        try await analyzer.setContext(context)
         let file = try AVAudioFile(forReading: url)
         let collector = Task {
             var lastEnd = 0.0
@@ -189,7 +195,7 @@ func transcribeDictation(url: URL, locale: Locale) async {
         if let lastSample = try await analyzer.analyzeSequence(from: file) {
             try await analyzer.finalizeAndFinish(through: lastSample)
         } else {
-            try await analyzer.cancelAndFinishNow()
+            await analyzer.cancelAndFinishNow()
         }
         let duration = try await collector.value
         emit(["done": true, "duration": duration, "locale": bcp47(locale)])
@@ -212,7 +218,14 @@ if #available(macOS 26, *) {
         await runAssets(localeHint: argument("--locale") ?? "")
     case "transcribe":
         guard let file = argument("--file") else { fail("--file is required") }
-        await runTranscribe(path: file, localeHint: argument("--locale") ?? "")
+        let contextualStrings = (argument("--contextual-strings") ?? "")
+            .split(separator: "\u{1F}", omittingEmptySubsequences: true)
+            .map(String.init)
+        await runTranscribe(
+            path: file,
+            localeHint: argument("--locale") ?? "",
+            contextualStrings: contextualStrings
+        )
     default:
         fail("unknown subcommand: \(arguments[1])")
     }

@@ -38,6 +38,7 @@ class AsrProvider(Protocol):
         *,
         language: str | None = None,
         on_progress: Callable[[float, float], None] | None = None,
+        glossary_terms: list[str] | None = None,
     ) -> AsrResult: ...
 
 

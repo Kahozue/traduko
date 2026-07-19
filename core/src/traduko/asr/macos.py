@@ -237,6 +237,7 @@ class MacosNativeProvider:
         *,
         language: str | None = None,
         on_progress: Callable[[float, float], None] | None = None,
+        glossary_terms: list[str] | None = None,
     ) -> AsrResult:
         if self.data_root is None:
             raise AsrError("macos_native requires a data_root")
@@ -250,6 +251,8 @@ class MacosNativeProvider:
         cmd = [str(binary), "transcribe", "--file", str(audio_path)]
         if locale:
             cmd += ["--locale", locale]
+        if glossary_terms:
+            cmd += ["--contextual-strings", "\x1f".join(glossary_terms)]
         try:
             total = 0.0
             from ..media import probe_duration

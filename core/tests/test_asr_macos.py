@@ -117,6 +117,42 @@ def test_provider_parses_helper_segments(tmp_path: Path) -> None:
     assert result.timestamps is True
 
 
+def test_provider_passes_contextual_strings_to_helper(tmp_path: Path) -> None:
+    binary = helper_binary(tmp_path)
+    binary.parent.mkdir(parents=True, exist_ok=True)
+    binary.write_text("#!/bin/sh\n")
+    commands: list[list[str]] = []
+
+    class FakeProcess:
+        def __init__(self):
+            self.stdout = iter(
+                [json.dumps({"done": True, "duration": 0.0, "locale": "zh-TW"})]
+            )
+            self.stderr = None
+            self.returncode = 0
+
+        def wait(self, timeout=None):
+            return 0
+
+    def runner(cmd, **kwargs):
+        commands.append(cmd)
+        return FakeProcess()
+
+    provider = create_asr(
+        "macos_native",
+        locale="zh-TW",
+        data_root=str(tmp_path),
+        runner=runner,
+    )
+    audio = tmp_path / "a.wav"
+    audio.write_bytes(b"riff")
+
+    provider.transcribe(audio, glossary_terms=["Traduko", "桐人"])
+
+    option_index = commands[0].index("--contextual-strings")
+    assert commands[0][option_index + 1] == "Traduko\x1f桐人"
+
+
 def test_provider_surfaces_helper_error(tmp_path: Path) -> None:
     binary = helper_binary(tmp_path)
     binary.parent.mkdir(parents=True, exist_ok=True)
