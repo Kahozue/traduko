@@ -43,6 +43,19 @@ def engine_glossary_bias(engine_id: str) -> bool:
     return engine.glossary_bias if engine else False
 
 
+def stage_glossary_bias(params: dict, config: CoreConfig) -> bool:
+    """Whether an ASR stage can consume glossary terms.
+
+    Legacy profiles name the registry provider directly instead of an engine
+    id. The two local providers are unambiguous; a direct openai_cloud entry
+    is treated conservatively because it may point at a custom endpoint.
+    """
+    engine_id = resolve_engine(params, config)
+    if engine_id is not None:
+        return engine_glossary_bias(engine_id)
+    return params.get("provider") in {"faster_whisper", "macos_native"}
+
+
 def resolve_engine(params: dict, config: CoreConfig) -> str | None:
     """Effective engine id for an asr stage, or None for the legacy path.
 

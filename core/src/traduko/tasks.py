@@ -6,6 +6,8 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from .asr.engines import stage_glossary_bias
+from .config import CoreConfig
 from .fsutil import atomic_write_text
 from .models import (
     StageRecord,
@@ -25,8 +27,43 @@ TASK_SUBDIRS = ("artifacts", "agent-runs", "logs")
 # stages that call stages.common.resolve_llm, plus translate_pdf which
 # forwards the provider to its engine).
 LLM_STAGE_TYPES = frozenset(
-    {"translate", "proofread", "translate_chunks", "translate_pdf"}
+    {
+        "translate",
+        "proofread",
+        "glossary_proofread",
+        "translate_chunks",
+        "translate_pdf",
+    }
 )
+
+
+def ensure_glossary_proofread_stage(
+    record: TaskRecord, config: CoreConfig
+) -> StageRecord | None:
+    """Synchronize glossary_proofread presence with ASR mode and capability."""
+    asr_index = next(
+        (index for index, stage in enumerate(record.stages) if stage.type == "asr"),
+        None,
+    )
+    if asr_index is None:
+        return None
+    asr_stage = record.stages[asr_index]
+    should_exist = record.glossary.asr_mode == "force" or (
+        record.glossary.asr_mode == "auto"
+        and not stage_glossary_bias(asr_stage.params, config)
+    )
+    existing = next(
+        (stage for stage in record.stages if stage.type == "glossary_proofread"),
+        None,
+    )
+    if should_exist:
+        if existing is None:
+            existing = StageRecord(type="glossary_proofread")
+            record.stages.insert(asr_index + 1, existing)
+        return existing
+    if existing is not None:
+        record.stages.remove(existing)
+    return None
 
 
 def apply_model_override(

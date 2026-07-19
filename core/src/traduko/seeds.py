@@ -12,6 +12,7 @@ from .budget import BUILTIN_PRICES
 from .prompts import (
     DEFAULT_DOC_SUMMARY_TEMPLATE,
     DEFAULT_DOC_TRANSLATE_TEMPLATE,
+    DEFAULT_GLOSSARY_PROOFREAD_TEMPLATE,
     DEFAULT_PROOFREAD_TEMPLATE,
     DEFAULT_TRANSLATE_TEMPLATE,
 )
@@ -259,6 +260,7 @@ def ensure_defaults(root: Path) -> None:
         "profiles/audio-dub.yaml": _PROFILE_AUDIO_DUB,
         "prompts/translate.txt": DEFAULT_TRANSLATE_TEMPLATE,
         "prompts/proofread.txt": DEFAULT_PROOFREAD_TEMPLATE,
+        "prompts/glossary_proofread.txt": DEFAULT_GLOSSARY_PROOFREAD_TEMPLATE,
         "prompts/doc-translate.txt": DEFAULT_DOC_TRANSLATE_TEMPLATE,
         "prompts/doc-summary.txt": DEFAULT_DOC_SUMMARY_TEMPLATE,
         "config/pricing.yaml": _pricing_yaml(),

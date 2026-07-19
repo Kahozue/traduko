@@ -13,6 +13,7 @@ from starlette.websockets import WebSocketDisconnect
 from traduko import proposals
 from traduko.config import load_config
 from traduko.events import Event
+from traduko.glossary import GlossaryStore
 from traduko.notify import _CHANNELS, DEFAULT_EVENTS, register_channel, resolve_events
 from traduko.service.app import create_app
 from traduko.service.broadcast import WsBroadcaster
@@ -177,6 +178,29 @@ def create_profile(tmp_path: Path, name: str, stages: list[str]) -> None:
     )
 
 
+def create_asr_profile(
+    tmp_path: Path, name: str, engine: str, *, kind: str = "video"
+) -> None:
+    (tmp_path / "profiles").mkdir(exist_ok=True)
+    (tmp_path / "profiles" / f"{name}.yaml").write_text(
+        "\n".join(
+            [
+                "schema_version: 1",
+                f"name: {name}",
+                f"kind: {kind}",
+                "stages:",
+                "  - type: extract_audio",
+                "  - type: asr",
+                "    params:",
+                f"      engine: {engine}",
+                "  - type: segment",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+
 def test_create_show_list_roundtrip(tmp_path: Path) -> None:
     with service(tmp_path) as (client, headers, token):
         task_id = create_task(client, headers, tmp_path)
@@ -185,6 +209,84 @@ def test_create_show_list_roundtrip(tmp_path: Path) -> None:
         assert shown["profile"] == "subtitle-translate"
         rows = client.get("/tasks", headers=headers).json()
         assert [row["id"] for row in rows] == [task_id]
+
+
+def test_create_task_sets_domain_and_general_glossaries_without_redundant_proofread(
+    tmp_path: Path,
+) -> None:
+    with service(tmp_path) as (client, headers, token):
+        store = GlossaryStore(tmp_path)
+        general = store.create_table("General", "general")
+        video = store.create_table("Video", "video")
+        store.create_table("Document", "document")
+        disabled = store.create_table("Disabled", "video")
+        store.set_enabled(disabled.id, False)
+
+        response = client.post(
+            "/tasks",
+            json={
+                "input_path": str(make_input(tmp_path)),
+                "profile": "av-default",
+            },
+            headers=headers,
+        )
+
+        assert response.status_code == 201, response.text
+        body = response.json()
+        assert body["glossary"] == {
+            "global_ids": [general.id, video.id],
+            "use_task": False,
+            "asr_mode": "auto",
+        }
+        assert "glossary_proofread" not in [stage["type"] for stage in body["stages"]]
+
+
+def test_create_task_inserts_glossary_proofread_after_unbiased_asr(
+    tmp_path: Path,
+) -> None:
+    with service(tmp_path) as (client, headers, token):
+        create_asr_profile(tmp_path, "custom-cloud", "cloud_custom")
+
+        response = client.post(
+            "/tasks",
+            json={
+                "input_path": str(make_input(tmp_path)),
+                "profile": "custom-cloud",
+            },
+            headers=headers,
+        )
+
+        assert response.status_code == 201, response.text
+        assert [stage["type"] for stage in response.json()["stages"]] == [
+            "extract_audio",
+            "asr",
+            "glossary_proofread",
+            "segment",
+        ]
+
+
+def test_create_document_task_sets_glossary_without_asr_proofread(
+    tmp_path: Path,
+) -> None:
+    with service(tmp_path) as (client, headers, token):
+        store = GlossaryStore(tmp_path)
+        general = store.create_table("General", "general")
+        document = store.create_table("Document", "document")
+        store.create_table("Video", "video")
+
+        response = client.post(
+            "/tasks",
+            json={
+                "input_path": str(make_input(tmp_path)),
+                "profile": "novel-translate",
+            },
+            headers=headers,
+        )
+
+        assert response.status_code == 201, response.text
+        body = response.json()
+        assert body["glossary"]["global_ids"] == [general.id, document.id]
+        assert "glossary_proofread" not in [stage["type"] for stage in body["stages"]]
 
 
 def test_show_unknown_task_is_404(tmp_path: Path) -> None:

@@ -10,6 +10,7 @@ SEED_FILES = [
     "profiles/novel-translate.yaml",
     "prompts/translate.txt",
     "prompts/proofread.txt",
+    "prompts/glossary_proofread.txt",
     "prompts/doc-translate.txt",
     "prompts/doc-summary.txt",
     "config/pricing.yaml",

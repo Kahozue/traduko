@@ -43,6 +43,23 @@ Glossary (source -> target):
 ${glossary}
 """
 
+DEFAULT_GLOSSARY_PROOFREAD_TEMPLATE = """You are a transcription proofreader. The segments below are speech-recognition text with terms from a glossary.
+
+Rules:
+- Correct only proper-name spelling errors that can be resolved from the glossary, including phonetic recognition mistakes.
+- Do not rewrite for fluency and do not translate.
+- Return ONLY a JSON array with one object for every input id: [{"id": 1, "text": "corrected"}]
+- Keep every id. Return unchanged text when no correction is needed.
+
+Source language: ${source_language}
+
+Glossary (source -> target):
+${glossary}
+
+SEGMENTS:
+${segments_json}
+"""
+
 DEFAULT_DOC_TRANSLATE_TEMPLATE = """You are a professional literary translator. Translate each block from ${source_language} to ${target_language}.
 
 Rules:
@@ -76,6 +93,7 @@ ${recent_text}
 DEFAULT_TEMPLATES: dict[str, str] = {
     "translate": DEFAULT_TRANSLATE_TEMPLATE,
     "proofread": DEFAULT_PROOFREAD_TEMPLATE,
+    "glossary_proofread": DEFAULT_GLOSSARY_PROOFREAD_TEMPLATE,
     "doc-translate": DEFAULT_DOC_TRANSLATE_TEMPLATE,
     "doc-summary": DEFAULT_DOC_SUMMARY_TEMPLATE,
 }

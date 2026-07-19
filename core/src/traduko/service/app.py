@@ -60,7 +60,12 @@ from ..dubbing.models import SpeakersDoc
 from ..dubbing.setup import DubbingManager
 from ..eventlog import EventLogger
 from ..executor import reset_stages_after_artifact
-from ..glossary import GlossaryEntry, GlossaryStore, GlossaryTableMeta
+from ..glossary import (
+    GlossaryEntry,
+    GlossaryStore,
+    GlossaryTableMeta,
+    task_glossary_for_new_task,
+)
 from ..events import Event
 from ..media import MediaError, ffmpeg_available
 from ..pdfengine.setup import PdfManager
@@ -69,7 +74,7 @@ from ..mcphub import MCPManager
 from ..models import InvalidTransition, TaskRecord, TaskStatus, transition
 from ..notify import Notifier, NotifyError, create_channel
 from ..preflight import run_preflight
-from ..profiles import load_profile, stage_records_from
+from ..profiles import load_profile, profile_kind, stage_records_from
 from .. import proposals, skillhub
 from ..skillhub import SkillsManager, SkillValidationError
 from ..styles import SubtitleStyle
@@ -79,6 +84,7 @@ from ..tasks import (
     apply_asr_engine_override,
     apply_model_override,
     apply_voice_mode_override,
+    ensure_glossary_proofread_stage,
 )
 from ..sync.engine import (
     SyncConfigError,
@@ -366,19 +372,14 @@ def create_task(request: Request, body: TaskCreateRequest) -> dict:
         stages=stage_records_from(profile),
         name=body.name,
     )
-    if (
-        body.provider
-        or body.model
-        or body.asr_engine
-        or body.voice_mode
-        or body.voice_instruction
-    ):
-        apply_model_override(record, body.provider or None, body.model or None)
-        apply_asr_engine_override(record, body.asr_engine or None)
-        apply_voice_mode_override(
-            record, body.voice_mode or None, body.voice_instruction or None
-        )
-        ws.store.save(record)
+    record.glossary = task_glossary_for_new_task(ws.root, profile_kind(profile))
+    apply_asr_engine_override(record, body.asr_engine or None)
+    apply_voice_mode_override(
+        record, body.voice_mode or None, body.voice_instruction or None
+    )
+    ensure_glossary_proofread_stage(record, ws.config)
+    apply_model_override(record, body.provider or None, body.model or None)
+    ws.store.save(record)
     return record.model_dump()
 
 

@@ -81,6 +81,7 @@ def _llm_stages() -> list[StageRecord]:
         StageRecord(type="ingest_subtitle"),
         StageRecord(type="translate", params={"provider": "fake", "target_language": "en"}),
         StageRecord(type="proofread", params={"provider": "fake"}),
+        StageRecord(type="glossary_proofread"),
     ]
 
 
@@ -99,6 +100,8 @@ def test_apply_model_override_sets_llm_stage_params() -> None:
     assert task.stages[1].params["model"] == "deepseek-chat"
     assert task.stages[2].params["provider"] == "deepseek"
     assert task.stages[2].params["model"] == "deepseek-chat"
+    assert task.stages[3].params["provider"] == "deepseek"
+    assert task.stages[3].params["model"] == "deepseek-chat"
     # Untouched params survive.
     assert task.stages[1].params["target_language"] == "en"
 
@@ -117,6 +120,7 @@ def test_apply_model_override_empty_strings_reset() -> None:
     assert task.stages[1].params["provider"] == "fake"
     assert "model" not in task.stages[1].params
     assert task.stages[2].params["provider"] == "fake"
+    assert task.stages[3].params["provider"] == "fake"
 
 
 def test_apply_model_override_none_leaves_untouched() -> None:
@@ -134,6 +138,37 @@ def test_apply_model_override_none_leaves_untouched() -> None:
     apply_model_override(task, provider=None, model="glm-4")
     assert task.stages[1].params["provider"] == "deepseek"
     assert task.stages[1].params["model"] == "glm-4"
+
+
+def test_force_mode_inserts_glossary_proofread_after_capable_asr() -> None:
+    from traduko.config import CoreConfig
+    from traduko.models import TaskGlossary, TaskRecord, utc_now_iso
+    from traduko.tasks import ensure_glossary_proofread_stage
+
+    now = utc_now_iso()
+    task = TaskRecord(
+        id="t",
+        project="p",
+        input_path="in.wav",
+        profile="x",
+        glossary=TaskGlossary(asr_mode="force"),
+        stages=[
+            StageRecord(type="extract_audio"),
+            StageRecord(type="asr", params={"engine": "faster_whisper"}),
+            StageRecord(type="segment"),
+        ],
+        created_at=now,
+        updated_at=now,
+    )
+
+    ensure_glossary_proofread_stage(task, CoreConfig())
+
+    assert [stage.type for stage in task.stages] == [
+        "extract_audio",
+        "asr",
+        "glossary_proofread",
+        "segment",
+    ]
 
 
 def _dub_stages():

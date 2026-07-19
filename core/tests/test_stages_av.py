@@ -296,6 +296,24 @@ def test_asr_stage_passes_deduped_glossary_terms_to_capable_engine(
     assert FakeAsr.last_glossary_terms == [f"Term {index}" for index in range(100)]
 
 
+def test_asr_stage_biases_legacy_faster_whisper_profile(
+    tmp_path: Path, monkeypatch
+) -> None:
+    store = GlossaryStore(tmp_path)
+    table = store.create_table("Terms", "video")
+    store.write_entries(table.id, [GlossaryEntry(source="Traduko", target="譯者")])
+    monkeypatch.setattr(
+        "traduko.stages.av.create_asr", lambda provider_name, **options: FakeAsr()
+    )
+    src = tmp_path / "in.wav"
+    src.write_bytes(b"RIFF")
+    ctx, _ = make_ctx(tmp_path, src, params={"provider": "faster_whisper"})
+
+    registry.create("asr").run(ctx)
+
+    assert FakeAsr.last_glossary_terms == ["Traduko"]
+
+
 @pytest.mark.parametrize(
     ("engine", "asr_mode"),
     [("cloud_custom", "auto"), ("faster_whisper", "off")],

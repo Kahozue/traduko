@@ -11,7 +11,7 @@ from pathlib import Path
 import yaml
 
 from ..asr import AsrError, create_asr
-from ..asr.engines import engine_glossary_bias, engine_provider, resolve_engine
+from ..asr.engines import engine_provider, resolve_engine, stage_glossary_bias
 from ..budget import BudgetExceededError, BudgetMeter
 from ..config import load_config
 from ..fsutil import atomic_write_text
@@ -137,8 +137,7 @@ class AsrStage:
             provider = create_asr(provider_name, **options)
             transcribe_options = {}
             if (
-                engine_id is not None
-                and engine_glossary_bias(engine_id)
+                stage_glossary_bias(ctx.params, config)
                 and ctx.task.glossary.asr_mode != "off"
             ):
                 seen: set[str] = set()

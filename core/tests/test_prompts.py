@@ -79,3 +79,17 @@ def test_proofread_template_renders() -> None:
         },
     )
     assert "proofreader" in text and "5" in text
+
+
+def test_glossary_proofread_template_renders() -> None:
+    template = load_template(Path("/nonexistent"), "glossary_proofread")
+    text = render(
+        template,
+        {
+            "source_language": "zh-TW",
+            "glossary": "Traduko -> 特拉杜科",
+            "segments_json": '[{"id": 1, "text": "Traduko"}]',
+        },
+    )
+    assert "transcription proofreader" in text
+    assert "Traduko -> 特拉杜科" in text
