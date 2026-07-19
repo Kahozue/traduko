@@ -463,6 +463,29 @@ def _build_action_tools(ws: Workspace, created_task_ids: list[str]) -> list[Agen
             ensure_ascii=False,
         )
 
+    def rerun_task(args: dict) -> str:
+        project = str(args["project"])
+        task_id = str(args["task_id"])
+        try:
+            record = ws.store.load(project, task_id)
+        except FileNotFoundError:
+            raise ToolError(f"task not found: {project}/{task_id}") from None
+        try:
+            ws.store.reset_for_rerun(record)
+        except ValueError as error:
+            # Only a COMPLETED task can be rerun; surface the reason to the model
+            # rather than half-resetting anything.
+            raise ToolError(str(error)) from None
+        return json.dumps(
+            {
+                "task_id": record.id,
+                "project": record.project,
+                "status": record.status.value,
+                "note": "task reset to pending; the operator must run it",
+            },
+            ensure_ascii=False,
+        )
+
     return [
         AgentTool(
             name="list_profiles",
@@ -502,6 +525,29 @@ def _build_action_tools(ws: Workspace, created_task_ids: list[str]) -> list[Agen
             },
             handler=_safe(create_task),
         ),
+        AgentTool(
+            name="rerun_task",
+            description=(
+                "Reset a COMPLETED task's stages back to PENDING so the whole "
+                "pipeline can run again. The task is left PENDING for the "
+                "operator to run; it is never started automatically. Editor "
+                "edits to the translation or subtitles are overwritten on the "
+                "next run."
+            ),
+            parameters={
+                "project": {
+                    "type": "string",
+                    "required": True,
+                    "description": "project the task is filed under",
+                },
+                "task_id": {
+                    "type": "string",
+                    "required": True,
+                    "description": "id of the completed task to rerun",
+                },
+            },
+            handler=_safe(rerun_task),
+        ),
     ]
 
 
@@ -538,6 +584,7 @@ _TOOL_KINDS = {
     "use_skill": "read",
     "propose_config_change": "write",
     "create_task": "execute",
+    "rerun_task": "execute",
 }
 
 

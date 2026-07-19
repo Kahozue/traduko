@@ -7,13 +7,14 @@ from traduko import skillhub
 from traduko.agents.assistant import (
     AssistantLLMError,
     AssistantUnavailable,
+    _build_action_tools,
     _build_propose_tool,
     build_assistant_tools,
     run_assistant_message,
 )
 from traduko.agents.tools import AgentTool, ToolError
 from traduko.config import BudgetConfig, CoreConfig, SkillConfig, load_config, save_config
-from traduko.models import StageRecord
+from traduko.models import StageRecord, StageStatus, TaskStatus
 from traduko.proposals import approve, list_proposals
 from traduko.skillhub import SkillsManager
 from traduko.workspace import Workspace
@@ -39,6 +40,18 @@ def create_task(
         stages=stages,
         name=name,
     )
+
+
+def complete_task(ws: Workspace, record):
+    record.status = TaskStatus.COMPLETED
+    for stage in record.stages:
+        stage.status = StageStatus.COMPLETED
+    ws.store.save(record)
+    return record
+
+
+def action_tool_map(ws: Workspace) -> dict[str, AgentTool]:
+    return {tool.name: tool for tool in _build_action_tools(ws, [])}
 
 
 def test_build_assistant_tools_returns_only_read_only_diagnostics(
@@ -770,6 +783,65 @@ def test_assistant_create_task_missing_input_reports_tool_error(tmp_path: Path) 
     )
     result = run_assistant_message(ws, "make a task for nope.srt")
     assert result["created_task_ids"] == []
+
+
+def test_rerun_task_resets_completed_task_to_pending(tmp_path: Path) -> None:
+    ws = make_ws(tmp_path)
+    record = complete_task(ws, create_task(ws))
+    tools = action_tool_map(ws)
+
+    result = json.loads(
+        tools["rerun_task"].handler({"project": "p", "task_id": record.id})
+    )
+    assert result["task_id"] == record.id
+    assert result["status"] == "pending"
+    assert "operator" in result["note"]
+
+    reloaded = ws.store.load("p", record.id)
+    assert reloaded.status.value == "pending"
+    assert all(stage.status.value == "pending" for stage in reloaded.stages)
+
+
+def test_rerun_task_rejects_non_completed_task(tmp_path: Path) -> None:
+    ws = make_ws(tmp_path)
+    record = create_task(ws)  # left pending
+    tools = action_tool_map(ws)
+
+    with pytest.raises(ToolError):
+        tools["rerun_task"].handler({"project": "p", "task_id": record.id})
+    # The task must be untouched, not half-reset.
+    assert ws.store.load("p", record.id).status.value == "pending"
+
+
+def test_rerun_task_unknown_task_raises_tool_error(tmp_path: Path) -> None:
+    ws = make_ws(tmp_path)
+    tools = action_tool_map(ws)
+
+    with pytest.raises(ToolError):
+        tools["rerun_task"].handler({"project": "p", "task_id": "nope"})
+
+
+def test_assistant_can_rerun_completed_task_left_pending(tmp_path: Path) -> None:
+    # A completed task exists; drive the agent to rerun_task. It must land back
+    # PENDING (reset) without the assistant ever starting it.
+    ws0 = make_ws(tmp_path)
+    record = complete_task(ws0, create_task(ws0))
+    ws = scripted_ws(
+        tmp_path,
+        [
+            (
+                '{"tool": "rerun_task", "arguments": {"project": "p", "task_id": "'
+                + record.id
+                + '"}}'
+            ),
+            '{"done": true, "summary": "Reset the task to pending; run it when ready."}',
+        ],
+    )
+
+    result = run_assistant_message(ws, "rerun that task")
+
+    assert result["converged"] is True
+    assert ws.store.load("p", record.id).status.value == "pending"
 
 
 def test_run_assistant_message_passes_images_to_runner(
