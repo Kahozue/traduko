@@ -16,13 +16,21 @@ Traduko 對影片、音訊或字幕檔執行可設定的管線：抽取音軌、
 
 專案是既有工具之上的編排層，不是新引擎：媒體處理用 ffmpeg，語音辨識用 faster-whisper，翻譯接任何 OpenAI 相容端點。
 
-![任務儀表板](docs/screenshot-tasks-light.png)
+![任務儀表板，依專案分組，側欄提供各任務域檢視](docs/screenshot-tasks-light.png)
 
-![字幕編輯器](docs/screenshot-editor-light.png)
+![任務詳情：管線各階段即時進度，任務級模型與 ASR 引擎切換](docs/screenshot-task-light.png)
 
-![內建助理，深色主題](docs/screenshot-assistant-dark.png)
+![字幕編輯器，含校對標註](docs/screenshot-editor-light.png)
 
-![設定頁，深色主題](docs/screenshot-settings-dark.png)
+![ASS 樣式編輯器，附即時 CSS 近似預覽](docs/screenshot-style-light.png)
+
+![內建助理將設定變更整理成可核准的 diff，深色主題](docs/screenshot-assistant-dark.png)
+
+![設定頁：外觀、介面語言與 LLM 供應商，深色主題](docs/screenshot-settings-dark.png)
+
+![語音辨識引擎選單與配音引擎，深色主題](docs/screenshot-asr-dark.png)
+
+![預算帳本，含各任務累計花費，深色主題](docs/screenshot-budget-dark.png)
 
 ## 功能
 

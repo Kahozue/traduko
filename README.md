@@ -16,13 +16,21 @@ Traduko runs a configurable pipeline over video, audio, or subtitle files: audio
 
 The project is an orchestration layer over existing tools rather than a new engine: ffmpeg for media handling, faster-whisper for speech recognition, and any OpenAI-compatible endpoint for translation.
 
-![Task dashboard](docs/screenshot-tasks-light.png)
+![Task dashboard, grouped by project with per-domain views in the sidebar](docs/screenshot-tasks-light.png)
 
-![Subtitle editor](docs/screenshot-editor-light.png)
+![Task detail: pipeline stages with live progress, per-task model and ASR engine chips](docs/screenshot-task-light.png)
 
-![Built-in assistant, dark theme](docs/screenshot-assistant-dark.png)
+![Subtitle editor with proofreading annotations](docs/screenshot-editor-light.png)
 
-![Settings, dark theme](docs/screenshot-settings-dark.png)
+![ASS style editor with a live CSS-approximation preview](docs/screenshot-style-light.png)
+
+![Built-in assistant proposing a config change as an approvable diff, dark theme](docs/screenshot-assistant-dark.png)
+
+![Settings: appearance, interface language, and LLM providers, dark theme](docs/screenshot-settings-dark.png)
+
+![Speech-recognition engine menu and dubbing engine, dark theme](docs/screenshot-asr-dark.png)
+
+![Budget ledger with per-task spend, dark theme](docs/screenshot-budget-dark.png)
 
 ## Features
 
