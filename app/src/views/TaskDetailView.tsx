@@ -106,6 +106,7 @@ export function TaskDetailView({
   onOpenGlossary,
   onOpenDub,
   onOpenExport,
+  onOpenTranslation,
 }: {
   project: string;
   taskId: string;
@@ -115,6 +116,7 @@ export function TaskDetailView({
   onOpenGlossary?: () => void;
   onOpenDub?: () => void;
   onOpenExport?: () => void;
+  onOpenTranslation?: () => void;
 }) {
   const api = useApi();
   const { dataRoot } = useConnection();
@@ -363,6 +365,11 @@ export function TaskDetailView({
   const supportsEditor = task.stages.some((stage) =>
     ["ingest_subtitle", "asr", "translate", "proofread", "ingest_document", "translate_chunks"].includes(stage.type),
   );
+  // Translation settings only make sense where there is a translate stage
+  // to configure; the core answers 422 for the rest.
+  const hasTranslateStage = task.stages.some((stage) =>
+    ["translate", "translate_chunks"].includes(stage.type),
+  );
   const editorKind = isDocumentTask ? "document" : "subtitle";
   const editorLabel = isDocumentTask ? t("task.textEditor") : t("task.subtitleEditor");
   const stageLabels = stageListLabels(task.stages);
@@ -580,6 +587,15 @@ export function TaskDetailView({
               onClick={onOpenExport}
             >
               {t("task.export.studio.entry")}
+            </button>
+          )}
+          {hasTranslateStage && onOpenTranslation && (
+            <button
+              type="button"
+              className={styles.secondary}
+              onClick={onOpenTranslation}
+            >
+              {t("task.translation")}
             </button>
           )}
           {onOpenGlossary && (

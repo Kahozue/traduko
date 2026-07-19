@@ -901,3 +901,39 @@ test("the export studio entry is hidden for subtitle tasks", async () => {
   await screen.findByRole("button", { name: /暫停/ });
   expect(screen.queryByRole("button", { name: /匯出工作室/ })).toBeNull();
 });
+
+test("the translation settings entry only appears for tasks with a translate stage", async () => {
+  const onOpenTranslation = vi.fn();
+  const api: Partial<ApiClient> = { showTask: vi.fn().mockResolvedValue(task) };
+  const { unmount } = renderWithConnection(
+    <TaskDetailView
+      project="default"
+      taskId="t1"
+      onBack={() => {}}
+      onOpenEditor={() => {}}
+      onOpenTranslation={onOpenTranslation}
+    />,
+    { api },
+  );
+  await waitFor(() => expect(screen.getAllByText("t1").length).toBeGreaterThan(0));
+  await userEvent.click(screen.getByRole("button", { name: "翻譯設定" }));
+  expect(onOpenTranslation).toHaveBeenCalledTimes(1);
+  unmount();
+
+  const noTranslate: TaskRecord = {
+    ...task,
+    stages: [task.stages[0]],
+  };
+  renderWithConnection(
+    <TaskDetailView
+      project="default"
+      taskId="t1"
+      onBack={() => {}}
+      onOpenEditor={() => {}}
+      onOpenTranslation={onOpenTranslation}
+    />,
+    { api: { showTask: vi.fn().mockResolvedValue(noTranslate) } },
+  );
+  await waitFor(() => expect(screen.getAllByText("t1").length).toBeGreaterThan(0));
+  expect(screen.queryByRole("button", { name: "翻譯設定" })).toBeNull();
+});

@@ -1,0 +1,181 @@
+.back {
+  margin-bottom: 14px;
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-s);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  font-size: var(--fs-note);
+  cursor: pointer;
+  transition: background var(--transition);
+}
+
+.back:hover {
+  background: var(--bg-inset);
+}
+
+.header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.title {
+  margin: 0;
+  font-size: var(--fs-hero);
+  font-weight: 700;
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.dirty {
+  color: var(--warn);
+  font-size: var(--fs-note);
+}
+
+/* The page's single primary action. Retranslate stays secondary so the
+   header never shows two accent-filled buttons. */
+.primary {
+  padding: 8px 16px;
+  border: none;
+  border-radius: var(--radius-s);
+  background: var(--accent);
+  color: var(--text-on-dark);
+  font-size: var(--fs-note);
+  font-weight: 500;
+  cursor: pointer;
+  box-shadow: var(--shadow-1);
+  transition: background var(--transition);
+}
+
+.primary:hover:not(:disabled) {
+  background: var(--accent-strong);
+}
+
+.primary:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.secondary {
+  padding: 6px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-s);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font-size: var(--fs-note);
+  cursor: pointer;
+  transition: background var(--transition);
+}
+
+.secondary:hover:not(:disabled) {
+  background: var(--bg-inset);
+}
+
+.secondary:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.error {
+  margin: 0 0 16px;
+  color: var(--danger);
+  font-size: var(--fs-note);
+}
+
+.section {
+  margin-bottom: 24px;
+}
+
+.sectionTitle {
+  margin: 0 0 10px;
+  font-size: var(--fs-section);
+  font-weight: 600;
+}
+
+.field {
+  margin-bottom: 16px;
+}
+
+.label {
+  display: block;
+  margin-bottom: 4px;
+  font-size: var(--fs-body);
+  font-weight: 500;
+}
+
+.desc {
+  margin: 0 0 6px;
+  color: var(--text-secondary);
+  font-size: var(--fs-note);
+}
+
+.codeInput {
+  width: 200px;
+  height: 32px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-s);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font-size: var(--fs-body);
+}
+
+.textInput {
+  width: 420px;
+  max-width: 100%;
+  height: 32px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-s);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font-size: var(--fs-body);
+}
+
+.promptInput {
+  width: 720px;
+  max-width: 100%;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-s);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: var(--fs-body);
+  line-height: 1.6;
+  resize: vertical;
+}
+
+.codeInput:focus,
+.textInput:focus,
+.promptInput:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.glossaryRow {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.glossarySummary {
+  color: var(--text-secondary);
+  font-size: var(--fs-note);
+}
+
+.link {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--accent);
+  font-size: var(--fs-note);
+  text-decoration: underline;
+  cursor: pointer;
+}

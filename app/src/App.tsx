@@ -10,6 +10,7 @@ import { BudgetView } from "./views/BudgetView";
 import { DocumentEditorView } from "./views/DocumentEditorView";
 import { DubbingStudioView } from "./views/DubbingStudioView";
 import { ExportStudioView } from "./views/ExportStudioView";
+import { TranslationSettingsView } from "./views/TranslationSettingsView";
 import { GlossaryEditorView } from "./views/GlossaryEditorView";
 import { SettingsView, type SettingsTab } from "./views/SettingsView";
 import { SkillEditorView } from "./views/SkillEditorView";
@@ -30,6 +31,7 @@ export type View =
   | { name: "speaker-review"; project: string; taskId: string }
   | { name: "dubbing-studio"; project: string; taskId: string }
   | { name: "export-studio"; project: string; taskId: string }
+  | { name: "translation-settings"; project: string; taskId: string }
   | { name: "skill-editor"; skill: string }
   | { name: "glossary-editor"; glossaryId: string; returnTab: SettingsTab }
   | { name: "budget" }
@@ -123,7 +125,9 @@ function Main({
     view.name === "subtitle-editor" ||
     view.name === "document-editor" ||
     view.name === "speaker-review" ||
-    view.name === "dubbing-studio" || view.name === "export-studio"
+    view.name === "dubbing-studio" ||
+    view.name === "export-studio" ||
+    view.name === "translation-settings"
       ? "tasks"
       : view.name === "skill-editor" || view.name === "glossary-editor"
         ? "settings"
@@ -194,6 +198,13 @@ function renderView(
           onOpenExport={() =>
             setView({ name: "export-studio", project: view.project, taskId: view.taskId })
           }
+          onOpenTranslation={() =>
+            setView({
+              name: "translation-settings",
+              project: view.project,
+              taskId: view.taskId,
+            })
+          }
         />
       );
     case "task-glossary":
@@ -242,6 +253,17 @@ function renderView(
           project={view.project}
           taskId={view.taskId}
           onBack={() => setView({ name: "task", project: view.project, taskId: view.taskId })}
+        />
+      );
+    case "translation-settings":
+      return (
+        <TranslationSettingsView
+          project={view.project}
+          taskId={view.taskId}
+          onBack={() => setView({ name: "task", project: view.project, taskId: view.taskId })}
+          onOpenGlossary={() =>
+            setView({ name: "task-glossary", project: view.project, taskId: view.taskId })
+          }
         />
       );
     case "skill-editor":
