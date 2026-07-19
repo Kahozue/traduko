@@ -29,6 +29,8 @@ import type {
   ProviderConfigDoc,
   ProviderTestResult,
   SkillInfo,
+  ExportEstimate,
+  ExportParams,
   SubtitleStylePreset,
   SyncReport,
   SyncStatus,
@@ -330,6 +332,37 @@ export class ApiClient {
       method: "POST",
       body: JSON.stringify({ from }),
     });
+  }
+
+  // Append an export stage carrying a snapshot of the panel parameters and
+  // queue it; earlier exports keep their numbered outputs.
+  createExport(
+    project: string,
+    taskId: string,
+    kind: "video" | "audio",
+    params: ExportParams,
+  ): Promise<{ queued: boolean; stage_index: number; stage_type: string }> {
+    return this.request(`/tasks/${project}/${taskId}/exports`, {
+      method: "POST",
+      body: JSON.stringify({ kind, params }),
+    });
+  }
+
+  // Estimated output size, wall time and free disk space for a parameter set.
+  estimateExport(
+    project: string,
+    taskId: string,
+    query: ExportParams & { kind: "video" | "audio" },
+  ): Promise<ExportEstimate> {
+    const search = new URLSearchParams();
+    for (const [key, value] of Object.entries(query)) {
+      if (value !== "" && value !== null && value !== undefined) {
+        search.set(key, String(value));
+      }
+    }
+    return this.request(
+      `/tasks/${project}/${taskId}/exports/estimate?${search.toString()}`,
+    );
   }
 
   deleteTask(

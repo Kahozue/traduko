@@ -649,6 +649,20 @@ export interface TtsEngineInfo {
 }
 
 // Aggregated dub params for a task's dub group (GET/PATCH /tasks/.../dub/params).
+export interface ExportEstimate {
+  size_bytes: number;
+  eta_seconds: number;
+  disk_ok: boolean;
+  disk_available: number;
+  duration: number;
+  width: number | null;
+  height: number | null;
+}
+
+// Export panel snapshot. The core validates it and stores it on the
+// appended stage, so the field names match the stage params exactly.
+export type ExportParams = Record<string, string | number>;
+
 export interface DubParams {
   engine_id: string | null;
   voice_mode: string;

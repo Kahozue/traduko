@@ -105,6 +105,7 @@ export function TaskDetailView({
   onOpenEditor,
   onOpenGlossary,
   onOpenDub,
+  onOpenExport,
 }: {
   project: string;
   taskId: string;
@@ -113,6 +114,7 @@ export function TaskDetailView({
   onOpenEditor: (kind: "subtitle" | "document" | "speakers") => void;
   onOpenGlossary?: () => void;
   onOpenDub?: () => void;
+  onOpenExport?: () => void;
 }) {
   const api = useApi();
   const { dataRoot } = useConnection();
@@ -569,6 +571,15 @@ export function TaskDetailView({
               onClick={onOpenDub}
             >
               {t("task.dub.studio.entry")}
+            </button>
+          )}
+          {mediaKind !== null && onOpenExport && (
+            <button
+              type="button"
+              className={styles.secondary}
+              onClick={onOpenExport}
+            >
+              {t("task.export.studio.entry")}
             </button>
           )}
           {onOpenGlossary && (

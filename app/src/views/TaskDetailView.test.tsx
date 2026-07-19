@@ -859,3 +859,45 @@ test("dub button enables and opens the studio once asr artifact exists", async (
   await userEvent.click(btn);
   expect(onOpenDub).toHaveBeenCalled();
 });
+
+test("the export studio entry appears for media tasks and opens the studio", async () => {
+  const mediaTask: TaskRecord = { ...task, input_path: "/tmp/in.mp4" };
+  const onOpenExport = vi.fn();
+  const api: Partial<ApiClient> = {
+    showTask: vi.fn().mockResolvedValue(mediaTask),
+    listArtifacts: vi.fn().mockResolvedValue([]),
+  };
+  renderWithConnection(
+    <TaskDetailView
+      project="default"
+      taskId="t1"
+      onBack={() => {}}
+      onOpenEditor={() => {}}
+      onOpenExport={onOpenExport}
+    />,
+    { api },
+  );
+  const btn = await screen.findByRole("button", { name: /匯出工作室/ });
+  await userEvent.click(btn);
+  expect(onOpenExport).toHaveBeenCalled();
+});
+
+test("the export studio entry is hidden for subtitle tasks", async () => {
+  const subtitleTask: TaskRecord = { ...task, input_path: "/tmp/in.srt" };
+  const api: Partial<ApiClient> = {
+    showTask: vi.fn().mockResolvedValue(subtitleTask),
+    listArtifacts: vi.fn().mockResolvedValue([]),
+  };
+  renderWithConnection(
+    <TaskDetailView
+      project="default"
+      taskId="t1"
+      onBack={() => {}}
+      onOpenEditor={() => {}}
+      onOpenExport={() => {}}
+    />,
+    { api },
+  );
+  await screen.findByRole("button", { name: /暫停/ });
+  expect(screen.queryByRole("button", { name: /匯出工作室/ })).toBeNull();
+});

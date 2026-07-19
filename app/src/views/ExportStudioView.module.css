@@ -1,0 +1,203 @@
+.wrap {
+  max-width: 880px;
+  margin: 0 auto;
+  padding: 24px 32px 120px;
+}
+
+.back {
+  margin-bottom: 14px;
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-s);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  font-size: var(--fs-note);
+  cursor: pointer;
+  transition: background var(--transition);
+}
+
+.back:hover {
+  background: var(--bg-inset);
+}
+
+.title {
+  margin: 0 0 24px;
+  font-size: var(--fs-page);
+  font-weight: 700;
+}
+
+.block {
+  margin-bottom: 28px;
+}
+
+.sectionTitle {
+  margin: 0 0 12px;
+  font-size: var(--fs-section);
+  font-weight: 600;
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 16px;
+}
+
+.field,
+.fieldNarrow {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: var(--fs-note);
+  color: var(--text-secondary);
+}
+
+.field {
+  width: 200px;
+}
+
+.fieldNarrow {
+  width: 110px;
+}
+
+.input,
+.select {
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-s);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--fs-body);
+}
+
+.input:disabled,
+.select:disabled {
+  opacity: 0.5;
+}
+
+.range {
+  accent-color: var(--accent);
+}
+
+.rangeValue {
+  padding-bottom: 6px;
+  color: var(--text-primary);
+  font-size: var(--fs-body);
+  font-variant-numeric: tabular-nums;
+}
+
+.advanced {
+  margin-bottom: 28px;
+  padding-top: 4px;
+  border-top: 1px solid var(--border);
+}
+
+.summary {
+  padding: 12px 0;
+  color: var(--text-secondary);
+  font-size: var(--fs-note);
+  cursor: pointer;
+}
+
+/* Preview frame: editing venue, strictly neutral grey in both themes. */
+.canvas {
+  padding: 16px;
+  border-radius: var(--radius-m);
+  background: var(--bg-canvas);
+}
+
+.stage {
+  position: relative;
+  display: flex;
+  justify-content: center;
+}
+
+.video {
+  width: 100%;
+  max-height: 320px;
+  border-radius: var(--radius-s);
+}
+
+/* Column direction: alignmentToFlex maps the ASS numpad onto a column
+   container, where justifyContent is the vertical axis. */
+.overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  /* Bottom room clears the native video control bar. */
+  padding: 16px 16px 56px;
+  pointer-events: none;
+}
+
+.audio {
+  width: 100%;
+}
+
+.hint {
+  margin: 8px 0 0;
+  color: var(--text-secondary);
+  font-size: var(--fs-note);
+}
+
+.estimate {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 32px;
+  margin: 0;
+}
+
+.estimateItem {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.estimateItem dt {
+  color: var(--text-secondary);
+  font-size: var(--fs-note);
+}
+
+.estimateItem dd {
+  margin: 0;
+}
+
+.number {
+  color: var(--text-primary);
+  font-size: var(--fs-hero);
+  font-variant-numeric: tabular-nums;
+}
+
+.error {
+  margin: 12px 0 0;
+  color: var(--danger);
+  font-size: var(--fs-body);
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 32px;
+}
+
+.primary {
+  padding: 8px 16px;
+  border: none;
+  border-radius: var(--radius-s);
+  background: var(--accent);
+  color: var(--text-on-dark);
+  font-size: var(--fs-note);
+  font-weight: 500;
+  cursor: pointer;
+  transition: background var(--transition);
+}
+
+.primary:hover:not(:disabled) {
+  background: var(--accent-strong);
+}
+
+.primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

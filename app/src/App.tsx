@@ -9,6 +9,7 @@ import { useLocale } from "./lib/locale";
 import { BudgetView } from "./views/BudgetView";
 import { DocumentEditorView } from "./views/DocumentEditorView";
 import { DubbingStudioView } from "./views/DubbingStudioView";
+import { ExportStudioView } from "./views/ExportStudioView";
 import { GlossaryEditorView } from "./views/GlossaryEditorView";
 import { SettingsView, type SettingsTab } from "./views/SettingsView";
 import { SkillEditorView } from "./views/SkillEditorView";
@@ -28,6 +29,7 @@ export type View =
   | { name: "document-editor"; project: string; taskId: string }
   | { name: "speaker-review"; project: string; taskId: string }
   | { name: "dubbing-studio"; project: string; taskId: string }
+  | { name: "export-studio"; project: string; taskId: string }
   | { name: "skill-editor"; skill: string }
   | { name: "glossary-editor"; glossaryId: string; returnTab: SettingsTab }
   | { name: "budget" }
@@ -121,7 +123,7 @@ function Main({
     view.name === "subtitle-editor" ||
     view.name === "document-editor" ||
     view.name === "speaker-review" ||
-    view.name === "dubbing-studio"
+    view.name === "dubbing-studio" || view.name === "export-studio"
       ? "tasks"
       : view.name === "skill-editor" || view.name === "glossary-editor"
         ? "settings"
@@ -189,6 +191,9 @@ function renderView(
           onOpenDub={() =>
             setView({ name: "dubbing-studio", project: view.project, taskId: view.taskId })
           }
+          onOpenExport={() =>
+            setView({ name: "export-studio", project: view.project, taskId: view.taskId })
+          }
         />
       );
     case "task-glossary":
@@ -226,6 +231,14 @@ function renderView(
     case "dubbing-studio":
       return (
         <DubbingStudioView
+          project={view.project}
+          taskId={view.taskId}
+          onBack={() => setView({ name: "task", project: view.project, taskId: view.taskId })}
+        />
+      );
+    case "export-studio":
+      return (
+        <ExportStudioView
           project={view.project}
           taskId={view.taskId}
           onBack={() => setView({ name: "task", project: view.project, taskId: view.taskId })}
