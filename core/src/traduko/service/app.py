@@ -79,6 +79,7 @@ from ..models import (
     TaskGlossary,
     TaskRecord,
     TaskStatus,
+    TaskSwitches,
     transition,
 )
 from ..notify import Notifier, NotifyError, create_channel
@@ -94,6 +95,8 @@ from ..tasks import (
     apply_model_override,
     apply_voice_mode_override,
     ensure_glossary_proofread_stage,
+    recalc_stages_for_switches,
+    task_domain,
 )
 from ..sync.engine import (
     SyncConfigError,
@@ -490,6 +493,50 @@ def update_task(
             ws.store.save(record)
     elif name_changed or model_changed:
         ws.store.save(record)
+    return record.model_dump()
+
+
+class TaskSwitchesRequest(BaseModel):
+    # Each switch: True/False applies it, omitted leaves it as is.
+    translate: bool | None = None
+    diarize: bool | None = None
+    dub: bool | None = None
+
+
+@router.patch("/tasks/{project}/{task_id}/switches")
+def patch_task_switches(
+    request: Request, project: str, task_id: str, body: TaskSwitchesRequest
+) -> dict:
+    ws: Workspace = request.app.state.workspace
+    record = _load_task(ws, project, task_id)
+    changed = {
+        name: value
+        for name, value in (
+            ("translate", body.translate),
+            ("diarize", body.diarize),
+            ("dub", body.dub),
+        )
+        if value is not None
+    }
+    if not changed:
+        raise HTTPException(
+            status_code=422, detail="translate, diarize or dub required"
+        )
+    if "translate" in changed and task_domain(record) != "audio":
+        raise HTTPException(
+            status_code=422, detail="translate switch is audio-domain only"
+        )
+    worker: TaskWorker = request.app.state.worker
+    if worker.is_active(project, task_id):
+        raise HTTPException(status_code=409, detail="task is queued or running")
+    switches = record.switches or TaskSwitches()
+    for name, value in changed.items():
+        setattr(switches, name, value)
+    record.switches = switches
+    # Recalc only the switches this request set; the others already shaped
+    # their stages when they were applied.
+    recalc_stages_for_switches(record, TaskSwitches(**changed))
+    ws.store.save(record)
     return record.model_dump()
 
 

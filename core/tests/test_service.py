@@ -2376,3 +2376,111 @@ def test_glossary_export_csv_and_json(tmp_path: Path) -> None:
         assert (
             client.get("/glossaries/nope/export", headers=headers).status_code == 404
         )
+
+
+# --- pipeline switches (v3_5-04) --------------------------------------------
+
+
+def test_patch_switches_translate_off_skips_group_and_leaves_rest(
+    tmp_path: Path,
+) -> None:
+    with service(tmp_path) as (client, headers, token):
+        task_id = create_task(client, headers, tmp_path, profile="audio-translate")
+        url = f"/tasks/default/{task_id}"
+
+        response = client.patch(
+            f"{url}/switches", json={"translate": False}, headers=headers
+        )
+
+        assert response.status_code == 200, response.text
+        body = response.json()
+        assert body["switches"]["translate"] is False
+        by_type = {stage["type"]: stage for stage in body["stages"]}
+        assert by_type["translate"]["status"] == "skipped"
+        assert by_type["proofread"]["status"] == "skipped"
+        assert by_type["export_subtitles"]["status"] == "skipped"
+        assert by_type["extract_audio"]["status"] == "pending"
+        assert by_type["asr"]["status"] == "pending"
+        assert by_type["export_transcript"]["status"] == "pending"
+        shown = client.get(url, headers=headers).json()
+        assert shown["switches"]["translate"] is False
+        assert shown["switches"]["dub"] is None
+
+
+def test_patch_switches_reenable_marks_skipped_back_pending(tmp_path: Path) -> None:
+    with service(tmp_path) as (client, headers, token):
+        task_id = create_task(client, headers, tmp_path, profile="audio-translate")
+        url = f"/tasks/default/{task_id}/switches"
+        assert client.patch(
+            url, json={"translate": False}, headers=headers
+        ).status_code == 200
+
+        response = client.patch(url, json={"translate": True}, headers=headers)
+
+        assert response.status_code == 200, response.text
+        body = response.json()
+        assert body["switches"]["translate"] is True
+        by_type = {stage["type"]: stage for stage in body["stages"]}
+        assert by_type["translate"]["status"] == "pending"
+        assert by_type["proofread"]["status"] == "pending"
+        assert by_type["export_subtitles"]["status"] == "pending"
+
+
+def test_patch_switches_off_keeps_completed_then_reenable_reruns(
+    tmp_path: Path,
+) -> None:
+    with service(tmp_path) as (client, headers, token):
+        task_id = create_task(client, headers, tmp_path, profile="audio-translate")
+        mark_task_completed(client, "default", task_id)
+        url = f"/tasks/default/{task_id}"
+
+        off = client.patch(
+            f"{url}/switches", json={"translate": False}, headers=headers
+        ).json()
+        by_type = {stage["type"]: stage for stage in off["stages"]}
+        assert by_type["translate"]["status"] == "skipped"
+        assert by_type["asr"]["status"] == "completed"
+        assert off["status"] == "completed"
+
+        on = client.patch(
+            f"{url}/switches", json={"translate": True}, headers=headers
+        ).json()
+        by_type = {stage["type"]: stage for stage in on["stages"]}
+        assert by_type["translate"]["status"] == "pending"
+        assert by_type["asr"]["status"] == "completed"
+        assert on["status"] == "pending"
+
+
+def test_patch_switches_rejects_active_task_and_empty_body(
+    tmp_path: Path, monkeypatch
+) -> None:
+    with service(tmp_path) as (client, headers, token):
+        task_id = create_task(client, headers, tmp_path, profile="audio-translate")
+        url = f"/tasks/default/{task_id}/switches"
+
+        assert client.patch(url, json={}, headers=headers).status_code == 422
+
+        monkeypatch.setattr(client.app.state.worker, "is_active", lambda p, t: True)
+        blocked = client.patch(url, json={"translate": False}, headers=headers)
+        assert blocked.status_code == 409
+
+
+def test_patch_switches_translate_is_audio_only(tmp_path: Path) -> None:
+    with service(tmp_path) as (client, headers, token):
+        task_id = create_task(client, headers, tmp_path, profile="av-default")
+        url = f"/tasks/default/{task_id}/switches"
+
+        rejected = client.patch(url, json={"translate": False}, headers=headers)
+
+        assert rejected.status_code == 422
+        # diarize stays available on video tasks (av-dub has the stage).
+        dub_id = create_task(client, headers, tmp_path, profile="av-dub")
+        ok = client.patch(
+            f"/tasks/default/{dub_id}/switches",
+            json={"diarize": False},
+            headers=headers,
+        )
+        assert ok.status_code == 200, ok.text
+        by_type = {stage["type"]: stage for stage in ok.json()["stages"]}
+        assert by_type["diarize"]["status"] == "skipped"
+        assert by_type["translate"]["status"] == "pending"

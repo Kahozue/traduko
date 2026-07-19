@@ -54,6 +54,8 @@ class PipelineExecutor:
         for i, stage_record in enumerate(record.stages):
             if stage_record.status == StageStatus.COMPLETED:
                 continue
+            if stage_record.status == StageStatus.SKIPPED:
+                continue
             if cancel.is_set():
                 transition(record, TaskStatus.CANCELED)
                 self.store.save(record)
@@ -113,7 +115,8 @@ class PipelineExecutor:
             )
 
             remaining = any(
-                s.status != StageStatus.COMPLETED for s in record.stages[i + 1 :]
+                s.status not in (StageStatus.COMPLETED, StageStatus.SKIPPED)
+                for s in record.stages[i + 1 :]
             )
             if stage_record.pause_after and remaining and not result.skip_pause:
                 transition(record, TaskStatus.WAITING_REVIEW)

@@ -42,6 +42,15 @@ class TaskGlossary(BaseModel):
     asr_mode: Literal["auto", "force", "off"] = "auto"
 
 
+class TaskSwitches(BaseModel):
+    """Pipeline switches. None means: no explicit choice, leave stages as
+    the profile made them (pre-switch tasks keep behaving unchanged)."""
+
+    translate: bool | None = None
+    diarize: bool | None = None
+    dub: bool | None = None
+
+
 class TaskRecord(BaseModel):
     schema_version: int = 1
     id: str
@@ -52,6 +61,7 @@ class TaskRecord(BaseModel):
     status: TaskStatus = TaskStatus.PENDING
     stages: list[StageRecord]
     glossary: TaskGlossary = Field(default_factory=TaskGlossary)
+    switches: TaskSwitches | None = None
     created_at: str
     updated_at: str
 

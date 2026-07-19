@@ -14,6 +14,7 @@ from .models import (
     StageStatus,
     TaskRecord,
     TaskStatus,
+    TaskSwitches,
     new_task_id,
     utc_now_iso,
 )
@@ -124,6 +125,61 @@ def apply_voice_mode_override(
                 stage.params["voice_instruction"] = instruction
             else:
                 stage.params.pop("voice_instruction", None)
+
+
+# Pipeline switches: which stage types each switch governs. The dub set names
+# both domain tails (mux for video, export_audio for audio); a task only ever
+# contains one of them, so matching by type needs no domain split.
+SWITCH_STAGE_TYPES: dict[str, frozenset[str]] = {
+    "translate": frozenset({"translate", "proofread", "export_subtitles"}),
+    "diarize": frozenset({"diarize"}),
+    "dub": frozenset(
+        {"tts_synthesize", "align_duration", "mix_audio", "mux", "export_audio"}
+    ),
+}
+
+_AUDIO_DOMAIN_STAGES = frozenset({"export_transcript", "export_audio"})
+
+
+def task_domain(record: TaskRecord) -> str:
+    """Best-effort domain from the stage list, mirroring profile_kind: the
+    record does not persist a kind, and switches only need audio vs video."""
+    types = {stage.type for stage in record.stages}
+    return "audio" if types & _AUDIO_DOMAIN_STAGES else "video"
+
+
+def stages_affected_by_switches(
+    record: TaskRecord, switches: "TaskSwitches"
+) -> dict[str, list[StageRecord]]:
+    """Stages each explicitly-set switch governs, keyed by switch name."""
+    affected: dict[str, list[StageRecord]] = {}
+    for name, types in SWITCH_STAGE_TYPES.items():
+        if getattr(switches, name) is None:
+            continue
+        affected[name] = [stage for stage in record.stages if stage.type in types]
+    return affected
+
+
+def recalc_stages_for_switches(record: TaskRecord, switches: "TaskSwitches") -> None:
+    """Re-derive stage statuses from explicit switch values.
+
+    Off: COMPLETED/PENDING/FAILED -> SKIPPED, artifacts stay on disk.
+    On: SKIPPED -> PENDING (rerun overwrites artifacts); COMPLETED stays --
+    re-enabling never resets work that was already done while enabled.
+    Unaffected stages are untouched. A COMPLETED task with a stage back at
+    PENDING returns to PENDING so it is runnable again."""
+    for name, stages in stages_affected_by_switches(record, switches).items():
+        enabled = getattr(switches, name)
+        for stage in stages:
+            if not enabled and stage.status != StageStatus.SKIPPED:
+                stage.status = StageStatus.SKIPPED
+                stage.error = None
+            elif enabled and stage.status == StageStatus.SKIPPED:
+                stage.status = StageStatus.PENDING
+    if record.status == TaskStatus.COMPLETED and any(
+        stage.status == StageStatus.PENDING for stage in record.stages
+    ):
+        record.status = TaskStatus.PENDING
 
 
 class TaskStore:

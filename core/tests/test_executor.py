@@ -245,6 +245,33 @@ def test_pause_set_during_stage_takes_effect_at_boundary(tmp_path: Path) -> None
     assert result.stages[1].status == StageStatus.PENDING
 
 
+def test_skipped_stage_is_not_executed(tmp_path: Path) -> None:
+    store, bus, events, record = build(
+        tmp_path, [ProfileStage(type="mark"), ProfileStage(type="mark")]
+    )
+    record.stages[1].status = StageStatus.SKIPPED
+    store.save(record)
+    result = PipelineExecutor(store, bus, tmp_path).run(record)
+    assert result.status == TaskStatus.COMPLETED
+    assert result.stages[0].status == StageStatus.COMPLETED
+    assert result.stages[1].status == StageStatus.SKIPPED
+    assert result.stages[1].artifacts == []
+    started = [e.data["stage_index"] for e in events if e.type == "stage_started"]
+    assert started == [0]
+
+
+def test_pause_after_ignores_trailing_skipped_stages(tmp_path: Path) -> None:
+    store, bus, events, record = build(
+        tmp_path,
+        [ProfileStage(type="mark", pause_after=True), ProfileStage(type="mark")],
+    )
+    record.stages[1].status = StageStatus.SKIPPED
+    store.save(record)
+    result = PipelineExecutor(store, bus, tmp_path).run(record)
+    assert result.status == TaskStatus.COMPLETED
+    assert all(e.type != "task_waiting_review" for e in events)
+
+
 def test_cancel_wins_over_pause(tmp_path: Path) -> None:
     store, bus, events, record = build(tmp_path, [ProfileStage(type="mark")])
     cancel, pause = CancelToken(), PauseToken()
