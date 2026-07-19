@@ -94,6 +94,63 @@ def test_run_gates_on_preflight_failure(tmp_path: Path) -> None:
     assert "completed" in forced.output
 
 
+def _create_and_complete(tmp_path: Path, env: dict[str, str]) -> str:
+    input_file = tmp_path / "in.srt"
+    input_file.write_text("1\n00:00:00,000 --> 00:00:01,000\nhi\n", encoding="utf-8")
+    created = runner.invoke(
+        app, ["task", "create", str(input_file), "--profile", "passthrough"], env=env
+    )
+    task_id = created.output.strip().splitlines()[-1]
+    ran = runner.invoke(app, ["task", "run", task_id], env=env)
+    assert ran.exit_code == 0, ran.output
+    assert "completed" in ran.output
+    return task_id
+
+
+def test_rerun_completed_task(tmp_path: Path) -> None:
+    env = setup_workspace(tmp_path)
+    task_id = _create_and_complete(tmp_path, env)
+
+    reran = runner.invoke(app, ["task", "rerun", task_id], env=env)
+    assert reran.exit_code == 0, reran.output
+    assert "completed" in reran.output
+    shown = runner.invoke(app, ["task", "show", task_id], env=env)
+    assert json.loads(shown.output)["status"] == "completed"
+
+
+def test_rerun_rejects_non_completed_task(tmp_path: Path) -> None:
+    env = setup_workspace(tmp_path)
+    input_file = tmp_path / "in.srt"
+    input_file.write_text("1\n00:00:00,000 --> 00:00:01,000\nhi\n", encoding="utf-8")
+    created = runner.invoke(
+        app, ["task", "create", str(input_file), "--profile", "passthrough"], env=env
+    )
+    task_id = created.output.strip().splitlines()[-1]
+
+    reran = runner.invoke(app, ["task", "rerun", task_id], env=env)
+    assert reran.exit_code == 1
+    assert "pending" in reran.output
+
+
+def test_rerun_gates_on_preflight_then_skip(tmp_path: Path) -> None:
+    env = setup_workspace(tmp_path)
+    task_id = _create_and_complete(tmp_path, env)
+    (tmp_path / "in.srt").unlink()
+
+    reran = runner.invoke(app, ["task", "rerun", task_id], env=env)
+    assert reran.exit_code == 1
+    assert "preflight failed" in reran.output
+    # A failed rerun preflight leaves the completed task untouched.
+    shown = runner.invoke(app, ["task", "show", task_id], env=env)
+    assert json.loads(shown.output)["status"] == "completed"
+
+    forced = runner.invoke(
+        app, ["task", "rerun", task_id, "--skip-preflight"], env=env
+    )
+    assert forced.exit_code == 0, forced.output
+    assert "completed" in forced.output
+
+
 def test_serve_command_exists() -> None:
     result = runner.invoke(app, ["serve", "--help"])
     assert result.exit_code == 0

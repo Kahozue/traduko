@@ -9,6 +9,7 @@ import typer
 from .eventlog import EventLogger
 from .events import Event
 from .executor import PipelineExecutor
+from .models import TaskStatus
 from .notify import Notifier
 from .paths import ENV_DATA_ROOT
 from .preflight import PreflightReport, run_preflight
@@ -93,6 +94,41 @@ def task_run(
             _print_report(report)
             typer.echo("preflight failed (fix the issues or use --skip-preflight)")
             raise typer.Exit(code=1)
+    result = PipelineExecutor(ws.store, ws.bus, ws.root).run(record)
+    typer.echo(result.status.value)
+
+
+@task_app.command("rerun")
+def task_rerun(
+    ctx: typer.Context,
+    task_id: str = typer.Argument(...),
+    project: Optional[str] = typer.Option(None, "--project"),
+    skip_preflight: bool = typer.Option(
+        False, "--skip-preflight", help="Rerun without preflight checks."
+    ),
+) -> None:
+    """Rerun a completed task from scratch (all stages run again)."""
+    ws: Workspace = ctx.obj
+
+    def print_event(event: Event) -> None:
+        typer.echo(f"[{event.type}] {json.dumps(event.data, ensure_ascii=False)}")
+
+    ws.bus.subscribe(print_event)
+    EventLogger(ws.root).attach(ws.bus)
+    Notifier.from_config(ws.config).attach(ws.bus)
+    record = ws.store.load(project or ws.config.default_project, task_id)
+    if record.status is not TaskStatus.COMPLETED:
+        typer.echo(f"cannot rerun task in status {record.status.value}")
+        raise typer.Exit(code=1)
+    # Preflight before the reset: a failing rerun leaves the completed task as
+    # it was, so the operator can restore the input or retry with skip.
+    if not skip_preflight:
+        report = run_preflight(record, ws.root)
+        if not report.ok:
+            _print_report(report)
+            typer.echo("preflight failed (fix the issues or use --skip-preflight)")
+            raise typer.Exit(code=1)
+    ws.store.reset_for_rerun(record)
     result = PipelineExecutor(ws.store, ws.bus, ws.root).run(record)
     typer.echo(result.status.value)
 
