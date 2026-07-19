@@ -307,3 +307,62 @@ test("preview voice mode shows its note and skips the instruction", async () => 
   const body = createTask.mock.calls[0][0];
   expect(body.voice_instruction).toBeUndefined();
 });
+
+const AUDIO_PROFILES: ProfileInfo[] = [
+  {
+    name: "audio-dub",
+    kind: "audio",
+    stages: ["extract_audio", "asr", "tts_synthesize", "export_audio"],
+  },
+  {
+    name: "audio-transcribe",
+    kind: "audio",
+    stages: ["extract_audio", "asr", "export_transcript"],
+  },
+];
+
+function configWithAudio(dubEnabled: boolean) {
+  return {
+    schema_version: 1,
+    default_project: "default",
+    default_provider: "",
+    llm_providers: {},
+    audio: {
+      diarize_enabled: true,
+      dub_enabled: dubEnabled,
+      translate_enabled: true,
+    },
+  };
+}
+
+test("audio kind defaults to a non-dub profile when dubbing is off globally", async () => {
+  const api: Partial<ApiClient> = {
+    profilesDetailed: vi.fn().mockResolvedValue(AUDIO_PROFILES),
+    getConfig: vi.fn().mockResolvedValue(configWithAudio(false)),
+  };
+  renderWithConnection(
+    <CreateTaskDialog initialKind="audio" onClose={() => {}} onCreated={() => {}} />,
+    { api },
+  );
+  await waitFor(() =>
+    expect(screen.getByRole("combobox", { name: "管線設定檔" })).toHaveValue(
+      "audio-transcribe",
+    ),
+  );
+});
+
+test("audio kind defaults to the dub profile when dubbing is on globally", async () => {
+  const api: Partial<ApiClient> = {
+    profilesDetailed: vi.fn().mockResolvedValue(AUDIO_PROFILES),
+    getConfig: vi.fn().mockResolvedValue(configWithAudio(true)),
+  };
+  renderWithConnection(
+    <CreateTaskDialog initialKind="audio" onClose={() => {}} onCreated={() => {}} />,
+    { api },
+  );
+  await waitFor(() =>
+    expect(screen.getByRole("combobox", { name: "管線設定檔" })).toHaveValue(
+      "audio-dub",
+    ),
+  );
+});

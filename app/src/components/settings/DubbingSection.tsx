@@ -15,9 +15,14 @@ function numberOrNull(raw: string): number | null {
 export function DubbingSection({
   dubbing,
   onChange,
+  domain = "video",
 }: {
   dubbing: DubbingConfigDoc;
   onChange: (value: DubbingConfigDoc) => void;
+  // The diarize pipeline default is a video-domain setting; the audio tab
+  // reuses this section for the shared engine assets but carries its own
+  // default in the pipeline defaults block.
+  domain?: "video" | "audio";
 }) {
   const api = useApi();
   const [reveal, setReveal] = useState(false);
@@ -213,6 +218,21 @@ export function DubbingSection({
         <summary className={styles.disclosureSummary}>
           {t("settings.dubbing.diarizeSection")}
         </summary>
+        {domain === "video" && (
+          <SettingRow
+            label={t("settings.dubbing.diarizeDefault")}
+            description={t("settings.dubbing.diarizeDefault.desc")}
+          >
+            <input
+              type="checkbox"
+              aria-label={t("settings.dubbing.diarizeDefault")}
+              checked={dubbing.diarize_enabled}
+              onChange={(event) =>
+                onChange({ ...dubbing, diarize_enabled: event.target.checked })
+              }
+            />
+          </SettingRow>
+        )}
         <SettingRow
           label={t("settings.dubbing.hfToken")}
           htmlFor="dubbing-hf-token"

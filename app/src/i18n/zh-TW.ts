@@ -165,6 +165,13 @@ export const zhTW = {
   "settings.dubbing.hfToken": "Hugging Face Token",
   "settings.dubbing.hfToken.desc": "僅說話人分離（多人克隆）需要；模型頁需先接受條款",
   "settings.dubbing.reveal": "顯示",
+  "settings.dubbing.diarizeDefault": "新任務預設啟用",
+  "settings.dubbing.diarizeDefault.desc": "只影響新影片任務的初始開關",
+  "settings.audio.pipeline.title": "管線預設",
+  "settings.audio.pipeline.hint": "新音頻任務的初始管線開關；不影響既有任務",
+  "settings.audio.pipeline.translate": "翻譯",
+  "settings.audio.pipeline.diarize": "說話人分離",
+  "settings.audio.pipeline.dub": "配音",
   "settings.dubbing.hide": "隱藏",
   "settings.pdf.title": "PDF 翻譯引擎",
   "settings.pdf.hint":

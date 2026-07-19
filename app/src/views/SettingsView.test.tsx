@@ -33,8 +33,17 @@ const DEFAULT_CONFIG: CoreConfigDoc = {
   },
   mcp_servers: {},
   skills: {},
-  dubbing: { hf_token: "", python: "", inference_timesteps: null, cfg_value: null, seed: null, denoise: false },
+  dubbing: {
+    hf_token: "",
+    python: "",
+    inference_timesteps: null,
+    cfg_value: null,
+    seed: null,
+    denoise: false,
+    diarize_enabled: true,
+  },
   pdf: { python: "" },
+  audio: { diarize_enabled: true, dub_enabled: false, translate_enabled: true },
   asr: {
     engine: "faster_whisper",
     audio_engine: "",
@@ -383,4 +392,44 @@ test("confirming a skill dirties the draft and saves both flags", async () => {
   expect(saveConfig.mock.calls[0][0].skills).toEqual({
     "honorific-style": { enabled: true, confirmed: true },
   });
+});
+
+test("the audio tab shows pipeline default toggles and saves them", async () => {
+  const { saveConfig } = setup();
+  await screen.findByLabelText("預設專案");
+  await userEvent.click(screen.getByRole("tab", { name: "音頻" }));
+  const audioPanel = document.getElementById("settings-panel-audio")!;
+  expect(within(audioPanel).getByText("管線預設")).toBeInTheDocument();
+  const dub = within(audioPanel).getByRole("checkbox", { name: "配音" });
+  expect(dub).not.toBeChecked();
+  expect(within(audioPanel).getByRole("checkbox", { name: "翻譯" })).toBeChecked();
+  expect(
+    within(audioPanel).getByRole("checkbox", { name: "說話人分離" }),
+  ).toBeChecked();
+  await userEvent.click(dub);
+  await userEvent.click(screen.getByText("儲存"));
+  await waitFor(() =>
+    expect(saveConfig).toHaveBeenCalledWith(
+      expect.objectContaining({
+        audio: expect.objectContaining({ dub_enabled: true }),
+      }),
+    ),
+  );
+});
+
+test("the video dubbing section carries the diarize default toggle", async () => {
+  setup();
+  await screen.findByLabelText("預設專案");
+  await userEvent.click(screen.getByRole("tab", { name: "影片" }));
+  const videoPanel = document.getElementById("settings-panel-video")!;
+  await userEvent.click(within(videoPanel).getByText("說話人分離"));
+  expect(
+    within(videoPanel).getByRole("checkbox", { name: "新任務預設啟用" }),
+  ).toBeChecked();
+  // The audio tab's dubbing section must not repeat the video-domain default;
+  // the audio default lives in the pipeline defaults block instead.
+  const audioPanel = document.getElementById("settings-panel-audio")!;
+  expect(
+    within(audioPanel).queryByRole("checkbox", { name: "新任務預設啟用", hidden: true }),
+  ).toBeNull();
 });

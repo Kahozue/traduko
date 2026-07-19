@@ -378,6 +378,7 @@ export interface CoreConfigDoc {
   dubbing: DubbingConfigDoc;
   pdf: PdfEngineConfigDoc;
   asr: AsrConfigDoc;
+  audio: AudioConfigDoc;
   [key: string]: unknown;
 }
 
@@ -508,6 +509,16 @@ export interface DubbingConfigDoc {
   cfg_value: number | null;
   seed: number | null;
   denoise: boolean;
+  // Video-domain pipeline default: whether new tasks run diarization.
+  diarize_enabled: boolean;
+  [key: string]: unknown;
+}
+
+// Audio-domain pipeline defaults: initial switch values for new audio tasks.
+export interface AudioConfigDoc {
+  diarize_enabled: boolean;
+  dub_enabled: boolean;
+  translate_enabled: boolean;
   [key: string]: unknown;
 }
 

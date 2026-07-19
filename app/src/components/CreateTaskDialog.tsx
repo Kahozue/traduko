@@ -74,6 +74,9 @@ export function CreateTaskDialog({
   const [project, setProject] = useState("default");
   const [kind, setKind] = useState<TaskKind | null>(initialKind);
   const [profile, setProfile] = useState("");
+  // A profile the user picked by hand stays put; only auto-picked defaults
+  // may be re-derived when the global audio defaults load in.
+  const [profilePinned, setProfilePinned] = useState(false);
   // Per-task LLM override; empty means "follow the configured default".
   const [providerSel, setProviderSel] = useState("");
   const [model, setModel] = useState("");
@@ -130,6 +133,10 @@ export function CreateTaskDialog({
       .find((info) => info.name === profile)
       ?.stages?.includes("tts_synthesize") ?? false;
 
+  // The audio global default steers the default profile toward or away from
+  // the dub pipelines; the user can still pick any profile by hand.
+  const audioDubDefault = config?.audio?.dub_enabled === true;
+
   // Keep the selected profile valid for the chosen kind, and route by input
   // extension where the pipelines differ: a .pdf only runs through
   // translate-pdf, everything else in the document kind does not.
@@ -146,10 +153,22 @@ export function CreateTaskDialog({
       );
       if (matching.length > 0) candidates = matching;
     }
-    if (!candidates.some((info) => info.name === profile)) {
-      setProfile(candidates[0].name);
+    const valid = candidates.some((info) => info.name === profile);
+    if (valid && (profilePinned || kind !== "audio")) return;
+    // Default pick: the audio kind prefers profiles matching the global dub
+    // default; a hand-picked profile never reaches this branch.
+    let pick = candidates;
+    if (kind === "audio") {
+      const preferred = candidates.filter(
+        (info) =>
+          (info.stages?.includes("tts_synthesize") ?? false) === audioDubDefault,
+      );
+      if (preferred.length > 0) pick = preferred;
     }
-  }, [kindProfiles, profile, kind, extension]);
+    if (!pick.some((info) => info.name === profile)) {
+      setProfile(pick[0].name);
+    }
+  }, [kindProfiles, profile, kind, extension, audioDubDefault, profilePinned]);
 
   useEffect(() => {
     dialogRef.current?.focus();
@@ -274,7 +293,10 @@ export function CreateTaskDialog({
             <select
               className={styles.input}
               value={profile}
-              onChange={(event) => setProfile(event.target.value)}
+              onChange={(event) => {
+                setProfile(event.target.value);
+                setProfilePinned(true);
+              }}
             >
               {kindProfiles.map((info) => (
                 <option key={info.name} value={info.name}>

@@ -139,8 +139,17 @@ test("config endpoints round trip", async () => {
     },
     mcp_servers: {},
     skills: {},
-    dubbing: { hf_token: "", python: "", inference_timesteps: null, cfg_value: null, seed: null, denoise: false },
+    dubbing: {
+      hf_token: "",
+      python: "",
+      inference_timesteps: null,
+      cfg_value: null,
+      seed: null,
+      denoise: false,
+      diarize_enabled: true,
+    },
     pdf: { python: "" },
+    audio: { diarize_enabled: true, dub_enabled: false, translate_enabled: true },
     asr: {
       engine: "faster_whisper",
       audio_engine: "",

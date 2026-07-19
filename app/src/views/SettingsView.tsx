@@ -10,6 +10,7 @@ import { BasicsSection } from "../components/settings/BasicsSection";
 import { AsrSection } from "../components/settings/AsrSection";
 import { DubbingSection } from "../components/settings/DubbingSection";
 import { GlossarySection } from "../components/settings/GlossarySection";
+import { PipelineDefaultsSection } from "../components/settings/PipelineDefaultsSection";
 import { PdfEngineSection } from "../components/settings/PdfEngineSection";
 import { ProvidersSection } from "../components/settings/ProvidersSection";
 import { ChannelsSection } from "../components/settings/ChannelsSection";
@@ -96,6 +97,7 @@ function normalize(config: CoreConfigDoc): CoreConfigDoc {
       cfg_value: null,
       seed: null,
       denoise: false,
+      diarize_enabled: true,
     };
   }
   if (next.dubbing.inference_timesteps === undefined)
@@ -103,6 +105,10 @@ function normalize(config: CoreConfigDoc): CoreConfigDoc {
   if (next.dubbing.cfg_value === undefined) next.dubbing.cfg_value = null;
   if (next.dubbing.seed === undefined) next.dubbing.seed = null;
   if (next.dubbing.denoise === undefined) next.dubbing.denoise = false;
+  if (next.dubbing.diarize_enabled === undefined) next.dubbing.diarize_enabled = true;
+  if (!next.audio) {
+    next.audio = { diarize_enabled: true, dub_enabled: false, translate_enabled: true };
+  }
   if (!next.pdf) next.pdf = { python: "" };
   if (!next.asr) {
     next.asr = {
@@ -390,6 +396,12 @@ export function SettingsView({
            dubbing engine is shared by audio-dub, so it renders here too. */}
         {draft && (
           <>
+            <PipelineDefaultsSection
+              audio={draft.audio}
+              onChange={(value) =>
+                setDraft((prev) => (prev ? { ...prev, audio: value } : prev))
+              }
+            />
             <AsrSection
               domain="audio"
               asr={draft.asr}
@@ -398,6 +410,7 @@ export function SettingsView({
               }
             />
             <DubbingSection
+              domain="audio"
               dubbing={draft.dubbing}
               onChange={(value) =>
                 setDraft((prev) => (prev ? { ...prev, dubbing: value } : prev))
