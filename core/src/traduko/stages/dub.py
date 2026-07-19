@@ -33,6 +33,7 @@ from ..media import (
     build_mix_filter_script,
     build_mux_cmd,
     ffmpeg_available,
+    media_kind_of,
 )
 from ..media import run as run_media
 from ..tasks import VOICE_MODES
@@ -658,6 +659,21 @@ class AlignDurationStage:
         return StageResult(artifacts=[path.name])
 
 
+def _mix_base_source(ctx: StageContext) -> Path | None:
+    """Where the mix bed comes from, or None for silence. params.base_audio
+    wins (a compose video task can bring its own soundtrack), then the task
+    input when it is actually a media file: a compose task's input is the
+    transcript, which has no audio track to extract."""
+    override = ctx.params.get("base_audio")
+    if override:
+        path = Path(override)
+        if not path.exists():
+            raise StageError(f"base audio not found: {path}")
+        return path
+    input_path = Path(ctx.task.input_path)
+    return input_path if media_kind_of(input_path) else None
+
+
 @registry.register
 class MixAudioStage:
     type = "mix_audio"
@@ -675,19 +691,27 @@ class MixAudioStage:
             raise StageError("no synthesized segments to mix")
 
         out_index = ctx.stage_index + 1
-        orig_path = ctx.artifacts.path_for(out_index, "orig-audio.wav")
-        orig_path.parent.mkdir(parents=True, exist_ok=True)
-        try:
-            run_media(
-                build_extract_mix_audio_cmd(Path(ctx.task.input_path), orig_path)
-            )
-        except MediaError as error:
-            raise StageError(str(error)) from error
+        source = _mix_base_source(ctx)
+        orig_path: Path | None = None
+        if source is not None:
+            orig_path = ctx.artifacts.path_for(out_index, "orig-audio.wav")
+            orig_path.parent.mkdir(parents=True, exist_ok=True)
+            try:
+                run_media(build_extract_mix_audio_cmd(source, orig_path))
+            except MediaError as error:
+                raise StageError(str(error)) from error
 
         clips = [ctx.artifacts.dir / s["file"] for s in placed]
         offsets = [s["start"] for s in placed]
-        duck_windows = [(s["start"], s["start"] + s["duration"]) for s in placed]
+        # Ducking only makes sense against an original track; over silence
+        # there is nothing to pull down.
+        duck_windows = (
+            [(s["start"], s["start"] + s["duration"]) for s in placed]
+            if orig_path is not None
+            else []
+        )
         script_path = ctx.artifacts.path_for(out_index, "mix.filter")
+        script_path.parent.mkdir(parents=True, exist_ok=True)
         script_path.write_text(
             build_mix_filter_script(
                 offsets, duck_windows, ctx.params.get("duck_volume", 0.2)
@@ -696,7 +720,17 @@ class MixAudioStage:
         )
         mix_path = ctx.artifacts.path_for(out_index, "dub-mix.wav")
         try:
-            run_media(build_mix_cmd(orig_path, clips, script_path, mix_path))
+            run_media(
+                build_mix_cmd(
+                    orig_path,
+                    clips,
+                    script_path,
+                    mix_path,
+                    silence_duration=max(
+                        (s["start"] + s["duration"] for s in placed), default=0.0
+                    ),
+                )
+            )
         except MediaError as error:
             raise StageError(str(error)) from error
         ctx.emit_progress(1, 1)

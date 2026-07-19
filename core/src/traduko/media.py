@@ -99,10 +99,46 @@ def build_mix_filter_script(
     return "".join(lines)
 
 
+VIDEO_EXTENSIONS = frozenset(
+    {".mp4", ".mkv", ".mov", ".webm", ".avi", ".flv", ".m4v"}
+)
+AUDIO_EXTENSIONS = frozenset(
+    {".mp3", ".wav", ".m4a", ".aac", ".flac", ".ogg", ".opus", ".aiff", ".wma"}
+)
+
+
+def media_kind_of(path: Path) -> str | None:
+    """"video", "audio", or None for anything else (a compose task's input is
+    the transcript file). Classification is by the file, not by the task's
+    domain, and mirrors the app's lib/media.ts table."""
+    suffix = path.suffix.lower()
+    if suffix in VIDEO_EXTENSIONS:
+        return "video"
+    if suffix in AUDIO_EXTENSIONS:
+        return "audio"
+    return None
+
+
 def build_mix_cmd(
-    orig_audio: Path, clips: list[Path], script_path: Path, output_path: Path
+    orig_audio: Path | None,
+    clips: list[Path],
+    script_path: Path,
+    output_path: Path,
+    *,
+    silence_duration: float | None = None,
 ) -> list[str]:
-    cmd = ["ffmpeg", "-y", "-i", str(orig_audio)]
+    """orig_audio None means there is no original track to mix over, so the
+    bed is silence of silence_duration seconds. Giving it an explicit length
+    keeps amix's duration=first meaning "as long as the dub timeline"."""
+    if orig_audio is None:
+        if silence_duration is None:
+            raise MediaError("a silent mix bed needs a duration")
+        cmd = [
+            "ffmpeg", "-y", "-f", "lavfi", "-t", f"{silence_duration:.3f}",
+            "-i", "anullsrc=r=48000:cl=stereo",
+        ]
+    else:
+        cmd = ["ffmpeg", "-y", "-i", str(orig_audio)]
     for clip in clips:
         cmd += ["-i", str(clip)]
     cmd += [

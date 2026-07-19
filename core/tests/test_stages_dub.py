@@ -566,6 +566,79 @@ def test_mix_audio_builds_script_and_mix(tmp_path: Path, monkeypatch) -> None:
     assert len(orig_cmds) == 1
 
 
+def test_mix_audio_without_a_media_input_mixes_over_silence(
+    tmp_path: Path, monkeypatch
+) -> None:
+    # A compose task's input is the transcript itself: there is no original
+    # audio to duck under the dub, so the bed is silence.
+    install_engine(tmp_path)
+    write_dub_config(tmp_path)
+    ctx, _ = make_ctx(
+        tmp_path, tmp_path / "transcript.srt", stage_index=9,
+        params={"dub_text": "original", "voice_mode": "design"},
+    )
+    commands: list[list[str]] = []
+    monkeypatch.setattr(dub, "run_media", lambda cmd: commands.append(cmd))
+    monkeypatch.setattr(dub, "ffmpeg_available", lambda: True)
+    write_timeline(ctx)
+
+    result = registry.create("mix_audio").run(ctx)
+
+    assert "10-dub-mix.wav" in result.artifacts
+    assert not [c for c in commands if str(c[-1]).endswith("orig-audio.wav")]
+    mix_cmd = [c for c in commands if str(c[-1]).endswith("dub-mix.wav")][0]
+    assert "anullsrc=r=48000:cl=stereo" in mix_cmd
+    # Silence runs to the end of the last placed clip (4.0 + 4.2).
+    assert mix_cmd[mix_cmd.index("-t") + 1] == "8.200"
+    # Nothing to duck, so the base passes straight through.
+    script = (ctx.artifacts.dir / "10-mix.filter").read_text(encoding="utf-8")
+    assert "[0:a]anull[duck];" in script
+    assert "volume" not in script
+
+
+def test_mix_audio_uses_the_base_audio_param_when_given(
+    tmp_path: Path, monkeypatch
+) -> None:
+    install_engine(tmp_path)
+    write_dub_config(tmp_path)
+    base = tmp_path / "bed.wav"
+    base.write_bytes(b"RIFFfake")
+    ctx, _ = make_ctx(
+        tmp_path, tmp_path / "transcript.srt", stage_index=9,
+        params={"dub_text": "original", "voice_mode": "design",
+                "base_audio": str(base)},
+    )
+    commands: list[list[str]] = []
+    monkeypatch.setattr(dub, "run_media", lambda cmd: commands.append(cmd))
+    monkeypatch.setattr(dub, "ffmpeg_available", lambda: True)
+    write_timeline(ctx)
+
+    registry.create("mix_audio").run(ctx)
+
+    orig_cmds = [c for c in commands if str(c[-1]).endswith("orig-audio.wav")]
+    assert len(orig_cmds) == 1
+    assert str(base) in orig_cmds[0]
+    script = (ctx.artifacts.dir / "10-mix.filter").read_text(encoding="utf-8")
+    assert "volume=0.2:enable=" in script
+
+
+def test_mix_audio_rejects_a_missing_base_audio_param(
+    tmp_path: Path, monkeypatch
+) -> None:
+    install_engine(tmp_path)
+    write_dub_config(tmp_path)
+    ctx, _ = make_ctx(
+        tmp_path, tmp_path / "transcript.srt", stage_index=9,
+        params={"base_audio": str(tmp_path / "gone.wav")},
+    )
+    monkeypatch.setattr(dub, "run_media", lambda cmd: None)
+    monkeypatch.setattr(dub, "ffmpeg_available", lambda: True)
+    write_timeline(ctx)
+
+    with pytest.raises(base.StageError, match="base audio"):
+        registry.create("mix_audio").run(ctx)
+
+
 def test_mix_audio_without_usable_segments_fails(tmp_path: Path, monkeypatch) -> None:
     ctx, _, _ = setup_tts(tmp_path, monkeypatch, stage_index=9)
     ctx.artifacts.write_json(

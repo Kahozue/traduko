@@ -14,6 +14,7 @@ from traduko.media import (
     build_mix_filter_script,
     build_mux_cmd,
     ffmpeg_available,
+    media_kind_of,
     probe_duration,
     run,
 )
@@ -94,6 +95,52 @@ def test_mix_cmd_lists_all_inputs_and_script(tmp_path: Path) -> None:
     assert cmd.count("-i") == 3
     assert cmd[cmd.index("-filter_complex_script") + 1].endswith("mix.filter")
     assert cmd[cmd.index("-map") + 1] == "[out]"
+
+
+def test_mix_cmd_with_a_base_track_is_unchanged(tmp_path: Path) -> None:
+    # Guard the timed path: the silent-base option must not shift a single
+    # argument of the ordinary mix command.
+    cmd = build_mix_cmd(
+        tmp_path / "orig.wav",
+        [tmp_path / "a.wav"],
+        tmp_path / "mix.filter",
+        tmp_path / "mix.wav",
+    )
+    assert cmd == [
+        "ffmpeg", "-y", "-i", str(tmp_path / "orig.wav"),
+        "-i", str(tmp_path / "a.wav"),
+        "-filter_complex_script", str(tmp_path / "mix.filter"),
+        "-map", "[out]", "-ac", "2", "-ar", "48000",
+        str(tmp_path / "mix.wav"),
+    ]
+
+
+def test_mix_cmd_without_a_base_track_uses_silence(tmp_path: Path) -> None:
+    cmd = build_mix_cmd(
+        None,
+        [tmp_path / "a.wav", tmp_path / "b.wav"],
+        tmp_path / "mix.filter",
+        tmp_path / "mix.wav",
+        silence_duration=12.5,
+    )
+    assert cmd[:9] == [
+        "ffmpeg", "-y", "-f", "lavfi", "-t", "12.500",
+        "-i", "anullsrc=r=48000:cl=stereo", "-i",
+    ]
+    assert cmd.count("-i") == 3
+    assert cmd[cmd.index("-map") + 1] == "[out]"
+
+
+def test_mix_cmd_without_a_base_track_needs_a_duration(tmp_path: Path) -> None:
+    with pytest.raises(MediaError):
+        build_mix_cmd(None, [tmp_path / "a.wav"], tmp_path / "s", tmp_path / "o.wav")
+
+
+def test_media_kind_of_classifies_by_extension() -> None:
+    assert media_kind_of(Path("a/b/clip.MP4")) == "video"
+    assert media_kind_of(Path("track.flac")) == "audio"
+    assert media_kind_of(Path("transcript.srt")) is None
+    assert media_kind_of(Path("no-extension")) is None
 
 
 def test_mux_cmd_copies_video_and_encodes_audio(tmp_path: Path) -> None:
