@@ -8,6 +8,7 @@ import { ConnectionProvider, useConnection } from "./lib/connection";
 import { useLocale } from "./lib/locale";
 import { BudgetView } from "./views/BudgetView";
 import { DocumentEditorView } from "./views/DocumentEditorView";
+import { GlossaryEditorView } from "./views/GlossaryEditorView";
 import { SettingsView, type SettingsTab } from "./views/SettingsView";
 import { SkillEditorView } from "./views/SkillEditorView";
 import { SubtitleEditorView } from "./views/SubtitleEditorView";
@@ -24,6 +25,7 @@ export type View =
   | { name: "document-editor"; project: string; taskId: string }
   | { name: "speaker-review"; project: string; taskId: string }
   | { name: "skill-editor"; skill: string }
+  | { name: "glossary-editor"; glossaryId: string; returnTab: SettingsTab }
   | { name: "budget" }
   | { name: "settings"; tab?: SettingsTab };
 
@@ -115,7 +117,7 @@ function Main({
     view.name === "document-editor" ||
     view.name === "speaker-review"
       ? "tasks"
-      : view.name === "skill-editor"
+      : view.name === "skill-editor" || view.name === "glossary-editor"
         ? "settings"
         : view.name;
   return (
@@ -208,6 +210,13 @@ function renderView(
           onBack={() => setView({ name: "settings", tab: "agent" })}
         />
       );
+    case "glossary-editor":
+      return (
+        <GlossaryEditorView
+          glossaryId={view.glossaryId}
+          onBack={() => setView({ name: "settings", tab: view.returnTab })}
+        />
+      );
     case "budget":
       return <BudgetView />;
     case "settings":
@@ -216,6 +225,13 @@ function renderView(
           initialTab={view.tab}
           onTabChange={(tab) => setView({ name: "settings", tab })}
           onEditSkill={(name) => setView({ name: "skill-editor", skill: name })}
+          onEditGlossary={(id) =>
+            setView({
+              name: "glossary-editor",
+              glossaryId: id,
+              returnTab: view.tab ?? "general",
+            })
+          }
         />
       );
   }
