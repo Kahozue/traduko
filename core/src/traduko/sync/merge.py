@@ -11,7 +11,7 @@ from __future__ import annotations
 import csv
 import io
 
-FIELDS = ("source", "target", "notes", "scope")
+FIELDS = ("source", "target", "notes", "category")
 
 Row = dict[str, str]
 

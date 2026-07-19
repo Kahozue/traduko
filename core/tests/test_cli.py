@@ -223,3 +223,90 @@ def test_sync_command_fails_when_disabled(tmp_path: Path) -> None:
     result = runner.invoke(app, ["sync"], env=env)
     assert result.exit_code == 1
     assert "not enabled" in result.output
+
+
+# --- glossary subcommands (v3_5-02) ----------------------------------------
+
+
+def _import_glossary(env: dict[str, str], tmp_path: Path) -> str:
+    csv_file = tmp_path / "terms.csv"
+    csv_file.write_text(
+        "source,target,notes,category\nKirito,桐人,hero,人名\n", encoding="utf-8"
+    )
+    imported = runner.invoke(app, ["glossary", "import", str(csv_file)], env=env)
+    assert imported.exit_code == 0, imported.output
+    return imported.output.strip().splitlines()[-1]
+
+
+def test_glossary_import_list_show(tmp_path: Path) -> None:
+    env = setup_workspace(tmp_path)
+    table_id = _import_glossary(env, tmp_path)
+
+    listed = runner.invoke(app, ["glossary", "list"], env=env)
+    assert listed.exit_code == 0
+    assert table_id in listed.output
+    assert "terms" in listed.output
+    assert "Kirito" not in listed.output  # list does not dump entries
+
+    shown = runner.invoke(app, ["glossary", "show", table_id], env=env)
+    assert "Kirito -> 桐人" in shown.output
+    assert "(hero)" in shown.output
+    assert "#人名" in shown.output
+
+
+def test_glossary_enable_disable_toggles_state(tmp_path: Path) -> None:
+    env = setup_workspace(tmp_path)
+    table_id = _import_glossary(env, tmp_path)
+
+    runner.invoke(app, ["glossary", "disable", table_id], env=env)
+    assert "disabled" in runner.invoke(app, ["glossary", "list"], env=env).output
+
+    runner.invoke(app, ["glossary", "enable", table_id], env=env)
+    out = runner.invoke(app, ["glossary", "list"], env=env).output
+    assert "enabled" in out and "disabled" not in out
+
+
+def test_glossary_import_json_with_name_and_domain(tmp_path: Path) -> None:
+    env = setup_workspace(tmp_path)
+    json_file = tmp_path / "g.json"
+    json_file.write_text(
+        json.dumps({"entries": [{"source": "Yui", "target": "結衣"}]}), encoding="utf-8"
+    )
+    imported = runner.invoke(
+        app,
+        ["glossary", "import", str(json_file), "--name", "My Terms", "--domain", "document"],
+        env=env,
+    )
+    assert imported.exit_code == 0, imported.output
+    listed = runner.invoke(app, ["glossary", "list"], env=env).output
+    assert "My Terms" in listed
+    assert "document" in listed
+
+
+def test_glossary_export_to_stdout_and_file(tmp_path: Path) -> None:
+    env = setup_workspace(tmp_path)
+    table_id = _import_glossary(env, tmp_path)
+
+    printed = runner.invoke(app, ["glossary", "export", table_id], env=env)
+    assert "Kirito" in printed.output
+
+    out_file = tmp_path / "out.json"
+    written = runner.invoke(
+        app,
+        ["glossary", "export", table_id, "--format", "json", "--out", str(out_file)],
+        env=env,
+    )
+    assert written.exit_code == 0
+    assert "Kirito" in out_file.read_text(encoding="utf-8")
+
+
+def test_glossary_unknown_id_exits_nonzero(tmp_path: Path) -> None:
+    env = setup_workspace(tmp_path)
+    for cmd in (
+        ["glossary", "show", "nope"],
+        ["glossary", "enable", "nope"],
+        ["glossary", "disable", "nope"],
+        ["glossary", "export", "nope"],
+    ):
+        result = runner.invoke(app, cmd, env=env)
+        assert result.exit_code == 1, cmd

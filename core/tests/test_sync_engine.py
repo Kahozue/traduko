@@ -157,3 +157,67 @@ def test_create_target_validates_configuration(tmp_path: Path) -> None:
         create_target(SyncConfig(mode="folder"))
     with pytest.raises(SyncConfigError):
         create_target(SyncConfig(mode="webdav"))
+
+
+def test_manifest_two_sided_change_uses_mtime_not_merge(tmp_path: Path) -> None:
+    ws_a, engine_a = make_machine(tmp_path, "a")
+    engine_a.run()
+    ws_b, engine_b = make_machine(tmp_path, "b")
+    engine_b.run()
+
+    def manifest(table_id: str) -> str:
+        return json.dumps(
+            {
+                "schema_version": 1,
+                "order": [table_id],
+                "glossaries": {
+                    table_id: {
+                        "name": table_id,
+                        "domain": "general",
+                        "enabled": True,
+                        "created_at": "2030-01-01T00:00:00Z",
+                        "updated_at": "2030-01-01T00:00:00Z",
+                    }
+                },
+            }
+        )
+
+    (ws_a.root / "glossaries" / "manifest.json").write_text(
+        manifest("a"), encoding="utf-8"
+    )
+    (ws_b.root / "glossaries" / "manifest.json").write_text(
+        manifest("b"), encoding="utf-8"
+    )
+    engine_b.run()
+    report = engine_a.run()
+
+    # A JSON file must never enter the row-level CSV merge.
+    assert "glossaries/manifest.json" not in report.merged
+    assert report.conflicts == 0
+    assert "glossaries/manifest.json" in report.pushed + report.pulled
+
+
+def test_glossary_csv_still_three_way_merges_category(tmp_path: Path) -> None:
+    header = "source,target,notes,category\r\n"
+    ws_a, engine_a = make_machine(tmp_path, "a")
+    (ws_a.root / "glossaries" / "terms.csv").write_text(
+        header + "term,base,,人名\r\n", encoding="utf-8"
+    )
+    engine_a.run()
+    ws_b, engine_b = make_machine(tmp_path, "b")
+    engine_b.run()
+
+    (ws_a.root / "glossaries" / "terms.csv").write_text(
+        header + "term,base,,人名\r\nkirito,桐人,,人名\r\n", encoding="utf-8"
+    )
+    (ws_b.root / "glossaries" / "terms.csv").write_text(
+        header + "term,base,,人名\r\nyui,結衣,,人名\r\n", encoding="utf-8"
+    )
+    engine_b.run()
+    report = engine_a.run()
+
+    assert "glossaries/terms.csv" in report.merged
+    assert report.conflicts == 0
+    merged = (ws_a.root / "glossaries" / "terms.csv").read_text(encoding="utf-8")
+    assert "kirito,桐人,,人名" in merged
+    assert "yui,結衣,,人名" in merged

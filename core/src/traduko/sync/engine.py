@@ -41,6 +41,7 @@ SETTINGS_RULES = (
     ("profiles", "*.yaml"),
     ("prompts", "*"),
     ("glossaries", "*.csv"),
+    ("glossaries", "manifest.json"),
 )
 
 
@@ -259,7 +260,7 @@ class SyncEngine:
             self._push(rel, local_data, state, report)
         elif remote_changed and not local_changed:
             self._pull(rel, remote_data, state, report)
-        elif rel.startswith("glossaries/"):
+        elif rel.startswith("glossaries/") and rel.endswith(".csv"):
             self._merge_glossary(rel, local_data, remote_data, state, report)
         else:
             if local_path.stat().st_mtime >= remote_mtime:
@@ -299,7 +300,9 @@ class SyncEngine:
 
     def _record(self, state: dict, rel: str, data: bytes) -> None:
         state["files"][rel] = {"hash": _sha256(data), "remote_mtime": None}
-        if rel.startswith("glossaries/"):
+        # Only the per-table CSVs merge row-by-row and need a base copy; the
+        # manifest syncs whole-file (mtime wins), so it takes no base.
+        if rel.startswith("glossaries/") and rel.endswith(".csv"):
             _write_local(self.root / BASE_DIR / rel, data)
 
     # -- task records -------------------------------------------------------

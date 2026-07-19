@@ -1,6 +1,6 @@
 from traduko.sync.merge import merge_glossary, parse_rows, render_rows
 
-HEADER = "source,target,notes,scope\r\n"
+HEADER = "source,target,notes,category\r\n"
 
 
 def csv_text(*rows: str) -> str:
@@ -10,10 +10,10 @@ def csv_text(*rows: str) -> str:
 def test_parse_and_render_round_trip_sorted() -> None:
     rows = parse_rows(csv_text("beta,B,,", "alpha,A,note,proj"))
     assert rows["alpha"] == {
-        "source": "alpha", "target": "A", "notes": "note", "scope": "proj"
+        "source": "alpha", "target": "A", "notes": "note", "category": "proj"
     }
     rendered = render_rows(rows)
-    assert rendered.splitlines()[0] == "source,target,notes,scope"
+    assert rendered.splitlines()[0] == "source,target,notes,category"
     assert rendered.index("alpha") < rendered.index("beta")
 
 
@@ -46,8 +46,8 @@ def test_diverging_edits_conflict_and_keep_local() -> None:
     assert conflicts == [
         {
             "source": "term",
-            "local": {"source": "term", "target": "mine", "notes": "", "scope": ""},
-            "remote": {"source": "term", "target": "theirs", "notes": "", "scope": ""},
+            "local": {"source": "term", "target": "mine", "notes": "", "category": ""},
+            "remote": {"source": "term", "target": "theirs", "notes": "", "category": ""},
         }
     ]
 

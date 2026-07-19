@@ -9,6 +9,7 @@ import typer
 from .eventlog import EventLogger
 from .events import Event
 from .executor import PipelineExecutor
+from .glossary import GlossaryStore
 from .models import TaskStatus
 from .notify import Notifier
 from .paths import ENV_DATA_ROOT
@@ -19,6 +20,8 @@ from .workspace import Workspace
 app = typer.Typer(no_args_is_help=True)
 task_app = typer.Typer(no_args_is_help=True)
 app.add_typer(task_app, name="task")
+glossary_app = typer.Typer(no_args_is_help=True)
+app.add_typer(glossary_app, name="glossary")
 
 
 @app.callback()
@@ -209,3 +212,104 @@ def sync(ctx: typer.Context) -> None:
     if not report.ok:
         typer.echo(f"sync failed: {report.error}")
         raise typer.Exit(code=1)
+
+
+def _glossary_store(ctx: typer.Context) -> GlossaryStore:
+    ws: Workspace = ctx.obj
+    return GlossaryStore(ws.root)
+
+
+@glossary_app.command("list")
+def glossary_list(
+    ctx: typer.Context,
+    domain: Optional[str] = typer.Option(None, "--domain", help="Filter by domain."),
+) -> None:
+    store = _glossary_store(ctx)
+    for meta in store.list_tables(domain):
+        count = len(store.read_entries(meta.id))
+        state = "enabled" if meta.enabled else "disabled"
+        typer.echo(f"{meta.id}  {meta.name}  ({meta.domain})  {state}  {count} entries")
+
+
+@glossary_app.command("show")
+def glossary_show(
+    ctx: typer.Context, table_id: str = typer.Argument(..., help="Glossary table id.")
+) -> None:
+    store = _glossary_store(ctx)
+    try:
+        entries = store.read_entries(table_id)
+    except KeyError:
+        typer.echo(f"glossary not found: {table_id}")
+        raise typer.Exit(code=1) from None
+    for entry in entries:
+        line = f"{entry.source} -> {entry.target}"
+        if entry.notes:
+            line += f" ({entry.notes})"
+        if entry.category:
+            line += f" #{entry.category}"
+        typer.echo(line)
+
+
+@glossary_app.command("import")
+def glossary_import(
+    ctx: typer.Context,
+    file: Path = typer.Argument(..., help="CSV or JSON glossary file."),
+    domain: str = typer.Option("general", "--domain", help="Table domain."),
+    name: Optional[str] = typer.Option(None, "--name", help="Table name."),
+) -> None:
+    if not file.exists():
+        raise typer.BadParameter(f"file not found: {file}")
+    fmt = "json" if file.suffix.lower() == ".json" else "csv"
+    store = _glossary_store(ctx)
+    try:
+        meta = store.import_table(
+            name or file.stem, domain, file.read_text(encoding="utf-8"), fmt
+        )
+    except ValueError as error:
+        typer.echo(f"import failed: {error}")
+        raise typer.Exit(code=1) from None
+    typer.echo(meta.id)
+
+
+@glossary_app.command("export")
+def glossary_export(
+    ctx: typer.Context,
+    table_id: str = typer.Argument(..., help="Glossary table id."),
+    format: str = typer.Option("csv", "--format", help="csv or json."),
+    out: Optional[Path] = typer.Option(None, "--out", help="Write to file instead of stdout."),
+) -> None:
+    store = _glossary_store(ctx)
+    try:
+        content = store.export_table(table_id, format)
+    except KeyError:
+        typer.echo(f"glossary not found: {table_id}")
+        raise typer.Exit(code=1) from None
+    if out is not None:
+        out.write_text(content, encoding="utf-8")
+        typer.echo(str(out))
+    else:
+        typer.echo(content)
+
+
+def _set_glossary_enabled(ctx: typer.Context, table_id: str, enabled: bool) -> None:
+    store = _glossary_store(ctx)
+    try:
+        store.set_enabled(table_id, enabled)
+    except KeyError:
+        typer.echo(f"glossary not found: {table_id}")
+        raise typer.Exit(code=1) from None
+    typer.echo(f"{table_id} {'enabled' if enabled else 'disabled'}")
+
+
+@glossary_app.command("enable")
+def glossary_enable(
+    ctx: typer.Context, table_id: str = typer.Argument(..., help="Glossary table id.")
+) -> None:
+    _set_glossary_enabled(ctx, table_id, True)
+
+
+@glossary_app.command("disable")
+def glossary_disable(
+    ctx: typer.Context, table_id: str = typer.Argument(..., help="Glossary table id.")
+) -> None:
+    _set_glossary_enabled(ctx, table_id, False)
