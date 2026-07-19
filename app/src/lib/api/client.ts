@@ -158,6 +158,19 @@ export class ApiClient {
     });
   }
 
+  // Reset a completed task to pending and queue it again. Shares the run
+  // endpoint's skip_preflight contract so the same skip/retry UI applies.
+  rerunTask(
+    project: string,
+    taskId: string,
+    opts?: { skipPreflight?: boolean },
+  ): Promise<{ queued: boolean }> {
+    return this.request(`/tasks/${project}/${taskId}/rerun`, {
+      method: "POST",
+      body: JSON.stringify({ skip_preflight: opts?.skipPreflight ?? false }),
+    });
+  }
+
   cancelTask(
     project: string,
     taskId: string,

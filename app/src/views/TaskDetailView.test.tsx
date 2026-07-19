@@ -1,4 +1,4 @@
-import { screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test, vi } from "vitest";
 import type { ApiClient } from "../lib/api/client";
@@ -70,6 +70,84 @@ test("run button queues the task", async () => {
   await userEvent.click(screen.getByText("執行"));
   await waitFor(() =>
     expect(runTask).toHaveBeenCalledWith("default", "t1", { skipPreflight: false }),
+  );
+});
+
+test("completed task main button reruns instead of running", async () => {
+  const completed = { ...task, status: "completed" as const };
+  const api: Partial<ApiClient> = { showTask: vi.fn().mockResolvedValue(completed) };
+  renderWithConnection(
+    <TaskDetailView project="default" taskId="t1" onBack={() => {}} onOpenEditor={() => {}} />,
+    { api },
+  );
+  const rerunBtn = await screen.findByRole("button", { name: "重新執行" });
+  expect(rerunBtn).toBeEnabled();
+  expect(screen.queryByRole("button", { name: "執行" })).not.toBeInTheDocument();
+});
+
+test("rerun confirmation dialog reruns the task on confirm", async () => {
+  const completed = { ...task, status: "completed" as const };
+  const rerunTask = vi.fn().mockResolvedValue({ queued: true });
+  const api: Partial<ApiClient> = {
+    showTask: vi.fn().mockResolvedValue(completed),
+    rerunTask,
+  };
+  renderWithConnection(
+    <TaskDetailView project="default" taskId="t1" onBack={() => {}} onOpenEditor={() => {}} />,
+    { api },
+  );
+  await userEvent.click(await screen.findByRole("button", { name: "重新執行" }));
+  const dialog = await screen.findByRole("dialog");
+  expect(within(dialog).getByText(/會被覆蓋/)).toBeInTheDocument();
+  await userEvent.click(within(dialog).getByRole("button", { name: "重新執行" }));
+  await waitFor(() =>
+    expect(rerunTask).toHaveBeenCalledWith("default", "t1", { skipPreflight: false }),
+  );
+});
+
+test("rerun confirmation dialog aborts on cancel", async () => {
+  const completed = { ...task, status: "completed" as const };
+  const rerunTask = vi.fn().mockResolvedValue({ queued: true });
+  const api: Partial<ApiClient> = {
+    showTask: vi.fn().mockResolvedValue(completed),
+    rerunTask,
+  };
+  renderWithConnection(
+    <TaskDetailView project="default" taskId="t1" onBack={() => {}} onOpenEditor={() => {}} />,
+    { api },
+  );
+  await userEvent.click(await screen.findByRole("button", { name: "重新執行" }));
+  const dialog = await screen.findByRole("dialog");
+  await userEvent.click(within(dialog).getByRole("button", { name: "取消" }));
+  await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  expect(rerunTask).not.toHaveBeenCalled();
+});
+
+test("rerun preflight failure skips through the rerun endpoint", async () => {
+  const completed = { ...task, status: "completed" as const };
+  const detail = {
+    error: "preflight failed",
+    checks: [{ name: "input", level: "fail", message: "input missing" }],
+  };
+  const rerunTask = vi
+    .fn()
+    .mockRejectedValueOnce(new ApiError(409, detail))
+    .mockResolvedValueOnce({ queued: true });
+  const api: Partial<ApiClient> = {
+    showTask: vi.fn().mockResolvedValue(completed),
+    rerunTask,
+  };
+  renderWithConnection(
+    <TaskDetailView project="default" taskId="t1" onBack={() => {}} onOpenEditor={() => {}} />,
+    { api },
+  );
+  await userEvent.click(await screen.findByRole("button", { name: "重新執行" }));
+  const dialog = await screen.findByRole("dialog");
+  await userEvent.click(within(dialog).getByRole("button", { name: "重新執行" }));
+  await waitFor(() => expect(screen.getByText("預檢未通過")).toBeInTheDocument());
+  await userEvent.click(screen.getByText("略過預檢並執行"));
+  await waitFor(() =>
+    expect(rerunTask).toHaveBeenLastCalledWith("default", "t1", { skipPreflight: true }),
   );
 });
 

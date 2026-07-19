@@ -59,6 +59,12 @@ export const ja: Record<MessageKey, string> = {
   "task.renameCancel": "キャンセル",
   "task.back": "タスク一覧へ戻る",
   "task.run": "実行",
+  "task.rerun": "再実行",
+  "task.rerunConfirm.title": "タスクを再実行",
+  "task.rerunConfirm.body":
+    "再実行するとすべてのステージが再度実行され、エディターで手動修正した訳文や字幕は上書きされます。",
+  "task.rerunConfirm.confirm": "再実行",
+  "task.rerunConfirm.cancel": "キャンセル",
   "task.cancel": "タスクをキャンセル",
   "task.pause": "一時停止",
   "task.stages": "ステージ",

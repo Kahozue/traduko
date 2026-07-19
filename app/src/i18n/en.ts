@@ -59,6 +59,12 @@ export const en: Record<MessageKey, string> = {
   "task.renameCancel": "Cancel",
   "task.back": "Back to tasks",
   "task.run": "Run",
+  "task.rerun": "Rerun",
+  "task.rerunConfirm.title": "Rerun task",
+  "task.rerunConfirm.body":
+    "Rerunning restarts every stage; edits you made to translations and subtitles in the editor will be overwritten.",
+  "task.rerunConfirm.confirm": "Rerun",
+  "task.rerunConfirm.cancel": "Cancel",
   "task.cancel": "Cancel task",
   "task.pause": "Pause",
   "task.stages": "Stages",

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { ConfirmDialog } from "../components/ConfirmDialog";
 import { Icon } from "../components/icons";
 import { ProgressBar } from "../components/ProgressBar";
 import { StatusBadge } from "../components/StatusBadge";
@@ -123,6 +124,31 @@ export function TaskDetailView({
     },
   });
 
+  // A completed task's main action reruns from scratch (reset every stage,
+  // then queue). It shares the run mutation's preflight/skip handling; the
+  // failedChecks section below routes retries here via `retry`.
+  const rerun = useMutation({
+    mutationFn: (skipPreflight: boolean) =>
+      api.rerunTask(project, taskId, { skipPreflight }),
+    onSuccess: () => {
+      setFailedChecks(null);
+      queryClient.invalidateQueries({ queryKey: ["task", project, taskId] });
+    },
+    onError: (error) => {
+      if (error instanceof ApiError && error.status === 409) {
+        const detail = error.detail as { checks?: PreflightCheck[] } | string;
+        if (typeof detail === "object" && detail?.checks) {
+          setFailedChecks(detail.checks);
+        }
+      }
+    },
+  });
+
+  // Preflight skip / download-then-run must hit /rerun for a completed task
+  // (COMPLETED is not in the backend's runnable set) and /run otherwise.
+  const retry = (skip: boolean) =>
+    (task?.status === "completed" ? rerun : run).mutate(skip);
+
   const cancel = useMutation({
     mutationFn: () => api.cancelTask(project, taskId),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["task", project, taskId] }),
@@ -133,6 +159,7 @@ export function TaskDetailView({
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["task", project, taskId] }),
   });
 
+  const [confirmingRerun, setConfirmingRerun] = useState(false);
   const [editingName, setEditingName] = useState(false);
   const [draftName, setDraftName] = useState("");
   const [showDetails, setShowDetails] = useState(false);
@@ -196,7 +223,7 @@ export function TaskDetailView({
       }
       setModelDownload(null);
       setFailedChecks(null);
-      run.mutate(false);
+      retry(false);
     } catch (error) {
       setModelDownload({ model, mb: 0, error: String(error) });
     }
@@ -378,14 +405,25 @@ export function TaskDetailView({
           )}
         </div>
         <div className={styles.actions}>
-          <button
-            type="button"
-            className={styles.primary}
-            disabled={!RUNNABLE.has(task.status) || run.isPending}
-            onClick={() => run.mutate(false)}
-          >
-            {t("task.run")}
-          </button>
+          {task.status === "completed" ? (
+            <button
+              type="button"
+              className={styles.primary}
+              disabled={rerun.isPending}
+              onClick={() => setConfirmingRerun(true)}
+            >
+              {t("task.rerun")}
+            </button>
+          ) : (
+            <button
+              type="button"
+              className={styles.primary}
+              disabled={!RUNNABLE.has(task.status) || run.isPending}
+              onClick={() => run.mutate(false)}
+            >
+              {t("task.run")}
+            </button>
+          )}
           <button
             type="button"
             className={styles.secondary}
@@ -760,7 +798,7 @@ export function TaskDetailView({
             <button
               type="button"
               className={missingModel ? styles.secondary : styles.primary}
-              onClick={() => run.mutate(true)}
+              onClick={() => retry(true)}
             >
               {t("preflight.skipRun")}
             </button>
@@ -846,6 +884,22 @@ export function TaskDetailView({
           </ul>
         )}
       </section>
+
+      {confirmingRerun && (
+        <ConfirmDialog
+          title={t("task.rerunConfirm.title")}
+          body={t("task.rerunConfirm.body")}
+          confirmLabel={t("task.rerunConfirm.confirm")}
+          cancelLabel={t("task.rerunConfirm.cancel")}
+          danger
+          busy={rerun.isPending}
+          onConfirm={() => {
+            setConfirmingRerun(false);
+            rerun.mutate(false);
+          }}
+          onCancel={() => setConfirmingRerun(false)}
+        />
+      )}
     </div>
   );
 }

@@ -55,6 +55,16 @@ test("run task sends skip_preflight body", async () => {
   expect(JSON.parse(init.body)).toEqual({ skip_preflight: true });
 });
 
+test("rerun task sends skip_preflight body", async () => {
+  const fetchFn = vi.fn().mockResolvedValue(jsonResponse(202, { queued: true }));
+  const client = new ApiClient("http://127.0.0.1:8686", "tok", fetchFn);
+  await client.rerunTask("default", "t1", { skipPreflight: true });
+  const [url, init] = fetchFn.mock.calls[0];
+  expect(url).toBe("http://127.0.0.1:8686/tasks/default/t1/rerun");
+  expect(init.method).toBe("POST");
+  expect(JSON.parse(init.body)).toEqual({ skip_preflight: true });
+});
+
 test("ws url embeds token as query param", () => {
   const client = new ApiClient("http://127.0.0.1:8686", "tok");
   expect(client.wsUrl()).toBe("ws://127.0.0.1:8686/ws/events?token=tok");

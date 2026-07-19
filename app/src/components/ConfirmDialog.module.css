@@ -1,0 +1,97 @@
+.overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--scrim);
+  animation: fade-in 150ms ease;
+}
+
+.dialog {
+  width: 420px;
+  padding: 24px;
+  border-radius: var(--radius-m);
+  background: var(--bg-surface-raised);
+  box-shadow: var(--shadow-2);
+  animation: rise 180ms ease;
+}
+
+.title {
+  margin: 0 0 12px;
+  font-size: var(--fs-hero);
+}
+
+.body {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--fs-body);
+  line-height: 1.6;
+}
+
+.primary,
+.danger,
+.secondary {
+  padding: 8px 16px;
+  border-radius: var(--radius-s);
+  font-size: var(--fs-note);
+  font-weight: 500;
+  cursor: pointer;
+  transition: background var(--transition);
+}
+
+.primary {
+  border: none;
+  background: var(--accent);
+  color: var(--text-on-dark);
+}
+
+.primary:hover:not(:disabled) {
+  background: var(--accent-strong);
+}
+
+.danger {
+  border: 1px solid var(--danger);
+  background: transparent;
+  color: var(--danger);
+}
+
+.danger:hover:not(:disabled) {
+  background: var(--danger-soft);
+}
+
+.secondary {
+  border: 1px solid var(--border);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+}
+
+.secondary:hover {
+  background: var(--bg-inset);
+}
+
+.primary:disabled,
+.danger:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 24px;
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
