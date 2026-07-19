@@ -74,6 +74,11 @@ def build_tree(
     async def resume(interaction: discord.Interaction, task_id: str) -> None:
         await reply(interaction, lambda: bot_commands.resume_command(api, task_id))
 
+    @tree.command(name="rerun", description="重新執行已完成的任務")
+    @app_commands.describe(task_id="任務 ID")
+    async def rerun(interaction: discord.Interaction, task_id: str) -> None:
+        await reply(interaction, lambda: bot_commands.rerun_command(api, task_id))
+
     @tree.command(name="cancel", description="取消任務")
     @app_commands.describe(task_id="任務 ID")
     async def cancel(interaction: discord.Interaction, task_id: str) -> None:

@@ -58,6 +58,23 @@ async def resume_command(api: CoreApi, task_id: str) -> str:
     return f"已將 {render.task_label(row)} 排入執行佇列。"
 
 
+async def rerun_command(api: CoreApi, task_id: str) -> str:
+    row = await api.find_task(task_id.strip())
+    if row is None:
+        return _not_found(task_id)
+    try:
+        await api.rerun_task(row["project"], row["id"])
+    except CoreApiError as error:
+        detail = error.detail
+        if isinstance(detail, dict) and "checks" in detail:
+            failures = "\n".join(
+                f"- {check['name']}：{check['message']}" for check in detail["checks"]
+            )
+            return f"預檢未通過：\n{failures}"
+        return f"無法執行：{detail}"
+    return f"已將 {render.task_label(row)} 排入重新執行佇列。"
+
+
 async def cancel_command(api: CoreApi, task_id: str) -> str:
     row = await api.find_task(task_id.strip())
     if row is None:

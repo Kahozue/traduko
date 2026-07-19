@@ -66,6 +66,11 @@ class CoreApi:
             await self._request("POST", f"/tasks/{project}/{task_id}/run", json={})
         ).json()
 
+    async def rerun_task(self, project: str, task_id: str) -> dict:
+        return (
+            await self._request("POST", f"/tasks/{project}/{task_id}/rerun", json={})
+        ).json()
+
     async def cancel_task(self, project: str, task_id: str) -> dict:
         return (await self._request("POST", f"/tasks/{project}/{task_id}/cancel")).json()
 

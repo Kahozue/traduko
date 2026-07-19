@@ -8,10 +8,10 @@ from traduko.config import DiscordBotConfig
 from traduko.service.app import create_app
 
 
-def test_command_tree_has_all_five_commands() -> None:
+def test_command_tree_has_all_commands() -> None:
     client = TradukoBot(DiscordBotConfig(allowed_user_ids=["1"]), api=object())
     names = {command.name for command in client.tree.get_commands()}
-    assert names == {"status", "pause", "resume", "cancel", "budget"}
+    assert names == {"status", "pause", "resume", "rerun", "cancel", "budget"}
 
 
 class FakeResponse:

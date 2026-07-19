@@ -3,7 +3,7 @@ from pathlib import Path
 
 from traduko.bot import commands
 from traduko.bot.api import CoreApi
-from traduko.models import StageRecord
+from traduko.models import StageRecord, StageStatus, TaskStatus
 from traduko.service.app import create_app
 
 
@@ -25,6 +25,15 @@ def make_task(app, tmp_path: Path, name: str | None = None, with_input: bool = T
         stages=[StageRecord(type="noop")],
         name=name,
     )
+
+
+def make_completed_task(app, tmp_path: Path, name: str | None = None):
+    record = make_task(app, tmp_path, name=name)
+    record.status = TaskStatus.COMPLETED
+    for stage in record.stages:
+        stage.status = StageStatus.COMPLETED
+    app.state.workspace.store.save(record)
+    return record
 
 
 def run(coro):
@@ -65,6 +74,24 @@ def test_resume_queues_task_and_reports_preflight_failures(tmp_path: Path) -> No
         (tmp_path / "in.srt").unlink()
         reply = await commands.resume_command(api, broken.id)
         assert "預檢未通過" in reply
+        await api.aclose()
+
+    run(scenario())
+
+
+def test_rerun_queues_completed_and_reports_bad_states(tmp_path: Path) -> None:
+    app, api = make_api(tmp_path)
+
+    async def scenario() -> None:
+        assert "找不到任務" in await commands.rerun_command(api, "nope")
+
+        pending = make_task(app, tmp_path)
+        reply = await commands.rerun_command(api, pending.id)
+        assert "無法執行" in reply
+
+        done = make_completed_task(app, tmp_path)
+        reply = await commands.rerun_command(api, done.id)
+        assert "排入重新執行佇列" in reply
         await api.aclose()
 
     run(scenario())
