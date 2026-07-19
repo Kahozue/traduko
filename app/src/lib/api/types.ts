@@ -292,6 +292,36 @@ export interface SkillInfo {
   errors: string[];
 }
 
+// Glossary: one named CSV table per file plus a manifest (v3_5-02). The
+// settings panels manage them as files, outside the config draft.
+export type GlossaryDomain = "video" | "audio" | "document" | "comic" | "general";
+
+export interface GlossaryTableMeta {
+  id: string;
+  name: string;
+  domain: GlossaryDomain;
+  enabled: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+// Row of GET /glossaries: table metadata plus the entry count.
+export interface GlossaryTable extends GlossaryTableMeta {
+  entry_count: number;
+}
+
+export interface GlossaryEntry {
+  source: string;
+  target: string;
+  notes: string;
+  category: string;
+}
+
+// GET /glossaries/{id}: metadata plus the full entry list.
+export interface GlossaryDetail extends GlossaryTableMeta {
+  entries: GlossaryEntry[];
+}
+
 export interface McpCandidate {
   name: string;
   available: boolean;

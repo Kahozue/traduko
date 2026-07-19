@@ -286,3 +286,81 @@ test("proposal endpoints build urls and filter by status", async () => {
   expect(rejectUrl).toBe("http://127.0.0.1:8686/proposals/prop-1/reject");
   expect(rejectInit.method).toBe("POST");
 });
+
+test("list glossaries passes domain as query param", async () => {
+  const fetchFn = vi.fn().mockResolvedValue(jsonResponse(200, []));
+  const client = new ApiClient("http://x", "tok", fetchFn);
+  await client.listGlossaries("video");
+  expect(fetchFn.mock.calls[0][0]).toBe("http://x/glossaries?domain=video");
+  await client.listGlossaries();
+  expect(fetchFn.mock.calls[1][0]).toBe("http://x/glossaries");
+});
+
+test("create glossary posts name and domain", async () => {
+  const fetchFn = vi.fn().mockResolvedValue(jsonResponse(201, { id: "anime-terms" }));
+  const client = new ApiClient("http://x", "tok", fetchFn);
+  await client.createGlossary("Anime Terms", "video");
+  const [url, init] = fetchFn.mock.calls[0];
+  expect(url).toBe("http://x/glossaries");
+  expect(init.method).toBe("POST");
+  expect(JSON.parse(init.body)).toEqual({ name: "Anime Terms", domain: "video" });
+});
+
+test("import glossary posts content and format", async () => {
+  const fetchFn = vi.fn().mockResolvedValue(jsonResponse(201, { id: "imp", entry_count: 2 }));
+  const client = new ApiClient("http://x", "tok", fetchFn);
+  await client.importGlossary("Imp", "general", "csv-content", "csv");
+  const [url, init] = fetchFn.mock.calls[0];
+  expect(url).toBe("http://x/glossaries/import");
+  expect(init.method).toBe("POST");
+  expect(JSON.parse(init.body)).toEqual({
+    name: "Imp",
+    domain: "general",
+    content: "csv-content",
+    format: "csv",
+  });
+});
+
+test("get glossary hits the id route", async () => {
+  const fetchFn = vi.fn().mockResolvedValue(jsonResponse(200, { id: "anime", entries: [] }));
+  const client = new ApiClient("http://x", "tok", fetchFn);
+  await client.getGlossary("anime");
+  expect(fetchFn.mock.calls[0][0]).toBe("http://x/glossaries/anime");
+});
+
+test("patch glossary sends only given fields", async () => {
+  const fetchFn = vi.fn().mockResolvedValue(jsonResponse(200, { id: "anime" }));
+  const client = new ApiClient("http://x", "tok", fetchFn);
+  await client.patchGlossary("anime", { enabled: false });
+  const [url, init] = fetchFn.mock.calls[0];
+  expect(url).toBe("http://x/glossaries/anime");
+  expect(init.method).toBe("PATCH");
+  expect(JSON.parse(init.body)).toEqual({ enabled: false });
+});
+
+test("delete glossary hits the id route", async () => {
+  const fetchFn = vi.fn().mockResolvedValue(jsonResponse(200, { deleted: true }));
+  const client = new ApiClient("http://x", "tok", fetchFn);
+  await client.deleteGlossary("anime");
+  const [url, init] = fetchFn.mock.calls[0];
+  expect(url).toBe("http://x/glossaries/anime");
+  expect(init.method).toBe("DELETE");
+});
+
+test("put glossary entries sends the entries body", async () => {
+  const fetchFn = vi.fn().mockResolvedValue(jsonResponse(200, { saved: true, count: 1 }));
+  const client = new ApiClient("http://x", "tok", fetchFn);
+  const entries = [{ source: "Kirito", target: "桐人", notes: "", category: "人名" }];
+  await client.putGlossaryEntries("anime", entries);
+  const [url, init] = fetchFn.mock.calls[0];
+  expect(url).toBe("http://x/glossaries/anime/entries");
+  expect(init.method).toBe("PUT");
+  expect(JSON.parse(init.body)).toEqual({ entries });
+});
+
+test("export glossary passes the format", async () => {
+  const fetchFn = vi.fn().mockResolvedValue(jsonResponse(200, "source,target"));
+  const client = new ApiClient("http://x", "tok", fetchFn);
+  await client.exportGlossary("anime", "json");
+  expect(fetchFn.mock.calls[0][0]).toBe("http://x/glossaries/anime/export?format=json");
+});

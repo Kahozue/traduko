@@ -70,6 +70,7 @@ function setup(
     }),
     getMcpStatus: vi.fn().mockResolvedValue([]),
     listSkills: vi.fn().mockResolvedValue([]),
+    listGlossaries: vi.fn().mockResolvedValue([]),
     getSkill: vi.fn().mockResolvedValue({ name: "x", content: "content" }),
     reloadMcp,
     saveConfig,

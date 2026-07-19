@@ -9,6 +9,7 @@ import { AppearanceSection } from "../components/settings/AppearanceSection";
 import { BasicsSection } from "../components/settings/BasicsSection";
 import { AsrSection } from "../components/settings/AsrSection";
 import { DubbingSection } from "../components/settings/DubbingSection";
+import { GlossarySection } from "../components/settings/GlossarySection";
 import { PdfEngineSection } from "../components/settings/PdfEngineSection";
 import { ProvidersSection } from "../components/settings/ProvidersSection";
 import { ChannelsSection } from "../components/settings/ChannelsSection";
@@ -126,6 +127,7 @@ export function SettingsView({
   initialTab,
   onTabChange,
   onEditSkill,
+  onEditGlossary,
 }: {
   // Where to land when the view opens; the skill editor's back path uses
   // this to return to the agent tab.
@@ -134,6 +136,7 @@ export function SettingsView({
   // a locale switch remounts this view and lands back on the same tab.
   onTabChange?: (tab: SettingsTab) => void;
   onEditSkill?: (name: string) => void;
+  onEditGlossary?: (id: string) => void;
 } = {}) {
   const api = useApi();
   const conn = useConnection();
@@ -344,6 +347,7 @@ export function SettingsView({
               }
               onTest={(config) => api.testProvider(config, String(config.model ?? "") || undefined)}
             />
+            <GlossarySection domain="general" onEditGlossary={onEditGlossary} />
           </>
         )}
       </div>
@@ -369,6 +373,7 @@ export function SettingsView({
                 setDraft((prev) => (prev ? { ...prev, dubbing: value } : prev))
               }
             />
+            <GlossarySection domain="video" onEditGlossary={onEditGlossary} />
           </>
         )}
       </div>
@@ -398,6 +403,7 @@ export function SettingsView({
                 setDraft((prev) => (prev ? { ...prev, dubbing: value } : prev))
               }
             />
+            <GlossarySection domain="audio" onEditGlossary={onEditGlossary} />
           </>
         )}
       </div>
@@ -410,12 +416,15 @@ export function SettingsView({
         className={styles.panel}
       >
         {draft && (
-          <PdfEngineSection
-            pdf={draft.pdf}
-            onChange={(value) =>
-              setDraft((prev) => (prev ? { ...prev, pdf: value } : prev))
-            }
-          />
+          <>
+            <PdfEngineSection
+              pdf={draft.pdf}
+              onChange={(value) =>
+                setDraft((prev) => (prev ? { ...prev, pdf: value } : prev))
+              }
+            />
+            <GlossarySection domain="document" onEditGlossary={onEditGlossary} />
+          </>
         )}
       </div>
 

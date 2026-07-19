@@ -14,6 +14,11 @@ import type {
   BudgetInfo,
   ChannelConfigDoc,
   CoreConfigDoc,
+  GlossaryDetail,
+  GlossaryDomain,
+  GlossaryEntry,
+  GlossaryTable,
+  GlossaryTableMeta,
   McpCandidate,
   McpServerStatus,
   NotifyTestResult,
@@ -355,6 +360,64 @@ export class ApiClient {
 
   deleteSkill(name: string): Promise<{ deleted: boolean }> {
     return this.request(`/skills/${encodeURIComponent(name)}`, { method: "DELETE" });
+  }
+
+  listGlossaries(domain?: GlossaryDomain): Promise<GlossaryTable[]> {
+    const query = domain ? `?domain=${encodeURIComponent(domain)}` : "";
+    return this.request(`/glossaries${query}`);
+  }
+
+  createGlossary(name: string, domain: GlossaryDomain): Promise<GlossaryTableMeta> {
+    return this.request("/glossaries", {
+      method: "POST",
+      body: JSON.stringify({ name, domain }),
+    });
+  }
+
+  importGlossary(
+    name: string,
+    domain: GlossaryDomain,
+    content: string,
+    format: "csv" | "json",
+  ): Promise<GlossaryTable> {
+    return this.request("/glossaries/import", {
+      method: "POST",
+      body: JSON.stringify({ name, domain, content, format }),
+    });
+  }
+
+  getGlossary(id: string): Promise<GlossaryDetail> {
+    return this.request(`/glossaries/${encodeURIComponent(id)}`);
+  }
+
+  patchGlossary(
+    id: string,
+    patch: { name?: string; enabled?: boolean },
+  ): Promise<GlossaryTableMeta> {
+    return this.request(`/glossaries/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      body: JSON.stringify(patch),
+    });
+  }
+
+  deleteGlossary(id: string): Promise<{ deleted: boolean }> {
+    return this.request(`/glossaries/${encodeURIComponent(id)}`, { method: "DELETE" });
+  }
+
+  putGlossaryEntries(
+    id: string,
+    entries: GlossaryEntry[],
+  ): Promise<{ saved: boolean; count: number }> {
+    return this.request(`/glossaries/${encodeURIComponent(id)}/entries`, {
+      method: "PUT",
+      body: JSON.stringify({ entries }),
+    });
+  }
+
+  exportGlossary(id: string, format: "csv" | "json"): Promise<string> {
+    return this.request(
+      `/glossaries/${encodeURIComponent(id)}/export?format=${encodeURIComponent(format)}`,
+    );
   }
 
   listProposals(status?: string): Promise<ProposalDoc[]> {

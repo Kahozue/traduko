@@ -830,6 +830,25 @@ select.input {
   font-weight: 500;
 }
 
+/* Glossary table name doubles as the drill-down into the editor. */
+.glossaryName {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: var(--fs-body);
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+}
+
+.glossaryName:hover {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
 .skillDesc {
   margin: 3px 0 0;
   color: var(--text-secondary);
