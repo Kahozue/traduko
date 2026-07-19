@@ -37,6 +37,24 @@
   box-shadow: var(--shadow-1);
 }
 
+/* Spend analysis (per-model charts) */
+.analysisSection {
+  margin-top: 28px;
+}
+
+.analysisHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.analysisHead .spendTitle {
+  margin: 0;
+}
+
 /* Per-task lifetime spend */
 .spendSection {
   margin-top: 28px;

@@ -133,20 +133,39 @@ async def ws_events(websocket: WebSocket) -> None:
         broadcaster.unregister(client_id)
 
 
+def _parse_iso(value: str | None) -> datetime | None:
+    """Parse an ISO instant; naive values are read as UTC. None on failure."""
+    if not value:
+        return None
+    try:
+        dt = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+
+
 @router.get("/budget")
 def get_budget(request: Request) -> dict:
     ws: Workspace = request.app.state.workspace
     meter = BudgetMeter(ws.root, ws.bus, ws.config)
-    # Lifetime per-task and per-model spend across all ledgers, with task
-    # names joined from the index; tasks whose records are gone still show up
-    # under their raw id.
+    # Optional [from, to) window over the ledger timestamps; absent bounds mean
+    # all-time. Callers send ISO instants (the GUI resolves day/month/custom
+    # presets in the user's local zone), so this endpoint stays a dumb filter.
+    start = _parse_iso(request.query_params.get("from"))
+    end = _parse_iso(request.query_params.get("to"))
+    # Per-task and per-model spend within the window, with task names joined
+    # from the index; tasks whose records are gone still show up under their id.
     spent: dict[str, dict] = {}
-    by_model: dict[str, float] = {}
+    by_model: dict[str, dict] = {}
     for path in sorted((ws.root / "budget").glob("ledger-*.jsonl")):
         for line in path.read_text(encoding="utf-8").splitlines():
             if not line.strip():
                 continue
             row = json.loads(line)
+            if start or end:
+                when = _parse_iso(row.get("ts"))
+                if when is None or (start and when < start) or (end and when >= end):
+                    continue
             cost = float(row.get("cost_usd", 0.0))
             task_id = row.get("task_id", "")
             entry = spent.setdefault(
@@ -155,14 +174,19 @@ def get_budget(request: Request) -> dict:
             )
             entry["usd"] += cost
             model = row.get("model") or "unknown"
-            by_model[model] = by_model.get(model, 0.0) + cost
+            agg = by_model.setdefault(model, {"usd": 0.0, "calls": 0})
+            agg["usd"] += cost
+            agg["calls"] += 1
     names = {row["id"]: row.get("name") for row in ws.index.list()}
     tasks = [
         {**entry, "name": names.get(entry["task_id"]), "usd": round(entry["usd"], 6)}
         for entry in spent.values()
     ]
     tasks.sort(key=lambda entry: entry["usd"], reverse=True)
-    models = [{"model": model, "usd": round(usd, 6)} for model, usd in by_model.items()]
+    models = [
+        {"model": model, "usd": round(agg["usd"], 6), "calls": agg["calls"]}
+        for model, agg in by_model.items()
+    ]
     models.sort(key=lambda entry: entry["usd"], reverse=True)
     return {
         "month_usd": meter.month_usage_usd(),

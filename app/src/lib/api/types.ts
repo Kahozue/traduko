@@ -70,6 +70,9 @@ export interface BudgetTaskSpend {
 export interface BudgetModelSpend {
   model: string;
   usd: number;
+  // Number of ledger rows (LLM calls / transcriptions) behind this spend.
+  // Optional: an older core may not send it.
+  calls?: number;
 }
 
 export interface BudgetInfo {

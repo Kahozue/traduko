@@ -85,8 +85,12 @@ export class ApiClient {
     return this.request("/health");
   }
 
-  budget(): Promise<BudgetInfo> {
-    return this.request("/budget");
+  budget(range?: { from?: string; to?: string }): Promise<BudgetInfo> {
+    const params = new URLSearchParams();
+    if (range?.from) params.set("from", range.from);
+    if (range?.to) params.set("to", range.to);
+    const query = params.toString();
+    return this.request(query ? `/budget?${query}` : "/budget");
   }
 
   getConfig(): Promise<CoreConfigDoc> {

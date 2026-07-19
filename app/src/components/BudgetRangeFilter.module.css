@@ -1,0 +1,61 @@
+.filter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.segmented {
+  display: inline-flex;
+  padding: 3px;
+  border-radius: var(--radius-s);
+  background: var(--bg-inset);
+}
+
+.segment {
+  padding: 5px 12px;
+  border: none;
+  border-radius: var(--radius-s);
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: var(--fs-note);
+  cursor: pointer;
+  transition: color var(--transition);
+}
+
+.segment:hover {
+  color: var(--text-primary);
+}
+
+.segment[data-active="true"] {
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font-weight: 500;
+  box-shadow: var(--shadow-1);
+}
+
+.dates {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.date {
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-s);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: var(--fs-note);
+}
+
+.date:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.dateSep {
+  color: var(--text-secondary);
+}

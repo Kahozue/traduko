@@ -1,5 +1,6 @@
-import type { CSSProperties } from "react";
+import { type CSSProperties, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { BudgetRangeFilter, type RangeMode } from "../components/BudgetRangeFilter";
 import { ModelSpendCharts } from "../components/ModelSpendCharts";
 import { ProgressBar } from "../components/ProgressBar";
 import { t } from "../i18n";
@@ -10,9 +11,43 @@ function usd(value: number): string {
   return `$${value.toFixed(2)}`;
 }
 
+// Resolve the filter into a [from, to) ISO window in the user's local zone;
+// an all-time selection sends no bounds. `to` for a custom range is the start
+// of the day after the picked end date so that whole day is included.
+function resolveRange(mode: RangeMode, from: string, to: string): { from?: string; to?: string } {
+  if (mode === "today") {
+    const start = new Date();
+    start.setHours(0, 0, 0, 0);
+    return { from: start.toISOString() };
+  }
+  if (mode === "month") {
+    const now = new Date();
+    return { from: new Date(now.getFullYear(), now.getMonth(), 1).toISOString() };
+  }
+  if (mode === "custom") {
+    const range: { from?: string; to?: string } = {};
+    if (from) range.from = new Date(`${from}T00:00:00`).toISOString();
+    if (to) {
+      const end = new Date(`${to}T00:00:00`);
+      end.setDate(end.getDate() + 1);
+      range.to = end.toISOString();
+    }
+    return range;
+  }
+  return {};
+}
+
 export function BudgetView() {
   const api = useApi();
-  const { data: budget } = useQuery({ queryKey: ["budget"], queryFn: () => api.budget() });
+  const [mode, setMode] = useState<RangeMode>("all");
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
+
+  const range = useMemo(() => resolveRange(mode, from, to), [mode, from, to]);
+  const { data: budget } = useQuery({
+    queryKey: ["budget", range.from ?? null, range.to ?? null],
+    queryFn: () => api.budget(range),
+  });
   if (!budget) return null;
 
   const nearLimit =
@@ -61,7 +96,20 @@ export function BudgetView() {
         </div>
       )}
 
-      <ModelSpendCharts models={budget.models ?? []} />
+      <section className={styles.analysisSection}>
+        <div className={styles.analysisHead}>
+          <h2 className={styles.spendTitle}>{t("budget.analysis")}</h2>
+          <BudgetRangeFilter
+            mode={mode}
+            onMode={setMode}
+            from={from}
+            to={to}
+            onFrom={setFrom}
+            onTo={setTo}
+          />
+        </div>
+        <ModelSpendCharts models={budget.models ?? []} />
+      </section>
 
       <section className={styles.spendSection}>
         <h2 className={styles.spendTitle}>{t("budget.taskSpend")}</h2>

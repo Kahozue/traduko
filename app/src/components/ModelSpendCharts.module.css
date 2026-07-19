@@ -1,114 +1,105 @@
+.wrap {
+  position: relative;
+}
+
+.empty {
+  margin: 0;
+  padding: 32px 16px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-m);
+  background: var(--bg-subtle);
+  color: var(--text-secondary);
+  font-size: var(--fs-note);
+  text-align: center;
+}
+
 .grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  grid-template-columns: minmax(260px, 340px) 1fr;
   gap: 16px;
-  margin-top: 16px;
+}
+
+@media (max-width: 720px) {
+  .grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 .card {
-  padding: 20px;
+  padding: 24px;
   border-radius: var(--radius-m);
   background: var(--bg-surface);
   box-shadow: var(--shadow-1);
 }
 
 .cardTitle {
-  margin: 0 0 16px;
+  margin: 0 0 20px;
   color: var(--text-secondary);
   font-size: var(--fs-note);
   font-weight: 500;
 }
 
-/* Donut + legend */
-.donutRow {
-  display: flex;
-  align-items: center;
-  gap: 20px;
-}
-
+/* Donut */
 .donutWrap {
   position: relative;
-  flex: 0 0 auto;
-  width: 128px;
-  height: 128px;
+  width: 220px;
+  max-width: 100%;
+  margin: 0 auto;
+  aspect-ratio: 1 / 1;
 }
 
 .donut {
-  width: 128px;
-  height: 128px;
+  width: 100%;
+  height: 100%;
 }
 
 .arc {
   fill: none;
-  stroke-width: 5;
-  transition: stroke-dasharray var(--transition);
+  cursor: pointer;
+  transition:
+    stroke-width var(--transition),
+    opacity var(--transition);
 }
 
 .donutCenter {
   position: absolute;
-  inset: 0;
+  inset: 24%;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 2px;
+  text-align: center;
   pointer-events: none;
 }
 
-.donutTotalLabel {
+.centerLabel {
+  max-width: 100%;
+  overflow: hidden;
   color: var(--text-secondary);
   font-size: var(--fs-note);
-}
-
-.donutTotal {
-  color: var(--text-primary);
-  font-size: var(--fs-section);
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-}
-
-.legend {
-  flex: 1 1 auto;
-  min-width: 0;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.legendRow {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 4px 0;
-  font-size: var(--fs-note);
-}
-
-.swatch {
-  flex: 0 0 auto;
-  width: 10px;
-  height: 10px;
-  border-radius: var(--radius-s);
-}
-
-.legendName {
-  flex: 1 1 auto;
-  overflow: hidden;
-  color: var(--text-primary);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.legendPct {
-  flex: 0 0 auto;
-  color: var(--text-secondary);
+.centerValue {
+  color: var(--text-primary);
+  font-size: var(--fs-hero);
+  font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
 
-/* Ranking bars */
+.centerSub {
+  color: var(--text-secondary);
+  font-size: var(--fs-note);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Ranking bars — double as the donut's legend (swatch colours match arcs) */
 .bars {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 6px;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -116,10 +107,30 @@
 
 .barRow {
   display: grid;
-  grid-template-columns: minmax(72px, 30%) 1fr auto;
+  grid-template-columns: 12px minmax(64px, 26%) 1fr auto auto;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
+  padding: 7px 8px;
+  border-radius: var(--radius-s);
   font-size: var(--fs-note);
+  cursor: pointer;
+  transition:
+    background var(--transition),
+    opacity var(--transition);
+}
+
+.barRow[data-active="true"] {
+  background: var(--bg-subtle);
+}
+
+.barRow[data-dim="true"] {
+  opacity: 0.5;
+}
+
+.swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: var(--radius-s);
 }
 
 .barName {
@@ -130,7 +141,7 @@
 }
 
 .barTrack {
-  height: 8px;
+  height: 10px;
   border-radius: var(--radius-full);
   background: var(--bg-inset);
 }
@@ -143,6 +154,72 @@
 }
 
 .barValue {
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.barPct {
+  min-width: 40px;
   color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+/* Hover tooltip — clamped inside .wrap so it never runs past the section */
+.tooltip {
+  position: absolute;
+  z-index: 5;
+  min-width: 150px;
+  max-width: 240px;
+  padding: 10px 12px;
+  border-radius: var(--radius-m);
+  background: var(--bg-surface-raised);
+  box-shadow: var(--shadow-2);
+  pointer-events: none;
+}
+
+.tipHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.tipDot {
+  flex: 0 0 auto;
+  width: 10px;
+  height: 10px;
+  border-radius: var(--radius-s);
+}
+
+.tipName {
+  overflow-wrap: anywhere;
+  color: var(--text-primary);
+  font-size: var(--fs-note);
+  font-weight: 700;
+}
+
+.tipRows {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+}
+
+.tipRow {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  font-size: var(--fs-note);
+}
+
+.tipRow dt {
+  color: var(--text-secondary);
+}
+
+.tipRow dd {
+  margin: 0;
+  color: var(--text-primary);
   font-variant-numeric: tabular-nums;
 }

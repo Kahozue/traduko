@@ -93,11 +93,36 @@ def test_budget_endpoint_aggregates_spend_by_model(tmp_path: Path) -> None:
 
     with service(tmp_path) as (client, headers, token):
         models = client.get("/budget", headers=headers).json()["models"]
-        # Aggregated per model and ranked by spend descending.
+        # Aggregated per model with a call count, ranked by spend descending.
         assert models == [
-            {"model": "gpt-4o", "usd": 0.05},
-            {"model": "whisper-1", "usd": 0.006},
+            {"model": "gpt-4o", "usd": 0.05, "calls": 2},
+            {"model": "whisper-1", "usd": 0.006, "calls": 1},
         ]
+
+
+def test_budget_endpoint_filters_by_time_range(tmp_path: Path) -> None:
+    ledger_dir = tmp_path / "budget"
+    ledger_dir.mkdir(parents=True, exist_ok=True)
+    rows = [
+        {"ts": "2026-05-10T09:00:00+00:00", "task_id": "t-1", "project": "p",
+         "kind": "chat", "model": "gpt-4o", "cost_usd": 0.02},
+        {"ts": "2026-06-15T09:00:00+00:00", "task_id": "t-2", "project": "p",
+         "kind": "chat", "model": "claude", "cost_usd": 0.05},
+    ]
+    with (ledger_dir / "ledger-2026-06.jsonl").open("w", encoding="utf-8") as f:
+        for row in rows:
+            f.write(json.dumps(row) + "\n")
+
+    with service(tmp_path) as (client, headers, token):
+        # A window that only covers June excludes the May row from both breakdowns.
+        params = {"from": "2026-06-01T00:00:00+00:00", "to": "2026-07-01T00:00:00+00:00"}
+        body = client.get("/budget", headers=headers, params=params).json()
+        assert body["models"] == [{"model": "claude", "usd": 0.05, "calls": 1}]
+        assert [entry["task_id"] for entry in body["tasks"]] == ["t-2"]
+
+        # No bounds -> all-time, both rows counted.
+        allrows = client.get("/budget", headers=headers).json()
+        assert {m["model"] for m in allrows["models"]} == {"gpt-4o", "claude"}
 
 
 def test_cors_allows_browser_based_clients(tmp_path: Path) -> None:

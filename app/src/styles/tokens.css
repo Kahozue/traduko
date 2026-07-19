@@ -55,6 +55,7 @@
   --chart-3: #e87ba4;
   --chart-4: #eda100;
   --chart-5: #1baf7a;
+  --chart-6: #eb6834;
   --chart-other: #b4b8b0;
 
   /* Editing-venue canvas: strictly neutral (zero chroma) in both themes so
@@ -106,6 +107,7 @@
   --chart-3: #d55181;
   --chart-4: #c98500;
   --chart-5: #199e70;
+  --chart-6: #d95926;
   --chart-other: #565b54;
 
   --scrim: rgba(0, 0, 0, 0.6);
