@@ -5,6 +5,7 @@ from . import agent as _agent  # noqa: F401  (registers agent stages)
 from . import doc as _doc  # noqa: F401  (registers document stages)
 from . import glossary_proofread as _glossary_proofread  # noqa: F401
 from . import dub as _dub  # noqa: F401  (registers dubbing stages)
+from . import export as _export  # noqa: F401  (registers export-studio stages)
 from . import pdf as _pdf  # noqa: F401  (registers pdf stages)
 from . import base, registry
 

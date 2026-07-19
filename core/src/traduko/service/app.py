@@ -22,12 +22,14 @@ from contextlib import asynccontextmanager, suppress
 from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Annotated
 
 from fastapi import (
     APIRouter,
     Depends,
     FastAPI,
     HTTPException,
+    Query,
     Request,
     WebSocket,
     WebSocketDisconnect,
@@ -61,6 +63,8 @@ from ..dubbing.engines import TTS_ENGINES, resolve_tts_engine
 from ..dubbing.setup import DubbingManager
 from ..eventlog import EventLogger
 from ..executor import reset_stages_after_artifact
+from ..stages.base import StageError
+from ..stages.export import audio_params_from, video_params_from
 from ..glossary import (
     GlossaryEntry,
     GlossaryStore,
@@ -69,7 +73,13 @@ from ..glossary import (
 )
 from ..glossary.store import _render_csv, _parse_csv
 from ..events import Event
-from ..media import MediaError, ffmpeg_available
+from ..media import (
+    MediaError,
+    check_disk_space,
+    estimate_export,
+    ffmpeg_available,
+    probe_media,
+)
 from ..pdfengine.setup import PdfManager
 from .. import mcphub
 from ..mcphub import MCPManager
@@ -772,6 +782,119 @@ def dub_redub(
         record.status = TaskStatus.PENDING
     ws.store.save(record)
     return _enqueue_or_409(request, record)
+
+
+class ExportRequest(BaseModel):
+    kind: str = "video"
+    params: dict = Field(default_factory=dict)
+
+
+def _export_stage_params(kind: str, params: dict):
+    """Validate the panel snapshot up front so a bad value is a 422 here
+    rather than a failed stage minutes into the queue."""
+    try:
+        if kind == "video":
+            video_params_from(params)
+        elif kind == "audio":
+            audio_params_from(params)
+        else:
+            raise HTTPException(
+                status_code=422, detail=f"unknown export kind: {kind}"
+            )
+    except StageError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+
+
+@router.post("/tasks/{project}/{task_id}/exports", status_code=202)
+def create_export(
+    request: Request, project: str, task_id: str, body: ExportRequest
+) -> dict:
+    ws: Workspace = request.app.state.workspace
+    record = _load_task(ws, project, task_id)
+    _export_stage_params(body.kind, body.params)
+    if not record.input_path or not Path(record.input_path).exists():
+        raise HTTPException(
+            status_code=422,
+            detail=f"task input file is missing: {record.input_path}",
+        )
+    worker: TaskWorker = request.app.state.worker
+    if worker.is_active(project, task_id):
+        raise HTTPException(status_code=409, detail="task is queued or running")
+    stage_type = "export_video" if body.kind == "video" else "export_audio_custom"
+    # A fresh stage instance per export: the params snapshot and the
+    # numbered output keep earlier exports intact.
+    record.stages.append(
+        StageRecord(type=stage_type, status=StageStatus.PENDING, params=body.params)
+    )
+    if record.status == TaskStatus.COMPLETED:
+        record.status = TaskStatus.PENDING
+    ws.store.save(record)
+    return {
+        **_enqueue_or_409(request, record),
+        "stage_index": len(record.stages) - 1,
+        "stage_type": stage_type,
+    }
+
+
+class ExportEstimateQuery(BaseModel):
+    kind: str = "video"
+    # Video panel.
+    width: int | None = None
+    height: int | None = None
+    crf: int = 20
+    audio_track: str = "original"
+    subtitles: str = "none"
+    video_codec: str = "libx264"
+    video_bitrate_kbps: int | None = None
+    fps: int | None = None
+    audio_codec: str = "aac"
+    audio_bitrate_kbps: int = 192
+    # Audio panel.
+    format: str = "m4a"
+    source: str = "dub"
+    bitrate_kbps: int = 192
+    sample_rate: int | None = None
+    channels: int | None = None
+
+
+@router.get("/tasks/{project}/{task_id}/exports/estimate")
+def estimate_task_export(
+    request: Request,
+    project: str,
+    task_id: str,
+    query: Annotated[ExportEstimateQuery, Query()],
+) -> dict:
+    ws: Workspace = request.app.state.workspace
+    record = _load_task(ws, project, task_id)
+    if not record.input_path or not Path(record.input_path).exists():
+        raise HTTPException(
+            status_code=422,
+            detail=f"task input file is missing: {record.input_path}",
+        )
+    fields = query.model_dump()
+    _export_stage_params(query.kind, fields)
+    params = (
+        video_params_from(fields)
+        if query.kind == "video"
+        else audio_params_from(fields)
+    )
+    try:
+        probe = probe_media(Path(record.input_path))
+    except MediaError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    estimate = estimate_export(probe, params)
+    artifacts_dir = ws.store.task_dir(project, task_id) / "artifacts"
+    disk_ok, disk_available = check_disk_space(
+        artifacts_dir, estimate["size_bytes"]
+    )
+    return {
+        **estimate,
+        "disk_ok": disk_ok,
+        "disk_available": disk_available,
+        "duration": probe["duration"],
+        "width": probe["width"],
+        "height": probe["height"],
+    }
 
 
 @router.delete("/tasks/{project}/{task_id}")

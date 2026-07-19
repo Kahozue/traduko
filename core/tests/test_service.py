@@ -2835,3 +2835,210 @@ def test_redub_without_dub_group_422(tmp_path: Path) -> None:
             headers=headers,
         )
         assert resp.status_code == 422
+
+
+# --- Export studio -------------------------------------------------------
+
+
+def _export_task(client, headers, tmp_path: Path) -> str:
+    create_profile(tmp_path, "with-export", ["ingest_subtitle", "translate"])
+    resp = client.post(
+        "/tasks",
+        json={"input_path": str(make_input(tmp_path)), "profile": "with-export"},
+        headers=headers,
+    )
+    assert resp.status_code == 201, resp.text
+    return resp.json()["id"]
+
+
+def test_post_export_appends_stage_and_enqueues(tmp_path: Path) -> None:
+    with service(tmp_path) as (client, headers, token):
+        task_id = _export_task(client, headers, tmp_path)
+        client.app.state.worker.enqueue = lambda project, task_id: True
+        resp = client.post(
+            f"/tasks/default/{task_id}/exports",
+            json={"kind": "video", "params": {"container": "mp4", "crf": 22}},
+            headers=headers,
+        )
+        assert resp.status_code == 202, resp.text
+        assert resp.json()["queued"] is True
+        rec = client.app.state.workspace.store.load("default", task_id)
+        last = rec.stages[-1]
+        assert last.type == "export_video"
+        assert last.status == "pending"
+        assert last.params["crf"] == 22
+        assert last.params["container"] == "mp4"
+
+
+def test_post_export_audio_kind_appends_audio_stage(tmp_path: Path) -> None:
+    with service(tmp_path) as (client, headers, token):
+        task_id = _export_task(client, headers, tmp_path)
+        client.app.state.worker.enqueue = lambda project, task_id: True
+        resp = client.post(
+            f"/tasks/default/{task_id}/exports",
+            json={"kind": "audio", "params": {"format": "mp3", "bitrate_kbps": 160}},
+            headers=headers,
+        )
+        assert resp.status_code == 202, resp.text
+        rec = client.app.state.workspace.store.load("default", task_id)
+        assert rec.stages[-1].type == "export_audio_custom"
+        assert rec.stages[-1].params["format"] == "mp3"
+
+
+def test_post_export_on_completed_task_returns_it_to_pending(tmp_path: Path) -> None:
+    from traduko.models import StageStatus, TaskStatus
+
+    with service(tmp_path) as (client, headers, token):
+        task_id = _export_task(client, headers, tmp_path)
+        ws = client.app.state.workspace
+        rec = ws.store.load("default", task_id)
+        rec.status = TaskStatus.COMPLETED
+        for stage in rec.stages:
+            stage.status = StageStatus.COMPLETED
+        ws.store.save(rec)
+        # Hold the queue so the assertions see the appended state rather than
+        # whatever the worker has already done to it.
+        client.app.state.worker.enqueue = lambda project, task_id: True
+        resp = client.post(
+            f"/tasks/default/{task_id}/exports",
+            json={"kind": "video", "params": {}},
+            headers=headers,
+        )
+        assert resp.status_code == 202, resp.text
+        rec = ws.store.load("default", task_id)
+        assert rec.status == "pending"
+        assert rec.stages[-1].status == "pending"
+
+
+def test_post_export_while_running_409(tmp_path: Path) -> None:
+    with service(tmp_path) as (client, headers, token):
+        task_id = _export_task(client, headers, tmp_path)
+        from traduko.executor import CancelToken
+        client.app.state.worker._cancels[("default", task_id)] = CancelToken()
+        resp = client.post(
+            f"/tasks/default/{task_id}/exports",
+            json={"kind": "video", "params": {}},
+            headers=headers,
+        )
+        assert resp.status_code == 409
+
+
+def test_post_export_with_missing_input_422(tmp_path: Path) -> None:
+    with service(tmp_path) as (client, headers, token):
+        task_id = _export_task(client, headers, tmp_path)
+        (tmp_path / "in.srt").unlink()
+        resp = client.post(
+            f"/tasks/default/{task_id}/exports",
+            json={"kind": "video", "params": {}},
+            headers=headers,
+        )
+        assert resp.status_code == 422
+
+
+def test_post_export_rejects_unknown_kind(tmp_path: Path) -> None:
+    with service(tmp_path) as (client, headers, token):
+        task_id = _export_task(client, headers, tmp_path)
+        resp = client.post(
+            f"/tasks/default/{task_id}/exports",
+            json={"kind": "comic", "params": {}},
+            headers=headers,
+        )
+        assert resp.status_code == 422
+
+
+def test_export_estimate_reports_size_eta_and_disk(tmp_path: Path, monkeypatch) -> None:
+    with service(tmp_path) as (client, headers, token):
+        task_id = _export_task(client, headers, tmp_path)
+        monkeypatch.setattr(
+            "traduko.service.app.probe_media",
+            lambda path: {
+                "duration": 120.0,
+                "bit_rate": 2_000_000,
+                "width": 1920,
+                "height": 1080,
+                "video_codec": "h264",
+                "audio_streams": [],
+            },
+        )
+        resp = client.get(
+            f"/tasks/default/{task_id}/exports/estimate",
+            params={"kind": "video", "crf": 20, "audio_bitrate_kbps": 192},
+            headers=headers,
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["size_bytes"] > 0
+        assert body["eta_seconds"] > 0
+        assert body["disk_ok"] is True
+        assert body["disk_available"] > 0
+        assert body["duration"] == 120.0
+
+
+def test_export_estimate_flags_insufficient_disk(tmp_path: Path, monkeypatch) -> None:
+    with service(tmp_path) as (client, headers, token):
+        task_id = _export_task(client, headers, tmp_path)
+        monkeypatch.setattr(
+            "traduko.service.app.probe_media",
+            lambda path: {
+                "duration": 120.0,
+                "bit_rate": 2_000_000,
+                "width": 1920,
+                "height": 1080,
+                "video_codec": "h264",
+                "audio_streams": [],
+            },
+        )
+        monkeypatch.setattr(
+            "traduko.service.app.check_disk_space", lambda d, need: (False, 1024)
+        )
+        resp = client.get(
+            f"/tasks/default/{task_id}/exports/estimate",
+            params={"kind": "video"},
+            headers=headers,
+        )
+        assert resp.status_code == 200
+        assert resp.json()["disk_ok"] is False
+
+
+def test_export_estimate_probe_failure_422(tmp_path: Path, monkeypatch) -> None:
+    from traduko.media import MediaError
+
+    with service(tmp_path) as (client, headers, token):
+        task_id = _export_task(client, headers, tmp_path)
+
+        def boom(path):
+            raise MediaError("ffprobe failed")
+
+        monkeypatch.setattr("traduko.service.app.probe_media", boom)
+        resp = client.get(
+            f"/tasks/default/{task_id}/exports/estimate",
+            params={"kind": "video"},
+            headers=headers,
+        )
+        assert resp.status_code == 422
+        assert "ffprobe" in resp.json()["detail"]
+
+
+def test_export_estimate_audio_kind_uses_bitrate(tmp_path: Path, monkeypatch) -> None:
+    with service(tmp_path) as (client, headers, token):
+        task_id = _export_task(client, headers, tmp_path)
+        monkeypatch.setattr(
+            "traduko.service.app.probe_media",
+            lambda path: {
+                "duration": 100.0,
+                "bit_rate": None,
+                "width": None,
+                "height": None,
+                "video_codec": None,
+                "audio_streams": [],
+            },
+        )
+        resp = client.get(
+            f"/tasks/default/{task_id}/exports/estimate",
+            params={"kind": "audio", "format": "m4a", "bitrate_kbps": 192},
+            headers=headers,
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["size_bytes"] == pytest.approx(
+            192 * 1000 * 100 / 8, rel=0.01
+        )
