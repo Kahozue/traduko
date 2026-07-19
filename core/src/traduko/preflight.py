@@ -104,8 +104,12 @@ def _check_asr_timestamps(record: TaskRecord, config: CoreConfig) -> list[Prefli
         for stage in record.stages
         if stage.status not in (StageStatus.COMPLETED, StageStatus.SKIPPED)
     ]
-    has_segment = any(stage.type == "segment" for stage in pending)
-    if not has_segment:
+    # Subtitles and the dub group both place text on the timeline, so either
+    # ahead of the asr stage needs timestamped output.
+    needs_timestamps = any(
+        stage.type in ("segment", "diarize", "tts_synthesize") for stage in pending
+    )
+    if not needs_timestamps:
         return []
     for stage in pending:
         if stage.type != "asr":
@@ -116,8 +120,8 @@ def _check_asr_timestamps(record: TaskRecord, config: CoreConfig) -> list[Prefli
                 PreflightCheck(
                     "asr timestamps", FAIL,
                     f"engine '{engine_id}' returns no timestamps, but this "
-                    "pipeline builds subtitles (segment stage); pick a "
-                    "timestamped engine in settings",
+                    "pipeline places text on the timeline (segment or dub "
+                    "stages); pick a timestamped engine in settings",
                 )
             ]
     return []

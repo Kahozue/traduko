@@ -182,6 +182,24 @@ def recalc_stages_for_switches(record: TaskRecord, switches: "TaskSwitches") -> 
         record.status = TaskStatus.PENDING
 
 
+# Tail stage closing the appended dub group, per domain.
+DUB_GROUP_TAIL = {"video": "mux", "audio": "export_audio"}
+
+
+def append_dub_stages(record: TaskRecord, domain: str) -> list[StageRecord]:
+    """Append the full dub group to a task that has none, mirroring the
+    seeded dub profiles (diarize pauses for speaker review)."""
+    added = [
+        StageRecord(type="diarize", pause_after=True),
+        StageRecord(type="tts_synthesize"),
+        StageRecord(type="align_duration"),
+        StageRecord(type="mix_audio"),
+        StageRecord(type=DUB_GROUP_TAIL[domain]),
+    ]
+    record.stages.extend(added)
+    return added
+
+
 DUB_TEXT_MODES = ("auto", "translation", "original")
 
 

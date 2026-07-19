@@ -2516,3 +2516,102 @@ def test_task_dub_text_override_create_update_and_validation(tmp_path: Path) -> 
         assert client.patch(
             url, json={"dub_text": "gibberish"}, headers=headers
         ).status_code == 422
+
+
+def write_task_artifact(client, project: str, task_id: str, index: int, name: str, payload) -> None:
+    from traduko.artifacts import ArtifactStore
+
+    store = client.app.state.workspace.store
+    ArtifactStore(store.task_dir(project, task_id)).write_json(index, name, payload)
+
+
+TIMESTAMPED_ASR = {
+    "language": "en",
+    "duration": 4.0,
+    "timestamps": True,
+    "segments": [{"id": 1, "start": 0.0, "end": 2.0, "text": "hello"}],
+}
+
+
+def test_patch_switches_dub_on_appends_audio_dub_group(tmp_path: Path) -> None:
+    with service(tmp_path) as (client, headers, token):
+        task_id = create_task(client, headers, tmp_path, profile="audio-transcribe")
+        write_task_artifact(client, "default", task_id, 2, "asr.json", TIMESTAMPED_ASR)
+
+        response = client.patch(
+            f"/tasks/default/{task_id}/switches", json={"dub": True}, headers=headers
+        )
+
+        assert response.status_code == 200, response.text
+        body = response.json()
+        assert [stage["type"] for stage in body["stages"]] == [
+            "extract_audio",
+            "asr",
+            "export_transcript",
+            "diarize",
+            "tts_synthesize",
+            "align_duration",
+            "mix_audio",
+            "export_audio",
+        ]
+        appended = body["stages"][3:]
+        assert all(stage["status"] == "pending" for stage in appended)
+        assert body["switches"]["dub"] is True
+
+
+def test_patch_switches_dub_on_appends_video_dub_group(tmp_path: Path) -> None:
+    with service(tmp_path) as (client, headers, token):
+        task_id = create_task(client, headers, tmp_path, profile="av-default")
+        write_task_artifact(client, "default", task_id, 2, "asr.json", TIMESTAMPED_ASR)
+
+        response = client.patch(
+            f"/tasks/default/{task_id}/switches", json={"dub": True}, headers=headers
+        )
+
+        assert response.status_code == 200, response.text
+        types = [stage["type"] for stage in response.json()["stages"]]
+        assert types[-5:] == [
+            "diarize",
+            "tts_synthesize",
+            "align_duration",
+            "mix_audio",
+            "mux",
+        ]
+
+
+def test_patch_switches_dub_requires_timestamped_transcript(tmp_path: Path) -> None:
+    with service(tmp_path) as (client, headers, token):
+        task_id = create_task(client, headers, tmp_path, profile="audio-transcribe")
+        write_task_artifact(
+            client,
+            "default",
+            task_id,
+            2,
+            "asr.json",
+            {**TIMESTAMPED_ASR, "timestamps": False},
+        )
+
+        response = client.patch(
+            f"/tasks/default/{task_id}/switches", json={"dub": True}, headers=headers
+        )
+
+        assert response.status_code == 409
+        assert "timestamp" in response.json()["detail"]
+
+
+def test_patch_switches_dub_append_on_completed_task_goes_pending(
+    tmp_path: Path,
+) -> None:
+    with service(tmp_path) as (client, headers, token):
+        task_id = create_task(client, headers, tmp_path, profile="audio-transcribe")
+        mark_task_completed(client, "default", task_id)
+        write_task_artifact(client, "default", task_id, 2, "asr.json", TIMESTAMPED_ASR)
+
+        response = client.patch(
+            f"/tasks/default/{task_id}/switches", json={"dub": True}, headers=headers
+        )
+
+        assert response.status_code == 200, response.text
+        body = response.json()
+        assert body["status"] == "pending"
+        assert body["stages"][0]["status"] == "completed"

@@ -337,3 +337,12 @@ def test_asr_timestampless_engine_without_segment_is_fine(tmp_path: Path) -> Non
     record = make_record(tmp_path, [StageRecord(type="asr")])
     report = run_preflight(record, tmp_path)
     assert not any("timestamp" in c.message for c in report.failures())
+
+
+def test_asr_timestampless_engine_with_dub_stage_fails(tmp_path: Path) -> None:
+    _asr_config(tmp_path, engine="openai_gpt4o", cloud_api_key="sk-1")
+    record = make_record(
+        tmp_path, [StageRecord(type="asr"), StageRecord(type="tts_synthesize")]
+    )
+    report = run_preflight(record, tmp_path)
+    assert any("timestamp" in message for message in [c.message for c in report.failures()])

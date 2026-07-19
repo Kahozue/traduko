@@ -90,8 +90,10 @@ from ..skillhub import SkillsManager, SkillValidationError
 from ..styles import SubtitleStyle
 from ..styles_render import render_style_frame
 from ..tasks import (
+    DUB_GROUP_TAIL,
     DUB_TEXT_MODES,
     VOICE_MODES,
+    append_dub_stages,
     apply_asr_engine_override,
     apply_dub_text_override,
     apply_model_override,
@@ -516,6 +518,45 @@ def update_task(
     return record.model_dump()
 
 
+def _dub_enable_error(ws: Workspace, record: TaskRecord) -> str | None:
+    """The one hard condition for dubbing: a timestamped transcript, either
+    already produced, guaranteed by the input format, or promised by a
+    timestamped ASR engine still ahead. None when eligible."""
+    artifacts = ArtifactStore(ws.store.task_dir(record.project, record.id))
+    for name in ("segments.json", "translation.json"):
+        try:
+            artifacts.latest_path(name)
+            return None
+        except FileNotFoundError:
+            pass
+    try:
+        asr = artifacts.read_latest_json("asr.json")
+    except FileNotFoundError:
+        asr = None
+    if asr is not None:
+        if asr.get("timestamps", True) is not False:
+            return None
+        return (
+            "dub requires a timestamped transcript; the asr artifact has no "
+            "timestamps — re-run transcription with a timestamped engine"
+        )
+    if Path(record.input_path).suffix.lower() in (".srt", ".vtt"):
+        return None
+    from ..asr.engines import engine_timestamps, resolve_engine
+
+    for stage in record.stages:
+        if stage.type != "asr":
+            continue
+        engine_id = resolve_engine(stage.params, ws.config)
+        if engine_id is None or engine_timestamps(engine_id):
+            return None
+        return (
+            "dub requires a timestamped transcript, but asr engine "
+            f"'{engine_id}' returns no timestamps"
+        )
+    return "dub requires a timestamped transcript"
+
+
 class TaskSwitchesRequest(BaseModel):
     # Each switch: True/False applies it, omitted leaves it as is.
     translate: bool | None = None
@@ -549,6 +590,18 @@ def patch_task_switches(
     worker: TaskWorker = request.app.state.worker
     if worker.is_active(project, task_id):
         raise HTTPException(status_code=409, detail="task is queued or running")
+    if changed.get("dub"):
+        error = _dub_enable_error(ws, record)
+        if error is not None:
+            raise HTTPException(status_code=409, detail=error)
+        if not any(stage.type == "tts_synthesize" for stage in record.stages):
+            domain = task_domain(record)
+            if domain not in DUB_GROUP_TAIL:
+                raise HTTPException(
+                    status_code=422,
+                    detail="dub switch applies to video and audio tasks only",
+                )
+            append_dub_stages(record, domain)
     switches = record.switches or TaskSwitches()
     for name, value in changed.items():
         setattr(switches, name, value)
