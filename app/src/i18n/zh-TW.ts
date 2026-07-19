@@ -568,6 +568,7 @@ export const zhTW = {
   "task.outputs": "產出",
   "task.outputs.open": "開啟",
   "task.outputs.reveal": "在 Finder 顯示",
+  "task.player.unsupported": "無法在應用內播放此格式",
   "task.model.title": "此任務的翻譯模型，點擊切換",
   "task.model.auto": "（自動）",
   "task.model.unset": "尚未設定供應商",

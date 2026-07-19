@@ -1,0 +1,47 @@
+/* Editing venue: the frame around the user's media stays strictly neutral
+   (--bg-canvas is zero-chroma in both themes), no accent, no semantic color. */
+
+.player {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 16px 0;
+  padding: 12px;
+  border-radius: var(--radius-m);
+  background: var(--bg-canvas);
+}
+
+.video {
+  max-width: 100%;
+  max-height: 420px;
+  object-fit: contain;
+}
+
+.audio {
+  width: 100%;
+}
+
+.fallback {
+  gap: 16px;
+  padding: 20px 16px;
+}
+
+.fallbackText {
+  color: var(--text-on-dark-dim);
+  font-size: var(--fs-body);
+}
+
+.reveal {
+  padding: 6px 12px;
+  border: 1px solid var(--text-on-dark-dim);
+  border-radius: var(--radius-s);
+  background: transparent;
+  color: var(--text-on-dark);
+  font-size: var(--fs-note);
+  cursor: pointer;
+  transition: background var(--transition);
+}
+
+.reveal:hover {
+  background: var(--bg-canvas-check);
+}

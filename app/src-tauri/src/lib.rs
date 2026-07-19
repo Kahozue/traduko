@@ -19,8 +19,10 @@ fn connection_info() -> ConnectionInfo {
     }
 }
 
-// Only files under the Traduko data root may be opened or revealed; the
-// webview never gets a general "open any path" primitive.
+// Only files under the Traduko data root may be opened; the webview never
+// gets a general "open any path" primitive. Reveal-in-Finder additionally
+// accepts the asset-protocol scope (see checked_reveal_path), because task
+// input files live wherever the user picked them.
 fn checked_data_path(path: &str) -> Result<std::path::PathBuf, String> {
     let root = paths::resolve_data_root();
     let target = std::path::PathBuf::from(path);
@@ -50,9 +52,28 @@ fn open_artifact(path: String) -> Result<(), String> {
     })
 }
 
+// Mirrors tauri.conf.json's assetProtocol scope ($HOME, /Volumes, /tmp):
+// paths the webview may already read, it may also reveal (never execute).
+fn checked_reveal_path(path: &str) -> Result<std::path::PathBuf, String> {
+    let target = std::path::PathBuf::from(path);
+    if !target.exists() {
+        return Err("file not found".into());
+    }
+    if target.starts_with(paths::resolve_data_root())
+        || target.starts_with("/Volumes")
+        || target.starts_with("/tmp")
+        || std::env::var("HOME").is_ok_and(|home| target.starts_with(&home))
+        || std::env::var("USERPROFILE").is_ok_and(|home| target.starts_with(&home))
+    {
+        Ok(target)
+    } else {
+        Err("path is outside the allowed scope".into())
+    }
+}
+
 #[tauri::command]
 fn reveal_artifact(path: String) -> Result<(), String> {
-    let target = checked_data_path(&path)?;
+    let target = checked_reveal_path(&path)?;
     #[cfg(target_os = "macos")]
     let status = std::process::Command::new("open").arg("-R").arg(&target).status();
     #[cfg(target_os = "windows")]

@@ -562,6 +562,7 @@ export const en: Record<MessageKey, string> = {
   "task.outputs": "Outputs",
   "task.outputs.open": "Open",
   "task.outputs.reveal": "Reveal in Finder",
+  "task.player.unsupported": "This format cannot be played inside the app",
   "task.model.title": "This task's translation model; click to switch",
   "task.model.auto": " (auto)",
   "task.model.unset": "No provider configured",

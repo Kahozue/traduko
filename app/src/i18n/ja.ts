@@ -562,6 +562,7 @@ export const ja: Record<MessageKey, string> = {
   "task.outputs": "成果物",
   "task.outputs.open": "開く",
   "task.outputs.reveal": "Finder で表示",
+  "task.player.unsupported": "この形式はアプリ内で再生できません",
   "task.model.title": "このタスクの翻訳モデル。クリックで切り替え",
   "task.model.auto": "（自動）",
   "task.model.unset": "プロバイダ未設定",
