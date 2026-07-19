@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { Icon } from "../components/icons";
+import { MediaPlayer } from "../components/MediaPlayer";
 import { ProgressBar } from "../components/ProgressBar";
 import { StatusBadge } from "../components/StatusBadge";
 import { t } from "../i18n";
@@ -10,6 +11,7 @@ import type { PreflightCheck } from "../lib/api/types";
 import { useApi, useConnection } from "../lib/connection";
 import { openArtifact, revealArtifact } from "../lib/shell";
 import { humanizeError, matchError } from "../lib/errors";
+import { mediaKindOf } from "../lib/media";
 import { formatDateTime } from "../lib/time";
 import { useTaskLive } from "../lib/events/store";
 import { eventTypeLabel, stageListLabels, stageStatusLabel, stageTypeLabel } from "../lib/labels";
@@ -353,6 +355,10 @@ export function TaskDetailView({
   const editorLabel = isDocumentTask ? t("task.textEditor") : t("task.subtitleEditor");
   const stageLabels = stageListLabels(task.stages);
   const outputs = (artifacts ?? []).filter((item) => !item.file.endsWith(".json"));
+
+  // Player classification goes by the input file itself, not the task's
+  // domain; subtitle/text/document inputs stay null and render no player.
+  const mediaKind = mediaKindOf(task.input_path);
 
   // Effective LLM choice for the model chip, mirroring the core's
   // resolve_provider_name: explicit override wins, then the configured
@@ -797,6 +803,8 @@ export function TaskDetailView({
           </div>
         </dl>
       )}
+
+      {mediaKind !== null && <MediaPlayer path={task.input_path} kind={mediaKind} />}
 
       {task.status === "paused" && (
         <section className={styles.noticePaused}>

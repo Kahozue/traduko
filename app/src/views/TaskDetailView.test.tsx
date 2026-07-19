@@ -1,6 +1,11 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test, vi } from "vitest";
+
+vi.mock("@tauri-apps/api/core", () => ({
+  convertFileSrc: (path: string) => `asset://localhost/${path}`,
+}));
+
 import type { ApiClient } from "../lib/api/client";
 import { ApiError } from "../lib/api/client";
 import type { TaskRecord } from "../lib/api/types";
@@ -776,4 +781,26 @@ test("switches lock while the task runs", async () => {
   const group = await screen.findByRole("group", { name: "管線開關" });
   expect(within(group).getByRole("button", { name: /翻譯/ })).toBeDisabled();
   expect(within(group).getByRole("button", { name: /配音/ })).toBeDisabled();
+});
+
+test("a video-file input renders the inline video player", async () => {
+  renderTask({ ...task, input_path: "/tmp/movie.mp4" });
+  await screen.findAllByText("t1");
+  const video = document.querySelector("video");
+  expect(video).not.toBeNull();
+  expect(video).toHaveAttribute("src", "asset://localhost//tmp/movie.mp4");
+});
+
+test("an audio-file input renders the inline audio player", async () => {
+  renderTask({ ...task, input_path: "/tmp/voice.wav" });
+  await screen.findAllByText("t1");
+  expect(document.querySelector("audio")).not.toBeNull();
+  expect(document.querySelector("video")).toBeNull();
+});
+
+test("a subtitle input renders no player", async () => {
+  renderTask(task);
+  await screen.findAllByText("t1");
+  expect(document.querySelector("video")).toBeNull();
+  expect(document.querySelector("audio")).toBeNull();
 });
