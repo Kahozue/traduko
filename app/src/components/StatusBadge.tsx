@@ -15,8 +15,10 @@ const KEYS: Record<TaskStatus, MessageKey> = {
 export function StatusBadge({ status }: { status: TaskStatus }) {
   return (
     <span className={styles.badge} data-status={status}>
-      {status === "running" && <span className={styles.pulse} />}
       {t(KEYS[status])}
+      {/* Trailing so the running dot never shifts the label: every badge's
+         text keeps the same left edge down the status column. */}
+      {status === "running" && <span className={styles.pulse} />}
     </span>
   );
 }
