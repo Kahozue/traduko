@@ -226,6 +226,49 @@ export class ApiClient {
     });
   }
 
+  // Per-task glossary config.
+  setTaskGlossary(
+    project: string,
+    taskId: string,
+    glossary: { global_ids: string[]; use_task: boolean; asr_mode: string },
+  ): Promise<TaskRecord> {
+    return this.request(`/tasks/${project}/${taskId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ glossary }),
+    });
+  }
+
+  // Task-local glossary entries (tasks/<id>/glossary.csv).
+  getTaskGlossaryEntries(
+    project: string,
+    taskId: string,
+  ): Promise<{ entries: GlossaryEntry[] }> {
+    return this.request(`/tasks/${project}/${taskId}/glossary/entries`);
+  }
+
+  putTaskGlossaryEntries(
+    project: string,
+    taskId: string,
+    entries: GlossaryEntry[],
+  ): Promise<{ saved: boolean; count: number }> {
+    return this.request(`/tasks/${project}/${taskId}/glossary/entries`, {
+      method: "PUT",
+      body: JSON.stringify({ entries }),
+    });
+  }
+
+  // Reapply glossary to running pipeline stages.
+  reapplyGlossary(
+    project: string,
+    taskId: string,
+    mode: "asr" | "proofread" | "translate",
+  ): Promise<{ queued: boolean; reset_from: string }> {
+    return this.request(`/tasks/${project}/${taskId}/glossary/reapply`, {
+      method: "POST",
+      body: JSON.stringify({ mode }),
+    });
+  }
+
   // Per-task dubbing voice mode; empty strings restore the clone default.
   setTaskVoiceMode(
     project: string,

@@ -27,6 +27,7 @@ export interface TaskRecord {
   name: string | null;
   status: TaskStatus;
   stages: StageRecord[];
+  glossary: TaskGlossary;
   created_at: string;
   updated_at: string;
 }
@@ -42,6 +43,12 @@ export interface TaskIndexRow {
 }
 
 export type TaskKind = "video" | "audio" | "document" | "comic";
+
+export interface TaskGlossary {
+  global_ids: string[];
+  use_task: boolean;
+  asr_mode: "auto" | "force" | "off";
+}
 
 export interface ProfileInfo {
   name: string;

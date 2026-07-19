@@ -78,12 +78,14 @@ export function TaskDetailView({
   onBack,
   onOpenSettings,
   onOpenEditor,
+  onOpenGlossary,
 }: {
   project: string;
   taskId: string;
   onBack: () => void;
   onOpenSettings?: () => void;
   onOpenEditor: (kind: "subtitle" | "document" | "speakers") => void;
+  onOpenGlossary?: () => void;
 }) {
   const api = useApi();
   const { dataRoot } = useConnection();
@@ -459,6 +461,15 @@ export function TaskDetailView({
               onClick={() => onOpenEditor("speakers")}
             >
               {t("task.speakerReview")}
+            </button>
+          )}
+          {onOpenGlossary && (
+            <button
+              type="button"
+              className={styles.secondary}
+              onClick={onOpenGlossary}
+            >
+              {t("task.glossary")}
             </button>
           )}
         </div>

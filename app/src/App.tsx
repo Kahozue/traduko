@@ -14,6 +14,7 @@ import { SkillEditorView } from "./views/SkillEditorView";
 import { SubtitleEditorView } from "./views/SubtitleEditorView";
 import { SpeakerReviewView } from "./views/SpeakerReviewView";
 import { TaskDetailView } from "./views/TaskDetailView";
+import { TaskGlossaryView } from "./views/TaskGlossaryView";
 import { TasksView } from "./views/TasksView";
 import type { TaskKind } from "./lib/api/types";
 import styles from "./App.module.css";
@@ -21,6 +22,7 @@ import styles from "./App.module.css";
 export type View =
   | { name: "tasks" }
   | { name: "task"; project: string; taskId: string }
+  | { name: "task-glossary"; project: string; taskId: string }
   | { name: "subtitle-editor"; project: string; taskId: string }
   | { name: "document-editor"; project: string; taskId: string }
   | { name: "speaker-review"; project: string; taskId: string }
@@ -113,6 +115,7 @@ function Main({
 
   const active: NavKey =
     view.name === "task" ||
+    view.name === "task-glossary" ||
     view.name === "subtitle-editor" ||
     view.name === "document-editor" ||
     view.name === "speaker-review"
@@ -177,6 +180,17 @@ function renderView(
               taskId: view.taskId,
             })
           }
+          onOpenGlossary={() =>
+            setView({ name: "task-glossary", project: view.project, taskId: view.taskId })
+          }
+        />
+      );
+    case "task-glossary":
+      return (
+        <TaskGlossaryView
+          project={view.project}
+          taskId={view.taskId}
+          onBack={() => setView({ name: "task", project: view.project, taskId: view.taskId })}
         />
       );
     case "subtitle-editor":

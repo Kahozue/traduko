@@ -35,6 +35,7 @@ const task: TaskRecord = {
   ],
   created_at: "2026-07-16T10:00:00+00:00",
   updated_at: "2026-07-16T10:00:00+00:00",
+  glossary: { global_ids: [], use_task: false, asr_mode: "auto" },
 };
 
 test("renders stages and metadata", async () => {
