@@ -562,6 +562,7 @@ export function TasksView({
 
       {creating && (
         <CreateTaskDialog
+          initialKind={taskKind}
           initialPath={droppedPath ?? undefined}
           onClose={() => {
             setCreating(false);

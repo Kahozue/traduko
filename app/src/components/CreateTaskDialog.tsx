@@ -56,10 +56,15 @@ export function CreateTaskDialog({
   onClose,
   onCreated,
   initialPath,
+  initialKind = null,
 }: {
   onClose: () => void;
   onCreated: (project: string, taskId: string) => void;
   initialPath?: string;
+  // When opened from a left-rail domain view, the kind is fixed: the type
+  // row is hidden, the title names the domain, and the file picker uses that
+  // domain's extensions. Null (opened from "all tasks") keeps the picker.
+  initialKind?: TaskKind | null;
 }) {
   const api = useApi();
   const queryClient = useQueryClient();
@@ -67,7 +72,7 @@ export function CreateTaskDialog({
   const [inputPath, setInputPath] = useState(initialPath ?? "");
   const [name, setName] = useState("");
   const [project, setProject] = useState("default");
-  const [kind, setKind] = useState<TaskKind | null>(null);
+  const [kind, setKind] = useState<TaskKind | null>(initialKind);
   const [profile, setProfile] = useState("");
   // Per-task LLM override; empty means "follow the configured default".
   const [providerSel, setProviderSel] = useState("");
@@ -107,12 +112,14 @@ export function CreateTaskDialog({
     return map;
   }, [profiles]);
 
-  // Land on the first kind that has profiles once they load.
+  // Land on the first kind that has profiles once they load. Skipped when the
+  // kind is fixed by the caller (domain view), so it stays put.
   useEffect(() => {
+    if (initialKind !== null) return;
     if (kind !== null || !profiles || profiles.length === 0) return;
     const firstType = TASK_TYPES.find((type) => byKind.has(type.kind));
     if (firstType) setKind(firstType.kind);
-  }, [profiles, byKind, kind]);
+  }, [profiles, byKind, kind, initialKind]);
 
   const kindProfiles = kind ? (byKind.get(kind) ?? []) : [];
   const extension = inputPath.split(".").pop()?.toLowerCase() ?? "";
@@ -224,28 +231,32 @@ export function CreateTaskDialog({
         onKeyDown={onDialogKeyDown}
       >
         <h2 id="create-task-title" className={styles.title}>
-          {t("create.title")}
+          {t(initialKind ? (`create.title.${initialKind}` as MessageKey) : "create.title")}
         </h2>
 
-        <span className={styles.label}>{t("create.kind")}</span>
-        <div className={styles.kindRow} role="group" aria-label={t("create.kind")}>
-          {TASK_TYPES.map((type) => {
-            const available = byKind.has(type.kind);
-            return (
-              <button
-                key={type.kind}
-                type="button"
-                className={type.kind === kind ? styles.kindButtonActive : styles.kindButton}
-                aria-pressed={type.kind === kind}
-                disabled={!available}
-                onClick={() => setKind(type.kind)}
-              >
-                <Icon name={type.icon} size={20} />
-                <span>{t(type.label)}</span>
-              </button>
-            );
-          })}
-        </div>
+        {!initialKind && (
+          <>
+            <span className={styles.label}>{t("create.kind")}</span>
+            <div className={styles.kindRow} role="group" aria-label={t("create.kind")}>
+              {TASK_TYPES.map((type) => {
+                const available = byKind.has(type.kind);
+                return (
+                  <button
+                    key={type.kind}
+                    type="button"
+                    className={type.kind === kind ? styles.kindButtonActive : styles.kindButton}
+                    aria-pressed={type.kind === kind}
+                    disabled={!available}
+                    onClick={() => setKind(type.kind)}
+                  >
+                    <Icon name={type.icon} size={20} />
+                    <span>{t(type.label)}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </>
+        )}
 
         <label className={styles.label}>
           {t("create.input")}

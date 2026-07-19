@@ -18,6 +18,34 @@ const DETAILED: ProfileInfo[] = [
   { name: "novel-translate", kind: "document", stages: ["ingest_document", "translate_chunks"] },
 ];
 
+test("initialKind hides the type row and titles by domain", async () => {
+  const api: Partial<ApiClient> = {
+    profilesDetailed: vi.fn().mockResolvedValue([
+      { name: "audio-transcribe", kind: "audio", stages: ["extract_audio", "asr"] },
+    ]),
+  };
+  renderWithConnection(
+    <CreateTaskDialog initialKind="audio" onClose={() => {}} onCreated={() => {}} />,
+    { api },
+  );
+  expect(await screen.findByText("新增音頻任務")).toBeInTheDocument();
+  expect(screen.queryByRole("group", { name: "任務類型" })).toBeNull();
+  expect(screen.queryByRole("button", { name: /影片/ })).toBeNull();
+});
+
+test("without initialKind the type row shows and the title is generic", async () => {
+  const api: Partial<ApiClient> = {
+    profilesDetailed: vi.fn().mockResolvedValue(DETAILED),
+  };
+  renderWithConnection(
+    <CreateTaskDialog onClose={() => {}} onCreated={() => {}} />,
+    { api },
+  );
+  expect(await screen.findByText("新增任務")).toBeInTheDocument();
+  expect(screen.getByRole("group", { name: "任務類型" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: /影片/ })).toBeInTheDocument();
+});
+
 test("picks file, selects a video profile and submits", async () => {
   openMock.mockResolvedValue("/tmp/in.srt");
   const createTask = vi.fn().mockResolvedValue({ id: "t-new", project: "default" });
