@@ -639,3 +639,25 @@ export interface AssistantReply {
   reason: string;
   history: AssistantMessageDoc[];
 }
+
+// Dubbing studio engine catalog (GET /dub/engines).
+export interface TtsEngineInfo {
+  id: string;
+  kind: "local" | "cloud" | "placeholder";
+  voice_modes: string[];
+  available: boolean;
+}
+
+// Aggregated dub params for a task's dub group (GET/PATCH /tasks/.../dub/params).
+export interface DubParams {
+  engine_id: string | null;
+  voice_mode: string;
+  instruction: string | null;
+  cfg: number | null;
+  timesteps: number | null;
+  seed: number | null;
+  denoise: number | null;
+  preview_voice: string | null;
+  preview_rate: number | null;
+  dub_text: string;
+}

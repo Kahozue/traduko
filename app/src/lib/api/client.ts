@@ -34,6 +34,8 @@ import type {
   SyncStatus,
   TaskIndexRow,
   TaskRecord,
+  TtsEngineInfo,
+  DubParams,
 } from "./types";
 
 export class ApiError extends Error {
@@ -292,6 +294,41 @@ export class ApiClient {
     return this.request(`/tasks/${project}/${taskId}`, {
       method: "PATCH",
       body: JSON.stringify({ voice_mode: mode, voice_instruction: instruction }),
+    });
+  }
+
+  // Dubbing studio engine catalog (static list including placeholder).
+  listDubEngines(): Promise<{ engines: TtsEngineInfo[] }> {
+    return this.request(`/dub/engines`);
+  }
+
+  // Aggregated dub params for a task's dub group.
+  getDubParams(project: string, taskId: string): Promise<DubParams> {
+    return this.request(`/tasks/${project}/${taskId}/dub/params`);
+  }
+
+  // Write dub params; fields left undefined are not changed. Empty strings
+  // clear engine_id / voice_mode / instruction / dub_text overrides.
+  patchDubParams(
+    project: string,
+    taskId: string,
+    params: Partial<DubParams>,
+  ): Promise<DubParams> {
+    return this.request(`/tasks/${project}/${taskId}/dub/params`, {
+      method: "PATCH",
+      body: JSON.stringify(params),
+    });
+  }
+
+  // Re-run the dub group from tts_synthesize or diarize onward.
+  dubRedub(
+    project: string,
+    taskId: string,
+    from: "synthesize" | "diarize",
+  ): Promise<{ queued: boolean }> {
+    return this.request(`/tasks/${project}/${taskId}/dub/redub`, {
+      method: "POST",
+      body: JSON.stringify({ from }),
     });
   }
 
