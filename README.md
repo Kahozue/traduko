@@ -4,104 +4,146 @@
 
 # Traduko
 
-Automated subtitle and document translation for the desktop — audio extraction, speech recognition, LLM translation, agent proofreading, and export in one pipeline.
+An automated translation workstation for the desktop. Give it video, audio, subtitles, or documents, and the pipeline handles speech recognition, translation, proofreading, dubbing, and export.
 
-[Documentation](README.md) · [繁體中文](README.zh-TW.md) · [Architecture](#architecture) · [Installation](#installation)
+[Features](#features) · [Interface](#interface) · [Architecture](#architecture) · [Installation](#installation) · [Usage](#usage) · [Roadmap](#roadmap) · [繁體中文](README.zh-TW.md)
 
 </div>
 
 ---
 
-Traduko runs a configurable pipeline over video, audio, or subtitle files: audio extraction, speech recognition, segmentation, LLM translation, optional agent-based proofreading, and subtitle export. The name is the Esperanto word for "translation".
+Traduko runs a configurable pipeline over each input: audio extraction, speech recognition, segmentation, LLM translation, optional agent-based proofreading, dub synthesis, and export to subtitles or finished media. The name is the Esperanto word for "translation".
 
-The project is an orchestration layer over existing tools rather than a new engine: ffmpeg for media handling, faster-whisper for speech recognition, and any OpenAI-compatible endpoint for translation.
+It is an orchestration layer over existing tools: ffmpeg for media handling, faster-whisper or cloud engines for speech recognition, and any OpenAI-compatible endpoint, Anthropic, or Gemini for translation. Traduko turns them into tasks that can be paused, resumed, and kept within a spending budget.
 
-![Task dashboard, grouped by project with per-domain views in the sidebar](docs/screenshot-tasks-light.png)
-
-![Task detail: inline player, studio entries, pipeline switches, and stage progress](docs/screenshot-task-light.png)
-
-![Outputs grouped by kind: audio plays inline, subtitle files preview in place with adjustable text size](docs/screenshot-outputs-light.png)
-
-![Subtitle editor: both the translation and the proofread note are editable](docs/screenshot-editor-light.png)
-
-![ASS style editor with a live CSS-approximation preview](docs/screenshot-style-light.png)
-
-![Dubbing studio: engine and parameters, speakers with reference audio, per-segment preview](docs/screenshot-dub-light.png)
-
-![Built-in assistant proposing a config change as an approvable diff, dark theme](docs/screenshot-assistant-dark.png)
-
-![Settings: appearance, interface language, and LLM providers, dark theme](docs/screenshot-settings-dark.png)
-
-![Speech-recognition engine menu and dubbing engine, dark theme](docs/screenshot-asr-dark.png)
-
-![Budget ledger: per-model spend share and ranking, dark theme](docs/screenshot-budget-dark.png)
+![Task dashboard, grouped by project, with per-domain views in the sidebar](docs/screenshot-tasks-light.png)
 
 ## Features
 
-- Input can be a video, an audio file, or an existing subtitle file (SRT/VTT/ASS/TXT). Output formats are SRT, VTT, and ASS, with optional hardburn into the video.
-- Pipelines are defined as YAML profiles listing a sequence of stages. Stages can be added, removed, or reconfigured, and a manual review checkpoint can be placed after any stage.
-- The desktop app includes a subtitle table editor for revising translations line by line, and an ASS style editor with a CSS approximation preview and exact frame rendering through ffmpeg. Proofread notes, and quality notes on documents, are editable in the same way as the translation column and are saved alongside it; notes are not pipeline inputs, so editing one leaves downstream stages alone. Saving a translation does reset downstream stages, so the task can be re-run from that point.
-- The task page has a built-in media player and three full-screen studios: a dubbing studio (TTS engine and parameters, dub text as translation or source, per-speaker reference audio, previews, and two-level redub), an export studio (video and audio encoding parameters, output estimates with a disk space check, exports run as appended stages), and translation settings (target language, prompt override, retranslate).
-- Outputs are listed by kind: video, audio, images, documents. Audio plays inline with a scrubber and speed control, subtitle and plain-text outputs open a preview in place with an adjustable text size, and anything else is handed to the system.
-- Translation, speaker diarization, and dubbing can be switched on and off per task from the task page. A switched-off stage is marked skipped and keeps its artifacts; switching it back on resumes from there. Enabling dubbing on a task that never had dub stages appends the dub stage group at the end.
-- Speaker diarization is optional. With it off, synthesis voices every line as one speaker rather than blocking the dub, and enabling dubbing does not drag a switched-off diarization stage (or its review checkpoint) back in.
-- Translation defaults are configured per task domain (video, audio, document): target language, style, and prompt override are applied when a task is created and can be overridden per task.
-- "Compose audio" and "Compose video" produce a dubbed result straight from a transcript: the transcript can be an srt/vtt/txt file on disk or an artifact of an existing task; the synthesized speech is exported as audio, or mixed into a given video file. A plain-text transcript without timestamps lays the speech clips end to end.
-- Proofreading runs as a tool-using agent loop: it can consult the glossary and surrounding context and revise lines over multiple rounds. Intensity is configurable; if the budget runs out mid-proofread, the current best version is kept.
-- Token usage is priced and metered. A task pauses when it reaches its budget cap and can be resumed after the cap is raised. Translation progress is written to disk incrementally, so an interrupted task does not lose completed work.
-- Glossaries are managed as multiple tables, each bound to one task domain or shared, with categories and CSV/JSON import/export. A task selects any set of global tables plus its own task-local table; glossaries also bias speech recognition (supported engines take a prompt, the rest can get a lightweight proofread stage), and changes can be reapplied to existing tasks. Prompt templates for translation and proofreading are plain text files in the data directory and can be edited directly.
-- The built-in assistant can inspect task status, budget, configuration, logs, and preflight results, and can read the contents of a task's artifacts: transcripts, translations, proofread and quality notes, speaker assignments, and subtitle or plain-text deliverables. It cannot change settings itself; it files a proposal that takes effect only after the operator approves it in the panel.
-- A preflight check validates the input file, ffmpeg, the ASR model, LLM credentials, and budget before a task starts.
-- Task events can be sent to webhooks, Discord, and email. A Discord bot provides slash commands for listing, running, pausing, and canceling tasks, and keeps a progress message updated in the channel.
-- Settings, prompts, glossaries, and task records can be synced between machines through a shared local folder (for example a Dropbox directory) or WebDAV. Glossary changes are merged row by row; conflicting rows are left for a manual decision. Tasks from other machines are shown read-only.
-- All tasks, artifacts, and settings are human-readable files under the data directory. SQLite serves only as an index and can be rebuilt from the files at any time.
+### Translation pipeline
 
-The interface language can be switched between Traditional Chinese, English, and Japanese.
+| Feature | Description |
+| --- | --- |
+| Inputs and outputs | Accepts video, audio, subtitle files (SRT/VTT/ASS/TXT), and documents such as PDF. Subtitle output in SRT, VTT, and ASS, with optional hardburn into the video. |
+| Pipeline definition | Pipelines are YAML profiles describing a sequence of stages. Stages can be added, removed, or reconfigured, and a manual review checkpoint can follow any stage. |
+| Pipeline switches | Translation, speaker diarization, and dubbing can be toggled per task. A switched-off stage is marked skipped and keeps its artifacts; switching it back on resumes from there. |
+| Speaker diarization | Optional. With it off, synthesis voices every line as a single speaker and dubbing proceeds normally. |
+| Compose from transcript | "Compose audio" and "Compose video" produce a dubbed result straight from a transcript, which can be an srt/vtt/txt file on disk or an artifact of an existing task. |
+| Preflight | Before a task starts, the input file, ffmpeg, the ASR model, LLM credentials, and the budget are validated. |
+
+### Editing and studios
+
+| Feature | Description |
+| --- | --- |
+| Subtitle editor | Table-based, line-by-line revision. Proofread notes are editable like the translation column; editing a note leaves downstream stages alone, while saving a translation resets them so the task can re-run from that point. |
+| ASS style editor | Live CSS-approximation preview plus exact frame rendering through ffmpeg. |
+| Dubbing studio | TTS engine and parameters, dub text as translation or source, per-speaker reference audio, per-segment preview, and two-level redub. |
+| Export studio | Video and audio encoding parameters, output estimates with a disk space check; exports run as appended stages. |
+| Translation settings | Target language and prompt override, retranslate. Defaults are configured per task domain (video, audio, document), applied at task creation, and can be overridden per task. |
+| Output browser | Outputs grouped as video, audio, images, and documents. Audio plays inline; subtitle and plain-text outputs preview in place with an adjustable text size. |
+
+### Glossaries and proofreading
+
+| Feature | Description |
+| --- | --- |
+| Multi-table glossaries | Each table is bound to one task domain or shared, with categories and CSV/JSON import/export. A task selects any set of global tables plus its own task-local table. |
+| ASR biasing | Glossaries also bias speech recognition: supported engines take a prompt injection, the rest can get a lightweight proofread stage. Changes can be reapplied to existing tasks. |
+| Agent proofreading | Proofreading runs as a tool-using agent loop that consults the glossary and surrounding context and revises lines over multiple rounds. Intensity is configurable; if the budget runs out mid-proofread, the current best version is kept. |
+| Prompt templates | Translation and proofreading prompts are plain text files in the data directory and can be edited directly. |
+
+### Spending and reliability
+
+| Feature | Description |
+| --- | --- |
+| Budget ledger | Token usage is priced and metered per call, with per-model spend share, ranking, and time-range filters. |
+| Budget cap | A task pauses when it reaches its cap and can resume after the cap is raised. |
+| Incremental writes | Translation progress is written to disk in batches, so an interrupted task keeps its completed work. |
+| Files first | All tasks, artifacts, and settings are human-readable files under the data directory. SQLite serves only as an index and can be rebuilt from the files at any time. |
+
+### Assistant and integrations
+
+| Feature | Description |
+| --- | --- |
+| Built-in assistant | Can inspect task status, budget, configuration, logs, and preflight results, and read artifact contents such as transcripts, translations, and notes. Setting changes are filed as proposals that take effect only after the operator approves them. |
+| Event notifications | Task events go to webhooks, Discord, and email. A Discord bot provides slash commands and keeps a progress message updated in the channel. |
+| Multi-machine sync | Settings, prompts, glossaries, and task records sync through a shared folder or WebDAV. Glossaries merge row by row; conflicts are left for a manual decision. |
+| Interface language | Traditional Chinese, English, and Japanese. |
+
+## Interface
+
+<table>
+<tr>
+<td width="50%"><img src="docs/screenshot-task-light.png" alt="Task detail" /><br /><sub>Task detail: inline player, studio entries, pipeline switches, and stage progress.</sub></td>
+<td width="50%"><img src="docs/screenshot-outputs-light.png" alt="Outputs" /><br /><sub>Outputs grouped by kind; audio plays inline, subtitles preview in place.</sub></td>
+</tr>
+<tr>
+<td><img src="docs/screenshot-editor-light.png" alt="Subtitle editor" /><br /><sub>Subtitle editor; both the translation and the proofread note are editable.</sub></td>
+<td><img src="docs/screenshot-style-light.png" alt="ASS style editor" /><br /><sub>ASS style editor with a live preview.</sub></td>
+</tr>
+<tr>
+<td><img src="docs/screenshot-dub-light.png" alt="Dubbing studio" /><br /><sub>Dubbing studio: engine and parameters, speakers with reference audio, per-segment preview.</sub></td>
+<td><img src="docs/screenshot-assistant-dark.png" alt="Assistant" /><br /><sub>The built-in assistant proposes config changes as approvable diffs.</sub></td>
+</tr>
+<tr>
+<td><img src="docs/screenshot-settings-dark.png" alt="Settings" /><br /><sub>Settings: appearance, interface language, and LLM providers.</sub></td>
+<td><img src="docs/screenshot-asr-dark.png" alt="Speech recognition" /><br /><sub>Speech-recognition engine menu and dubbing engine.</sub></td>
+</tr>
+<tr>
+<td colspan="2"><img src="docs/screenshot-budget-dark.png" alt="Budget ledger" /><br /><sub>Budget ledger: per-model spend share and ranking.</sub></td>
+</tr>
+</table>
 
 ## Architecture
 
-```
-+--------------------+        HTTP / WebSocket        +---------------------+
-|  Desktop app       | <----------------------------> |  Core service       |
-|  (Tauri 2 + React) |        127.0.0.1 + token       |  (Python / FastAPI) |
-+--------------------+                                +---------------------+
-                                                          |
-                                              pipeline stages: ffmpeg,
-                                              faster-whisper, LLM providers
+```mermaid
+flowchart LR
+    subgraph app ["Desktop app (app/)"]
+        UI["Tauri 2 + React 19"]
+    end
+    subgraph core ["Core (core/)"]
+        API["FastAPI resident service"]
+        CLI["CLI"]
+        EXE["Pipeline executor"]
+    end
+    UI <-- "HTTP / WebSocket<br/>127.0.0.1 + token" --> API
+    API --> EXE
+    CLI --> EXE
+    EXE --> FF["ffmpeg"]
+    EXE --> ASR["Speech recognition<br/>faster-whisper / cloud / macOS native"]
+    EXE --> LLM["LLM providers<br/>OpenAI-compatible / Anthropic / Gemini"]
 ```
 
-- `core/`: the Python engine. Task model, pipeline executor, stage implementations, LLM/ASR provider abstractions, the resident service, and the CLI.
-- `app/`: the Tauri 2 + React 19 desktop shell. It talks to the core API only; the GUI and the CLI are equivalent clients.
+- `core/` is the Python engine: task model, pipeline executor, stage implementations, LLM and ASR provider abstractions, the resident service, and the CLI.
+- `app/` is the Tauri 2 + React 19 desktop shell. It talks to the core API only; the GUI and the CLI are equivalent clients.
 
 The data directory defaults to the platform user-data location (`~/Library/Application Support/traduko` on macOS) and can be overridden with the `TRADUKO_DATA_ROOT` environment variable.
 
 ## Installation
 
-On macOS (Apple silicon), download the dmg from [Releases](https://github.com/Kahozue/traduko/releases). It bundles the core, so no separate Python install is needed. The app is not notarized, so the first launch needs an allow in System Settings → Privacy & Security.
+### macOS (Apple silicon)
 
-On other platforms, or when local speech recognition is needed, build from source. Requirements:
+Download the dmg from [Releases](https://github.com/Kahozue/traduko/releases). It bundles the core, so no separate Python install is needed. The app is not notarized; the first launch needs an allow in System Settings → Privacy & Security. The bundled core does not include faster-whisper; run the core from a Python environment if you need local speech recognition.
 
-- Python 3.11+ and [uv](https://docs.astral.sh/uv/)
-- ffmpeg (media processing and hardburn)
-- Node.js with pnpm, and a Rust toolchain (only needed for the desktop app)
+### Building from source
 
-### Engine and CLI
+| Requirement | Used for |
+| --- | --- |
+| Python 3.11+ and [uv](https://docs.astral.sh/uv/) | Core engine |
+| ffmpeg | Media processing and hardburn |
+| Node.js with pnpm, Rust toolchain | Desktop app only |
+
+Engine and CLI:
 
 ```bash
 cd core
 uv sync
 uv run traduko --help
-```
 
-For local speech recognition, install the ASR extra:
-
-```bash
+# for local speech recognition
 uv sync --extra asr
 ```
 
-### Desktop app
-
-Development mode (requires a running core, or `traduko` on PATH):
+Desktop app (development mode requires a running core, or `traduko` on PATH):
 
 ```bash
 cd app
@@ -109,18 +151,24 @@ pnpm install
 pnpm tauri dev
 ```
 
-Release build (bundles the core as a PyInstaller sidecar):
+A release build bundles the core as a PyInstaller sidecar:
 
 ```bash
 bash core/packaging/build_sidecar.sh
 cd app && pnpm tauri build
 ```
 
-The bundled core does not include faster-whisper; run the core from a Python environment if you need local ASR.
-
 ## Usage
 
-On first start the data directory is seeded with default profiles (`av-default`, `av-dub`, `subtitle-translate`, `novel-translate`, `translate-pdf`, `audio-transcribe`, `audio-translate`, `audio-dub`, `video-compose`, `audio-compose`), prompt templates, subtitle styles, and a pricing table. All of these are commented plain-text files and can be edited.
+On first start the data directory is seeded with default profiles, prompt templates, subtitle styles, and a pricing table. All of these are commented plain-text files and can be edited directly.
+
+| Profile | Purpose |
+| --- | --- |
+| `av-default` / `av-dub` | Video to subtitles; the latter adds dubbing |
+| `subtitle-translate` | Translate an existing subtitle file |
+| `novel-translate` / `translate-pdf` | Novel text and PDF document translation |
+| `audio-transcribe` / `audio-translate` / `audio-dub` | Audio to transcript, translation, dubbing |
+| `video-compose` / `audio-compose` | Compose video or audio deliverables from a transcript |
 
 CLI basics:
 
@@ -149,6 +197,18 @@ uv run traduko serve
 
 To use a real LLM, add a provider in the desktop app under Settings → General (any OpenAI-compatible endpoint, Anthropic, or Gemini) and pick a default when several are configured. Stages whose profile `provider` is `fake` or unset automatically use that default, with no YAML editing required. Editing `llm_providers` and `default_provider` in `config/core.yaml` directly has the same effect. With no provider configured, the `fake` provider exists for offline dry runs and outputs placeholder text prefixed with `[T]`.
 
+## Tech stack
+
+| Layer | Technology |
+| --- | --- |
+| Desktop shell | Tauri 2, React 19, TypeScript |
+| Core | Python 3.11, FastAPI, Pydantic |
+| Media | ffmpeg |
+| Speech recognition | faster-whisper, OpenAI cloud transcription, macOS native (SpeechAnalyzer) |
+| Speech synthesis | VoxCPM2 (local voice cloning and design), macOS say (fast preview) |
+| Translation and proofreading | Any OpenAI-compatible endpoint, Anthropic, Gemini |
+| Storage | Human-readable plain-text files, SQLite as an index only |
+
 ## Development
 
 ```bash
@@ -158,6 +218,18 @@ cd app && pnpm test:integration     # frontend/backend integration tests
 cd app/src-tauri && cargo test      # Rust shell tests
 ```
 
+Issues are welcome for bug reports and feature discussion. Please run the test suites above before submitting changes.
+
 ## Roadmap
 
-- Comic translation pipeline
+| Topic | Status |
+| --- | --- |
+| Video subtitling and hardburn | Available |
+| Audio transcription, translation, and dubbing | Available |
+| Document translation (novels, PDF) | Available |
+| Glossaries, agent proofreading, budget ledger | Available |
+| Comic translation pipeline | Planned |
+
+## License
+
+MIT. See [LICENSE](LICENSE).
