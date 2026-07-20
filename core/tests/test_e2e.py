@@ -117,17 +117,20 @@ def test_av_pipeline_with_hardburn(tmp_path: Path) -> None:
     assert ran.exit_code == 0, ran.output
     assert "completed" in ran.output
 
+    # The CLI runs the shared create chain, which inserts a glossary_proofread
+    # stage after asr (the fake engine carries no glossary bias), so every
+    # downstream artifact number is shifted by one.
     artifacts = tmp_path / "projects" / "default" / "tasks" / task_id / "artifacts"
     assert (artifacts / "01-audio.wav").stat().st_size > 0
     asr = json.loads((artifacts / "02-asr.json").read_text(encoding="utf-8"))
     assert asr["language"] == "en"
     translation = json.loads(
-        (artifacts / "04-translation.json").read_text(encoding="utf-8")
+        (artifacts / "05-translation.json").read_text(encoding="utf-8")
     )
     assert translation["segments"][0]["target"].startswith("[T] ")
-    assert (artifacts / "05-subtitles.srt").exists()
-    assert (artifacts / "05-subtitles.ass").exists()
-    assert (artifacts / "06-video.mp4").stat().st_size > 0
+    assert (artifacts / "06-subtitles.srt").exists()
+    assert (artifacts / "06-subtitles.ass").exists()
+    assert (artifacts / "07-video.mp4").stat().st_size > 0
 
 
 PROOFREAD_SCRIPT = [

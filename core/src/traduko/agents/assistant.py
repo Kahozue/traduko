@@ -431,28 +431,23 @@ def _build_action_tools(ws: Workspace, created_task_ids: list[str]) -> list[Agen
     normal PENDING state for the operator to review and start, so nothing
     irreversible happens without a human. Config still only moves through the
     proposal channel."""
-    from ..profiles import load_profile, stage_records_from
+    from ..tasks import TaskCreateError, create_task_from_profile
 
     def list_profiles(args: dict) -> str:
         names = sorted(path.stem for path in (ws.root / "profiles").glob("*.yaml"))
         return json.dumps(names, ensure_ascii=False)
 
     def create_task(args: dict) -> str:
-        input_path = Path(str(args.get("input_path", "")))
-        profile_name = str(args.get("profile", ""))
-        if not input_path.exists():
-            raise ToolError(f"input not found: {input_path}")
         try:
-            profile = load_profile(ws.root, profile_name)
-        except FileNotFoundError:
-            raise ToolError(f"profile not found: {profile_name}") from None
-        record = ws.store.create(
-            project=str(args.get("project") or ws.config.default_project),
-            input_path=str(input_path.resolve()),
-            profile_name=profile_name,
-            stages=stage_records_from(profile),
-            name=(str(args["name"]) if args.get("name") else None),
-        )
+            record = create_task_from_profile(
+                ws,
+                profile=str(args.get("profile", "")),
+                input_path=str(args.get("input_path") or ""),
+                project=(str(args["project"]) if args.get("project") else None),
+                name=(str(args["name"]) if args.get("name") else None),
+            )
+        except TaskCreateError as error:
+            raise ToolError(str(error)) from None
         created_task_ids.append(record.id)
         return json.dumps(
             {

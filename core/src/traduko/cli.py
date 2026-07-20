@@ -14,7 +14,7 @@ from .models import StageRecord, StageStatus, TaskGlossary, TaskStatus
 from .notify import Notifier
 from .paths import ENV_DATA_ROOT
 from .preflight import PreflightReport, run_preflight
-from .profiles import load_profile, stage_records_from
+from .tasks import TaskCreateError, create_task_from_profile
 from .workspace import Workspace
 
 app = typer.Typer(no_args_is_help=True)
@@ -37,20 +37,58 @@ def main(
 @task_app.command("create")
 def task_create(
     ctx: typer.Context,
-    input_path: Path = typer.Argument(..., help="Input media or subtitle file."),
+    input_path: Optional[Path] = typer.Argument(
+        None, help="Input media or subtitle file (optional for audio-compose)."
+    ),
     profile: str = typer.Option(..., "--profile", help="Profile name."),
     project: Optional[str] = typer.Option(None, "--project"),
+    transcript: Optional[Path] = typer.Option(
+        None, "--transcript", help="Compose profiles: transcript file (srt/vtt/txt)."
+    ),
+    transcript_project: Optional[str] = typer.Option(
+        None, "--transcript-project", help="Compose profiles: source task's project."
+    ),
+    transcript_task: Optional[str] = typer.Option(
+        None, "--transcript-task", help="Compose profiles: source task id."
+    ),
+    transcript_file: Optional[str] = typer.Option(
+        None, "--transcript-file", help="Compose profiles: artifact file name."
+    ),
+    base_audio: Optional[Path] = typer.Option(
+        None, "--base-audio", help="video-compose: replacement mix bed audio."
+    ),
 ) -> None:
     ws: Workspace = ctx.obj
-    if not input_path.exists():
-        raise typer.BadParameter(f"input not found: {input_path}")
-    loaded = load_profile(ws.root, profile)
-    record = ws.store.create(
-        project=project or ws.config.default_project,
-        input_path=str(input_path.resolve()),
-        profile_name=profile,
-        stages=stage_records_from(loaded),
-    )
+    from_task = transcript_project or transcript_task or transcript_file
+    if transcript is not None and from_task:
+        raise typer.BadParameter(
+            "give either --transcript or the --transcript-project/task/file "
+            "trio, not both"
+        )
+    source: Optional[dict] = None
+    if transcript is not None:
+        source = {"kind": "file", "path": str(transcript)}
+    elif from_task:
+        # Missing pieces of the trio stay None so the shared validation
+        # names the absent field.
+        source = {
+            "kind": "task",
+            "project": transcript_project,
+            "task_id": transcript_task,
+            "file": transcript_file,
+        }
+    try:
+        record = create_task_from_profile(
+            ws,
+            profile=profile,
+            input_path=str(input_path) if input_path else "",
+            project=project,
+            transcript=source,
+            base_audio=str(base_audio) if base_audio else None,
+        )
+    except TaskCreateError as error:
+        typer.echo(str(error))
+        raise typer.Exit(code=1) from None
     typer.echo(record.id)
 
 

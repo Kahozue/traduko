@@ -1026,3 +1026,42 @@ def test_apply_glossary_to_task_rejects_invalid_asr_mode(tmp_path: Path) -> None
         tools["apply_glossary_to_task"].handler({
             "project": "p", "task_id": record.id, "asr_mode": "bogus",
         })
+
+
+# --- create_task apply chain (v3_5-10: agent equals HTTP) --------------------
+
+
+def test_agent_create_task_applies_translation_defaults_and_switches(
+    tmp_path: Path,
+) -> None:
+    # The agent tool must run the same post-create apply chain as the HTTP
+    # endpoint: domain translation defaults and initial pipeline switches.
+    ws = make_ws(tmp_path)
+    ws.config.translation_defaults.audio.target_language = "ja"
+    input_file = tmp_path / "in.wav"
+    input_file.write_bytes(b"fake audio")
+    tools = action_tool_map(ws)
+
+    result = json.loads(
+        tools["create_task"].handler(
+            {"input_path": str(input_file), "profile": "audio-dub"}
+        )
+    )
+    record = ws.store.load("default", result["task_id"])
+    translate = next(s for s in record.stages if s.type == "translate")
+    assert translate.params["target_language"] == "ja"
+    assert record.switches is not None
+    assert record.switches.dub is False
+
+
+def test_agent_create_task_compose_without_transcript_is_a_tool_error(
+    tmp_path: Path,
+) -> None:
+    ws = make_ws(tmp_path)
+    tools = action_tool_map(ws)
+
+    with pytest.raises(ToolError, match="transcript"):
+        tools["create_task"].handler({"profile": "audio-compose"})
+    # A rejected create leaves nothing on disk.
+    tasks_dir = tmp_path / "projects" / "default" / "tasks"
+    assert not tasks_dir.exists() or not any(tasks_dir.iterdir())

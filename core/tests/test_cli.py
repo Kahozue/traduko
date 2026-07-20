@@ -376,3 +376,89 @@ def test_task_glossary_set_rejects_invalid_asr_mode(tmp_path: Path) -> None:
         env=env,
     )
     assert result.exit_code == 1
+
+
+# --- create-task apply chain (v3_5-10: CLI equals HTTP) ----------------------
+
+SRT = "1\n00:00:00,000 --> 00:00:01,000\nhello\n"
+
+
+def test_create_applies_domain_translation_defaults_and_switches(
+    tmp_path: Path,
+) -> None:
+    # The CLI must run the same post-create apply chain as the HTTP endpoint:
+    # domain translation defaults land in the translate stage, and the audio
+    # domain's pipeline defaults (dub off) land as initial switches.
+    from traduko.config import load_config, save_config
+    from traduko.workspace import Workspace
+
+    env = {"TRADUKO_DATA_ROOT": str(tmp_path)}
+    Workspace.open(tmp_path)  # seed default profiles
+    config = load_config(tmp_path)
+    config.translation_defaults.audio.target_language = "ja"
+    save_config(tmp_path, config)
+    input_file = tmp_path / "in.wav"
+    input_file.write_bytes(b"fake audio")
+
+    created = runner.invoke(
+        app, ["task", "create", str(input_file), "--profile", "audio-dub"], env=env
+    )
+    assert created.exit_code == 0, created.output
+    task_id = created.output.strip().splitlines()[-1]
+
+    shown = runner.invoke(app, ["task", "show", task_id], env=env)
+    payload = json.loads(shown.output)
+    translate = next(s for s in payload["stages"] if s["type"] == "translate")
+    assert translate["params"]["target_language"] == "ja"
+    assert payload["switches"] is not None
+    assert payload["switches"]["dub"] is False
+    mix = next(s for s in payload["stages"] if s["type"] == "mix_audio")
+    assert mix["status"] == "skipped"
+
+
+def test_create_compose_task_with_a_transcript_file(tmp_path: Path) -> None:
+    from traduko.workspace import Workspace
+
+    env = {"TRADUKO_DATA_ROOT": str(tmp_path)}
+    Workspace.open(tmp_path)
+    transcript = tmp_path / "lines.srt"
+    transcript.write_text(SRT, encoding="utf-8")
+
+    created = runner.invoke(
+        app,
+        [
+            "task", "create", "--profile", "audio-compose",
+            "--transcript", str(transcript),
+        ],
+        env=env,
+    )
+    assert created.exit_code == 0, created.output
+    task_id = created.output.strip().splitlines()[-1]
+
+    shown = runner.invoke(app, ["task", "show", task_id], env=env)
+    payload = json.loads(shown.output)
+    assert payload["input_path"] == str(transcript.resolve())
+    ingest = next(s for s in payload["stages"] if s["type"] == "ingest_transcript")
+    assert ingest["params"]["transcript"] == {
+        "kind": "file", "path": str(transcript.resolve())
+    }
+    # The compose exception: audio dubbing defaults to off, compose pins it on.
+    assert payload["switches"]["dub"] is True
+
+
+def test_create_compose_task_without_a_transcript_is_rejected(
+    tmp_path: Path,
+) -> None:
+    from traduko.workspace import Workspace
+
+    env = {"TRADUKO_DATA_ROOT": str(tmp_path)}
+    Workspace.open(tmp_path)
+
+    result = runner.invoke(
+        app, ["task", "create", "--profile", "audio-compose"], env=env
+    )
+    assert result.exit_code == 1
+    assert "transcript" in result.output
+    # A rejected create leaves nothing on disk.
+    tasks_dir = tmp_path / "projects" / "default" / "tasks"
+    assert not tasks_dir.exists() or not any(tasks_dir.iterdir())

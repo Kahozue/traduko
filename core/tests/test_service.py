@@ -3132,7 +3132,9 @@ def test_create_document_task_applies_document_defaults_to_all_translate_stages(
         )
 
 
-def test_cli_create_task_does_not_apply_domain_defaults(tmp_path: Path) -> None:
+def test_cli_create_task_applies_domain_defaults_like_http(tmp_path: Path) -> None:
+    # v3_5-10: the CLI runs the same create chain as the HTTP endpoint, so
+    # domain translation defaults apply on every entrance.
     from typer.testing import CliRunner
 
     from traduko.cli import app as cli_app
@@ -3158,7 +3160,7 @@ def test_cli_create_task_does_not_apply_domain_defaults(tmp_path: Path) -> None:
         ).read_text(encoding="utf-8")
     )
     translate = next(s for s in record["stages"] if s["type"] == "translate")
-    assert translate["params"]["target_language"] == "en"
+    assert translate["params"]["target_language"] == "ja"
 
 
 # --- task translation settings and retranslate (v3_5-08) --------------------

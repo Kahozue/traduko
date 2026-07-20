@@ -260,3 +260,48 @@ def test_reset_for_rerun_rejects_non_completed(tmp_path: Path) -> None:
     assert record.status == TaskStatus.PENDING
     with pytest.raises(ValueError):
         store.reset_for_rerun(record)
+
+
+# --- create_task_from_profile (v3_5-10: one apply chain, three entrances) ----
+
+
+def test_create_task_from_profile_unknown_profile_is_a_404(tmp_path: Path) -> None:
+    import pytest
+
+    from traduko.tasks import TaskCreateError, create_task_from_profile
+    from traduko.workspace import Workspace
+
+    ws = Workspace.open(tmp_path)
+    with pytest.raises(TaskCreateError) as excinfo:
+        create_task_from_profile(ws, profile="nope", input_path="in.srt")
+    assert excinfo.value.status == 404
+
+
+def test_create_task_from_profile_missing_input_is_a_400(tmp_path: Path) -> None:
+    import pytest
+
+    from traduko.tasks import TaskCreateError, create_task_from_profile
+    from traduko.workspace import Workspace
+
+    ws = Workspace.open(tmp_path)
+    with pytest.raises(TaskCreateError) as excinfo:
+        create_task_from_profile(ws, profile="subtitle-translate")
+    assert excinfo.value.status == 400
+    assert "input_path" in str(excinfo.value)
+
+
+def test_create_task_from_profile_compose_rejection_leaves_nothing_on_disk(
+    tmp_path: Path,
+) -> None:
+    import pytest
+
+    from traduko.tasks import TaskCreateError, create_task_from_profile
+    from traduko.workspace import Workspace
+
+    ws = Workspace.open(tmp_path)
+    with pytest.raises(TaskCreateError) as excinfo:
+        create_task_from_profile(ws, profile="audio-compose")
+    assert excinfo.value.status == 422
+    assert "transcript" in str(excinfo.value)
+    tasks_dir = tmp_path / "projects" / "default" / "tasks"
+    assert not tasks_dir.exists() or not any(tasks_dir.iterdir())

@@ -69,7 +69,6 @@ from ..glossary import (
     GlossaryEntry,
     GlossaryStore,
     GlossaryTableMeta,
-    task_glossary_for_new_task,
 )
 from ..glossary.store import _render_csv, _parse_csv
 from ..events import Event
@@ -96,7 +95,6 @@ from ..models import (
 )
 from ..notify import Notifier, NotifyError, create_channel
 from ..preflight import run_preflight
-from ..profiles import Profile, load_profile, profile_kind, stage_records_from
 from .. import proposals, skillhub
 from ..skillhub import SkillsManager, SkillValidationError
 from ..styles import SubtitleStyle
@@ -105,19 +103,21 @@ from ..tasks import (
     DUB_GROUP_TAIL,
     DUB_GROUP_TYPES,
     DUB_TEXT_MODES,
+    TaskCreateError,
     VOICE_MODES,
     append_dub_stages,
     apply_asr_engine_override,
     apply_dub_text_override,
     apply_model_override,
-    apply_translation_defaults,
     apply_voice_mode_override,
+    create_task_from_profile,
     dub_group_stages,
     ensure_glossary_proofread_stage,
     TRANSLATE_STAGE_TYPES,
-    initial_switches_for_new_task,
     recalc_stages_for_switches,
     task_domain,
+    validate_dub_text,
+    validate_voice_mode,
 )
 from ..sync.engine import (
     SyncConfigError,
@@ -369,102 +369,18 @@ class TaskCreateRequest(BaseModel):
     base_audio: str | None = None
 
 
-def _compose_transcript_params(root: Path, source: dict | None) -> tuple[dict, Path]:
-    """(params.transcript, the file it resolves to) for an ingest_transcript
-    stage. Kept next to the stage's own contract in stages/av.py: rejecting a
-    malformed source at creation beats failing the first run."""
-    if not source:
-        raise HTTPException(
-            status_code=422,
-            detail="transcript is required for a compose profile",
-        )
-    kind = source.get("kind")
-    if kind == "file":
-        if not source.get("path"):
-            raise HTTPException(
-                status_code=422, detail="transcript.path is required for kind=file"
-            )
-        path = Path(str(source["path"]))
-        if not path.exists():
-            raise HTTPException(
-                status_code=422, detail=f"transcript not found: {path}"
-            )
-        return {"kind": "file", "path": str(path.resolve())}, path.resolve()
-    if kind == "task":
-        for field in ("project", "task_id", "file"):
-            if not source.get(field):
-                raise HTTPException(
-                    status_code=422,
-                    detail=f"transcript.{field} is required for kind=task",
-                )
-        file = str(source["file"])
-        if Path(file).name != file:
-            raise HTTPException(
-                status_code=422,
-                detail=f"transcript.file must be a bare artifact name: {file}",
-            )
-        params = {
-            "kind": "task",
-            "project": str(source["project"]),
-            "task_id": str(source["task_id"]),
-            "file": file,
-        }
-        path = (
-            root / "projects" / params["project"] / "tasks" / params["task_id"]
-            / "artifacts" / file
-        )
-        if not path.exists():
-            raise HTTPException(
-                status_code=422, detail=f"transcript artifact not found: {path}"
-            )
-        return params, path.resolve()
-    raise HTTPException(
-        status_code=422, detail=f"transcript.kind must be file or task, got: {kind}"
-    )
-
-
-def _compose_inputs(
-    root: Path, profile: Profile, body: TaskCreateRequest
-) -> dict | None:
-    """Validated compose inputs, or None for a profile that ingests no
-    transcript. Runs before the task is created so a rejected request leaves
-    nothing on disk."""
-    if not any(stage.type == "ingest_transcript" for stage in profile.stages):
-        return None
-    transcript, resolved = _compose_transcript_params(root, body.transcript)
-    base_audio = None
-    if body.base_audio:
-        bed = Path(body.base_audio)
-        if not bed.exists():
-            raise HTTPException(status_code=422, detail=f"base audio not found: {bed}")
-        base_audio = str(bed.resolve())
-    return {"transcript": transcript, "base_audio": base_audio, "resolved": resolved}
-
-
-def _apply_compose_inputs(record: TaskRecord, inputs: dict | None) -> None:
-    if inputs is None:
-        return
-    for stage in record.stages:
-        if stage.type == "ingest_transcript":
-            stage.params["transcript"] = inputs["transcript"]
-        elif stage.type == "mix_audio" and inputs["base_audio"]:
-            stage.params["base_audio"] = inputs["base_audio"]
-
-
 def _validate_voice_mode(mode: str | None) -> None:
-    if mode and mode not in VOICE_MODES:
-        raise HTTPException(
-            status_code=422,
-            detail=f"voice_mode must be one of: {', '.join(VOICE_MODES)}",
-        )
+    try:
+        validate_voice_mode(mode)
+    except TaskCreateError as error:
+        raise HTTPException(status_code=error.status, detail=str(error)) from None
 
 
 def _validate_dub_text(dub_text: str | None) -> None:
-    if dub_text and dub_text not in DUB_TEXT_MODES:
-        raise HTTPException(
-            status_code=422,
-            detail=f"dub_text must be one of: {', '.join(DUB_TEXT_MODES)}",
-        )
+    try:
+        validate_dub_text(dub_text)
+    except TaskCreateError as error:
+        raise HTTPException(status_code=error.status, detail=str(error)) from None
 
 
 def _load_task(ws: Workspace, project: str, task_id: str) -> TaskRecord:
@@ -488,55 +404,23 @@ def list_tasks(
 def create_task(request: Request, body: TaskCreateRequest) -> dict:
     ws: Workspace = request.app.state.workspace
     try:
-        profile = load_profile(ws.root, body.profile)
-    except FileNotFoundError:
-        raise HTTPException(
-            status_code=404, detail=f"profile not found: {body.profile}"
-        ) from None
-    _validate_voice_mode(body.voice_mode)
-    _validate_dub_text(body.dub_text)
-    compose = _compose_inputs(ws.root, profile, body)
-    # An audio compose task has no media input at all, so the transcript
-    # stands in as the input: preflight has a real file to check and the
-    # default task name has something to read.
-    if body.input_path:
-        input_path = Path(body.input_path)
-    elif compose is not None:
-        input_path = compose["resolved"]
-    else:
-        raise HTTPException(status_code=400, detail="input_path is required")
-    if not input_path.exists():
-        raise HTTPException(status_code=400, detail=f"input not found: {input_path}")
-    if any(stage.type in ("mux", "hardburn") for stage in profile.stages) and (
-        compose is not None and media_kind_of(input_path) != "video"
-    ):
-        raise HTTPException(
-            status_code=422,
-            detail=f"this profile needs a video file as input: {input_path}",
+        record = create_task_from_profile(
+            ws,
+            profile=body.profile,
+            input_path=body.input_path,
+            project=body.project,
+            name=body.name,
+            provider=body.provider,
+            model=body.model,
+            asr_engine=body.asr_engine,
+            voice_mode=body.voice_mode,
+            voice_instruction=body.voice_instruction,
+            dub_text=body.dub_text,
+            transcript=body.transcript,
+            base_audio=body.base_audio,
         )
-    record = ws.store.create(
-        project=body.project or ws.config.default_project,
-        input_path=str(input_path.resolve()),
-        profile_name=body.profile,
-        stages=stage_records_from(profile),
-        name=body.name,
-    )
-    kind = profile_kind(profile)
-    _apply_compose_inputs(record, compose)
-    record.glossary = task_glossary_for_new_task(ws.root, kind)
-    apply_translation_defaults(record, kind, ws.config)
-    apply_asr_engine_override(record, body.asr_engine or None)
-    apply_voice_mode_override(
-        record, body.voice_mode or None, body.voice_instruction or None
-    )
-    apply_dub_text_override(record, body.dub_text or None)
-    ensure_glossary_proofread_stage(record, ws.config)
-    apply_model_override(record, body.provider or None, body.model or None)
-    switches = initial_switches_for_new_task(record, ws.config)
-    if switches is not None:
-        record.switches = switches
-        recalc_stages_for_switches(record, switches)
-    ws.store.save(record)
+    except TaskCreateError as error:
+        raise HTTPException(status_code=error.status, detail=str(error)) from None
     return record.model_dump()
 
 
