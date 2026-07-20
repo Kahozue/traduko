@@ -1,6 +1,5 @@
-// Kept in step with zh-TW.ts by hand; i18n/index.test.ts fails if the
-// three locales drift. (scripts/gen-i18n.py was the original
-// generator and has been out of date since v2; do not trust it.)
+// Edited by hand, in the same key order as zh-TW.ts.
+// i18n/index.test.ts fails if the three locales drift.
 import type { MessageKey } from "./index";
 
 export const en: Record<MessageKey, string> = {
