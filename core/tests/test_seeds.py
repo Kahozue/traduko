@@ -122,3 +122,16 @@ def test_audio_compose_defaults_to_designed_voices(tmp_path: Path) -> None:
             assert stage.params.get("voice_mode") == "design", stage.type
     video = load_profile(tmp_path, "video-compose")
     assert "voice_mode" not in video.stages[1].params
+
+
+def test_profile_kind_classifies_a_comic_profile(tmp_path: Path) -> None:
+    # No comic pipeline ships yet; the kind enum reserves the domain so a
+    # comic profile is classified rather than falling back to video.
+    from traduko.profiles import profile_kind
+
+    (tmp_path / "profiles").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "profiles" / "comic-x.yaml").write_text(
+        "schema_version: 1\nname: comic-x\nkind: comic\nstages:\n  - type: noop\n",
+        encoding="utf-8",
+    )
+    assert profile_kind(load_profile(tmp_path, "comic-x")) == "comic"

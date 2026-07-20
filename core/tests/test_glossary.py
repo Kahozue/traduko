@@ -214,3 +214,23 @@ def test_format_for_prompt() -> None:
         [GlossaryEntry(source="Kirito", target="桐人", notes="protagonist")]
     )
     assert text == "Kirito -> 桐人  (protagonist)"
+
+
+# --- comic domain reserve (v3_5-10) ------------------------------------------
+
+
+def test_comic_domain_tables_work_end_to_end(tmp_path: Path) -> None:
+    # The comic pipeline does not exist yet, but the glossary model reserves
+    # the domain: tables must create, take entries, filter, and land in a new
+    # comic task's selection just like the live domains.
+    from traduko.glossary import task_glossary_for_new_task
+
+    store = GlossaryStore(tmp_path)
+    meta = store.create_table("Comic terms", "comic")
+    assert meta.domain == "comic"
+    store.write_entries(meta.id, [GlossaryEntry(source="ネコ", target="貓")])
+    assert [e.source for e in store.read_entries(meta.id)] == ["ネコ"]
+    assert [m.id for m in store.list_tables(domain="comic")] == [meta.id]
+
+    glossary = task_glossary_for_new_task(tmp_path, "comic")
+    assert glossary.global_ids == [meta.id]

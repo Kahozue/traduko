@@ -438,6 +438,13 @@ def _build_action_tools(ws: Workspace, created_task_ids: list[str]) -> list[Agen
         return json.dumps(names, ensure_ascii=False)
 
     def create_task(args: dict) -> str:
+        transcript = args.get("transcript")
+        if transcript is not None and not isinstance(transcript, dict):
+            raise ToolError(
+                "transcript must be an object: "
+                '{"kind": "file", "path": ...} or '
+                '{"kind": "task", "project": ..., "task_id": ..., "file": ...}'
+            )
         try:
             record = create_task_from_profile(
                 ws,
@@ -445,6 +452,10 @@ def _build_action_tools(ws: Workspace, created_task_ids: list[str]) -> list[Agen
                 input_path=str(args.get("input_path") or ""),
                 project=(str(args["project"]) if args.get("project") else None),
                 name=(str(args["name"]) if args.get("name") else None),
+                transcript=transcript,
+                base_audio=(
+                    str(args["base_audio"]) if args.get("base_audio") else None
+                ),
             )
         except TaskCreateError as error:
             raise ToolError(str(error)) from None
@@ -587,13 +598,20 @@ def _build_action_tools(ws: Workspace, created_task_ids: list[str]) -> list[Agen
                 "Create a new task from a pipeline profile. The task is left "
                 "PENDING for the operator to review and run; it is never "
                 "started automatically. Use an attached file path as "
-                "input_path when the operator gave one."
+                "input_path when the operator gave one. The compose profiles "
+                "(video-compose, audio-compose) require `transcript`; "
+                "audio-compose needs no input_path (the transcript stands in "
+                "as the input), video-compose still needs the video file as "
+                "input_path and takes an optional base_audio mix bed."
             ),
             parameters={
                 "input_path": {
                     "type": "string",
-                    "required": True,
-                    "description": "absolute path to the input file",
+                    "required": False,
+                    "description": (
+                        "absolute path to the input file (omit only for "
+                        "audio-compose)"
+                    ),
                 },
                 "profile": {
                     "type": "string",
@@ -609,6 +627,24 @@ def _build_action_tools(ws: Workspace, created_task_ids: list[str]) -> list[Agen
                     "type": "string",
                     "required": False,
                     "description": "human-friendly task name",
+                },
+                "transcript": {
+                    "type": "object",
+                    "required": False,
+                    "description": (
+                        "compose profiles only: transcript source, either "
+                        '{"kind": "file", "path": "/abs/lines.srt"} or '
+                        '{"kind": "task", "project": ..., "task_id": ..., '
+                        '"file": "artifact name"}'
+                    ),
+                },
+                "base_audio": {
+                    "type": "string",
+                    "required": False,
+                    "description": (
+                        "video-compose only: absolute path to a replacement "
+                        "mix bed audio file"
+                    ),
                 },
             },
             handler=_safe(create_task),

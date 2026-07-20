@@ -1065,3 +1065,55 @@ def test_agent_create_task_compose_without_transcript_is_a_tool_error(
     # A rejected create leaves nothing on disk.
     tasks_dir = tmp_path / "projects" / "default" / "tasks"
     assert not tasks_dir.exists() or not any(tasks_dir.iterdir())
+
+
+def test_agent_create_task_builds_a_compose_task_from_a_transcript(
+    tmp_path: Path,
+) -> None:
+    ws = make_ws(tmp_path)
+    transcript = tmp_path / "lines.srt"
+    transcript.write_text(
+        "1\n00:00:00,000 --> 00:00:01,000\nhello\n", encoding="utf-8"
+    )
+    tools = action_tool_map(ws)
+
+    result = json.loads(
+        tools["create_task"].handler(
+            {
+                "profile": "audio-compose",
+                "transcript": {"kind": "file", "path": str(transcript)},
+            }
+        )
+    )
+    record = ws.store.load("default", result["task_id"])
+    assert record.input_path == str(transcript.resolve())
+    ingest = next(s for s in record.stages if s.type == "ingest_transcript")
+    assert ingest.params["transcript"] == {
+        "kind": "file", "path": str(transcript.resolve())
+    }
+    assert record.switches is not None and record.switches.dub is True
+
+
+def test_agent_create_task_tool_declares_the_compose_parameters() -> None:
+    # The runner rejects unknown arguments, so the compose fields must be in
+    # the declared schema and input_path must no longer be required.
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as tmp:
+        ws = make_ws(Path(tmp))
+        tool = action_tool_map(ws)["create_task"]
+        assert "transcript" in tool.parameters
+        assert "base_audio" in tool.parameters
+        assert not tool.parameters["input_path"].get("required")
+
+
+def test_agent_create_task_rejects_a_malformed_transcript_argument(
+    tmp_path: Path,
+) -> None:
+    ws = make_ws(tmp_path)
+    tools = action_tool_map(ws)
+
+    with pytest.raises(ToolError, match="transcript"):
+        tools["create_task"].handler(
+            {"profile": "audio-compose", "transcript": "lines.srt"}
+        )

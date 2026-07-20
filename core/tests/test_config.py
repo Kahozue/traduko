@@ -367,3 +367,19 @@ def test_config_file_without_translation_defaults_reads_defaults(
     )
     loaded = load_config(tmp_path)
     assert loaded.translation_defaults.comic.target_language == "zh-TW"
+
+
+def test_comic_translation_defaults_roundtrip(tmp_path: Path) -> None:
+    # comic surfaces in settings only once the comic tab exists, but the
+    # config field must already hold values without losing them.
+    config = load_config(tmp_path)
+    config.translation_defaults.comic.target_language = "ko"
+    config.translation_defaults.comic.style = "casual"
+    config.translation_defaults.comic.prompt_override = "comic ${target_language}"
+    save_config(tmp_path, config)
+    loaded = load_config(tmp_path)
+    assert loaded.translation_defaults.comic.target_language == "ko"
+    assert loaded.translation_defaults.comic.style == "casual"
+    assert loaded.translation_defaults.comic.prompt_override == (
+        "comic ${target_language}"
+    )
