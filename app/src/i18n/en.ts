@@ -552,6 +552,7 @@ export const en: Record<MessageKey, string> = {
   "editor.style.saved": "Style saved",
   "task.checkpoint.title": "Task paused at a review checkpoint",
   "task.glossary": "Glossary",
+  "task.studios.label": "Studios",
   "task.glossary.title": "Glossary settings",
   "task.glossary.globalTables": "Global glossaries",
   "task.glossary.taskTable": "Task-local glossary",

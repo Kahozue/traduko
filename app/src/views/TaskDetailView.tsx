@@ -551,65 +551,6 @@ export function TaskDetailView({
           >
             {t("task.cancel")}
           </button>
-          {supportsEditor && (
-            <button
-              type="button"
-              className={styles.secondary}
-              disabled={!hasTranslation}
-              title={hasTranslation ? undefined : t("task.editorDisabledHint")}
-              onClick={() => onOpenEditor(editorKind)}
-            >
-              {editorLabel}
-            </button>
-          )}
-          {isDubTask && (
-            <button
-              type="button"
-              className={styles.secondary}
-              disabled={!hasSpeakers}
-              onClick={() => onOpenEditor("speakers")}
-            >
-              {t("task.speakerReview")}
-            </button>
-          )}
-          {isDubTask && onOpenDub && (
-            <button
-              type="button"
-              className={styles.secondary}
-              disabled={!transcriptReady}
-              title={transcriptReady ? undefined : t("task.dub.studio.disabledHint")}
-              onClick={onOpenDub}
-            >
-              {t("task.dub.studio.entry")}
-            </button>
-          )}
-          {exportKind !== null && onOpenExport && (
-            <button
-              type="button"
-              className={styles.secondary}
-              onClick={onOpenExport}
-            >
-              {t("task.export.studio.entry")}
-            </button>
-          )}
-          {hasTranslateStage && onOpenTranslation && (
-            <button
-              type="button"
-              className={styles.secondary}
-              onClick={onOpenTranslation}
-            >
-              {t("task.translation")}
-            </button>
-          )}
-          {onOpenGlossary && (
-            <button
-              type="button"
-              className={styles.secondary}
-              onClick={onOpenGlossary}
-            >
-              {t("task.glossary")}
-            </button>
-          )}
         </div>
       </header>
 
@@ -856,6 +797,83 @@ export function TaskDetailView({
       )}
 
       {mediaKind !== null && <MediaPlayer path={task.input_path} kind={mediaKind} />}
+
+      {/* Studio row (spec v3_5 section 5): secondary entry points live in
+          their own row after the meta line and player. The editor entries
+          sit here too: at 1280px the header could not hold five buttons
+          plus a long title without wrapping, so it keeps only the run
+          controls (run/pause/cancel). */}
+      {(supportsEditor ||
+        isDubTask ||
+        (exportKind !== null && onOpenExport) ||
+        onOpenGlossary ||
+        (hasTranslateStage && onOpenTranslation)) && (
+        <div
+          className={styles.studioRow}
+          role="group"
+          aria-label={t("task.studios.label")}
+        >
+          {supportsEditor && (
+            <button
+              type="button"
+              className={styles.secondary}
+              disabled={!hasTranslation}
+              title={hasTranslation ? undefined : t("task.editorDisabledHint")}
+              onClick={() => onOpenEditor(editorKind)}
+            >
+              {editorLabel}
+            </button>
+          )}
+          {isDubTask && (
+            <button
+              type="button"
+              className={styles.secondary}
+              disabled={!hasSpeakers}
+              onClick={() => onOpenEditor("speakers")}
+            >
+              {t("task.speakerReview")}
+            </button>
+          )}
+          {isDubTask && onOpenDub && (
+            <button
+              type="button"
+              className={styles.secondary}
+              disabled={!transcriptReady}
+              title={transcriptReady ? undefined : t("task.dub.studio.disabledHint")}
+              onClick={onOpenDub}
+            >
+              {t("task.dub.studio.entry")}
+            </button>
+          )}
+          {exportKind !== null && onOpenExport && (
+            <button
+              type="button"
+              className={styles.secondary}
+              onClick={onOpenExport}
+            >
+              {t("task.export.studio.entry")}
+            </button>
+          )}
+          {onOpenGlossary && (
+            <button
+              type="button"
+              className={styles.secondary}
+              onClick={onOpenGlossary}
+            >
+              {t("task.glossary")}
+            </button>
+          )}
+          {hasTranslateStage && onOpenTranslation && (
+            <button
+              type="button"
+              className={styles.secondary}
+              onClick={onOpenTranslation}
+            >
+              {t("task.translation")}
+            </button>
+          )}
+        </div>
+      )}
 
       {task.status === "paused" && (
         <section className={styles.noticePaused}>

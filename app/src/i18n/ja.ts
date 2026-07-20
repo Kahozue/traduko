@@ -552,6 +552,7 @@ export const ja: Record<MessageKey, string> = {
   "editor.style.saved": "スタイルを保存しました",
   "task.checkpoint.title": "タスクは確認チェックポイントで停止中です",
   "task.glossary": "用語表",
+  "task.studios.label": "スタジオ",
   "task.glossary.title": "用語表設定",
   "task.glossary.globalTables": "グローバル用語表",
   "task.glossary.taskTable": "タスク専用用語表",

@@ -558,6 +558,7 @@ export const zhTW = {
   "editor.style.saved": "樣式已儲存",
   "task.checkpoint.title": "任務停於人工檢查點",
   "task.glossary": "名詞表",
+  "task.studios.label": "工作室",
   "task.glossary.title": "名詞表設定",
   "task.glossary.globalTables": "全域名詞表",
   "task.glossary.taskTable": "任務專屬名詞表",

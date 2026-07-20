@@ -981,6 +981,70 @@ test("the export studio entry stays for a video task with no export stage", asyn
   expect(await screen.findByRole("button", { name: /匯出工作室/ })).toBeInTheDocument();
 });
 
+// --- studio row (v3_5-11 M1) ------------------------------------------------
+
+test("studio entries sit in their own row, out of the header run controls", async () => {
+  const dubTask: TaskRecord = {
+    ...task,
+    profile: "av-dub",
+    input_path: "/tmp/in.mp4",
+    stages: [
+      stageOf("extract_audio", "completed"),
+      stageOf("asr", "completed"),
+      stageOf("translate", "completed"),
+      stageOf("diarize", "completed"),
+      stageOf("tts_synthesize", "pending"),
+    ],
+  };
+  const api: Partial<ApiClient> = {
+    showTask: vi.fn().mockResolvedValue(dubTask),
+    listArtifacts: vi.fn().mockResolvedValue([
+      { file: "02-asr.json", index: 2, name: "asr.json", schema_version: 1, size: 1024, mtime: 1 },
+    ]),
+  };
+  renderWithConnection(
+    <TaskDetailView
+      project="default"
+      taskId="t1"
+      onBack={() => {}}
+      onOpenEditor={() => {}}
+      onOpenGlossary={() => {}}
+      onOpenDub={() => {}}
+      onOpenExport={() => {}}
+      onOpenTranslation={() => {}}
+    />,
+    { api },
+  );
+  const row = await screen.findByRole("group", { name: "工作室" });
+  for (const name of [
+    "字幕編輯器",
+    "說話人檢查",
+    "配音工作室",
+    "匯出工作室",
+    "名詞表",
+    "翻譯設定",
+  ]) {
+    expect(within(row).getByRole("button", { name })).toBeInTheDocument();
+  }
+  // The header keeps only the run controls: at 1280px five buttons plus a
+  // long title wrapped, so the editor entries moved into the studio row too.
+  const header = document.querySelector("header") as HTMLElement;
+  expect(header).not.toBeNull();
+  for (const name of [
+    "字幕編輯器",
+    "說話人檢查",
+    "配音工作室",
+    "匯出工作室",
+    "名詞表",
+    "翻譯設定",
+  ]) {
+    expect(within(header).queryByRole("button", { name })).toBeNull();
+  }
+  expect(within(header).getByRole("button", { name: "執行" })).toBeInTheDocument();
+  expect(within(header).getByRole("button", { name: "暫停" })).toBeInTheDocument();
+  expect(within(header).getByRole("button", { name: "取消任務" })).toBeInTheDocument();
+});
+
 test("the export studio entry appears for a compose task", async () => {
   const composeTask: TaskRecord = {
     ...task,
