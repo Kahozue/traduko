@@ -6,6 +6,7 @@ insert or remove stages without breaking neighbours.
 """
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import yaml
@@ -112,6 +113,41 @@ def _resolve_transcript(ctx: StageContext) -> tuple[Path, str]:
     raise StageError(f"transcript.kind must be file or task, got: {kind!r}")
 
 
+def _segments_from_translation_json(path: Path, label: str) -> list[dict]:
+    """Segments from a translation.json-shaped document.
+
+    spec section 7 lets a compose task voice another task's translation, so
+    the target text wins and the source is the fallback for a segment that
+    was never translated.
+    """
+    try:
+        doc = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as error:
+        raise StageError(f"cannot read {label} {path}: {error}") from error
+    rows = doc.get("segments") if isinstance(doc, dict) else None
+    if not isinstance(rows, list):
+        raise StageError(
+            f"{label} {path} has no segments list; expected a translation.json "
+            "document or a subtitle file"
+        )
+    segments: list[dict] = []
+    for index, row in enumerate(rows, start=1):
+        if not isinstance(row, dict):
+            continue
+        text = str(row.get("target") or row.get("source") or row.get("text") or "").strip()
+        if not text:
+            continue
+        segments.append(
+            {
+                "id": int(row.get("id") or index),
+                "start": row.get("start"),
+                "end": row.get("end"),
+                "text": text,
+            }
+        )
+    return segments
+
+
 @registry.register
 class IngestTranscriptStage:
     """Transcript in, segments out: the head of the compose profiles.
@@ -128,22 +164,27 @@ class IngestTranscriptStage:
         path, label = _resolve_transcript(ctx)
         if not path.exists():
             raise StageError(f"{label} not found: {path}")
-        try:
-            cues = parse_subtitle(path)
-        except (SubtitleError, OSError) as error:
-            raise StageError(f"cannot read {label} {path}: {error}") from error
-        if not cues:
+        if path.suffix.lower() == ".json":
+            segments = _segments_from_translation_json(path, label)
+        else:
+            try:
+                cues = parse_subtitle(path)
+            except (SubtitleError, OSError) as error:
+                raise StageError(f"cannot read {label} {path}: {error}") from error
+            segments = [
+                {"id": c.id, "start": c.start, "end": c.end, "text": c.text}
+                for c in cues
+            ]
+        if not segments:
             raise StageError(f"no transcript lines found in {label} {path}")
-        segments = [
-            {"id": c.id, "start": c.start, "end": c.end, "text": c.text} for c in cues
-        ]
         artifact = ctx.artifacts.write_json(
             ctx.stage_index + 1,
             "segments.json",
             {
                 "language": ctx.params.get("source_language", "unknown"),
                 "timestamps": all(
-                    c.start is not None and c.end is not None for c in cues
+                    seg["start"] is not None and seg["end"] is not None
+                    for seg in segments
                 ),
                 "segments": segments,
             },

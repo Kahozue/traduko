@@ -1,8 +1,9 @@
 import { useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { ConfirmDialog } from "../ConfirmDialog";
 import { t } from "../../i18n";
 import { ApiError } from "../../lib/api/client";
-import type { GlossaryDomain } from "../../lib/api/types";
+import type { GlossaryDomain, GlossaryTable } from "../../lib/api/types";
 import { useApi } from "../../lib/connection";
 import { humanizeError } from "../../lib/errors";
 import { Section } from "./Section";
@@ -24,6 +25,8 @@ export function GlossarySection({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState("");
+  // Deleting a table throws away every term in it, so it asks first.
+  const [deleting, setDeleting] = useState<GlossaryTable | null>(null);
 
   const list = useQuery({
     queryKey: ["glossaries", domain],
@@ -94,6 +97,7 @@ export function GlossarySection({
     mutationFn: (id: string) => api.deleteGlossary(id),
     onSuccess: () => {
       setError(null);
+      setDeleting(null);
       refresh();
     },
     onError: failWith(t("settings.glossary.actionFailed")),
@@ -118,12 +122,13 @@ export function GlossarySection({
     importTable.mutate({ name, content, format });
   }
 
-  async function onExport(id: string, name: string) {
-    const content = await api.exportGlossary(id, "csv");
-    const url = URL.createObjectURL(new Blob([content], { type: "text/csv" }));
+  async function onExport(id: string, name: string, format: "csv" | "json") {
+    const content = await api.exportGlossary(id, format);
+    const type = format === "json" ? "application/json" : "text/csv";
+    const url = URL.createObjectURL(new Blob([content], { type }));
     const anchor = document.createElement("a");
     anchor.href = url;
-    anchor.download = `${name}.csv`;
+    anchor.download = `${name}.${format}`;
     anchor.click();
     URL.revokeObjectURL(url);
   }
@@ -250,21 +255,40 @@ export function GlossarySection({
             <button
               type="button"
               className={styles.secondary}
-              onClick={() => void onExport(table.id, table.id)}
+              onClick={() => void onExport(table.id, table.name, "csv")}
             >
-              {t("settings.glossary.export")}
+              {t("settings.glossary.exportCsv")}
+            </button>
+            <button
+              type="button"
+              className={styles.secondary}
+              onClick={() => void onExport(table.id, table.name, "json")}
+            >
+              {t("settings.glossary.exportJson")}
             </button>
             <button
               type="button"
               className={styles.secondary}
               disabled={remove.isPending}
-              onClick={() => remove.mutate(table.id)}
+              onClick={() => setDeleting(table)}
             >
               {t("settings.remove")}
             </button>
           </div>
         </div>
       ))}
+      {deleting && (
+        <ConfirmDialog
+          title={t("settings.glossary.deleteConfirm.title")}
+          body={deleting.name}
+          confirmLabel={t("settings.glossary.deleteConfirm.confirm")}
+          cancelLabel={t("settings.confirm.cancel")}
+          danger
+          busy={remove.isPending}
+          onConfirm={() => remove.mutate(deleting.id)}
+          onCancel={() => setDeleting(null)}
+        />
+      )}
     </Section>
   );
 }

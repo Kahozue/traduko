@@ -13,6 +13,34 @@ const UNCATEGORIZED = "";
 
 type Row = GlossaryEntry & { selected: boolean };
 
+// Which glossary domain a task belongs to, from its stage makeup; mirrors
+// the domain split the settings tabs and the core's profile kinds use.
+const AUDIO_DOMAIN_STAGES = ["export_transcript", "export_audio"];
+const DOCUMENT_STAGES = [
+  "ingest_document",
+  "chunk",
+  "translate_chunks",
+  "export_document",
+  "translate_pdf",
+];
+const COMIC_STAGES = ["ingest_comic", "bubble_detect", "ocr", "inpaint", "typeset"];
+
+function domainOf(task: { stages: { type: string }[] } | undefined): string {
+  const types = new Set((task?.stages ?? []).map((stage) => stage.type));
+  if (COMIC_STAGES.some((type) => types.has(type))) return "comic";
+  if (AUDIO_DOMAIN_STAGES.some((type) => types.has(type))) return "audio";
+  if (DOCUMENT_STAGES.some((type) => types.has(type))) return "document";
+  return "video";
+}
+
+const DOMAIN_LABELS: Record<string, Parameters<typeof t>[0]> = {
+  video: "task.glossary.domain.video",
+  audio: "task.glossary.domain.audio",
+  document: "task.glossary.domain.document",
+  general: "task.glossary.domain.general",
+  comic: "task.glossary.domain.comic",
+};
+
 export function TaskGlossaryView({
   project,
   taskId,
@@ -189,22 +217,17 @@ export function TaskGlossaryView({
     ["translate", "translate_chunks"].includes(s.type),
   );
 
-  // Group global glossaries by domain
+  // Group global glossaries by domain, listing this task's domain and the
+  // general tables only (spec 3-(4)): a video task picking document tables
+  // is noise, not choice.
+  const taskDomain = domainOf(task);
   const glossariesByDomain = new Map<string, GlossaryTable[]>();
   for (const g of allGlossaries ?? []) {
-    const key = g.domain;
-    if (!glossariesByDomain.has(key)) glossariesByDomain.set(key, []);
-    glossariesByDomain.get(key)!.push(g);
+    if (g.domain !== taskDomain && g.domain !== "general") continue;
+    if (!glossariesByDomain.has(g.domain)) glossariesByDomain.set(g.domain, []);
+    glossariesByDomain.get(g.domain)!.push(g);
   }
-
-  // Domain display order: task domain first, then general, then others
-  const domainOrder: string[] = [];
-  if (hasAsr) domainOrder.push("video", "audio");
-  else domainOrder.push("document");
-  if (!domainOrder.includes("general")) domainOrder.push("general");
-  for (const d of glossariesByDomain.keys()) {
-    if (!domainOrder.includes(d)) domainOrder.push(d);
-  }
+  const domainOrder = [taskDomain, "general"];
 
   // Task-local entry table: filter and group
   const query = entrySearch.trim().toLowerCase();
@@ -230,13 +253,9 @@ export function TaskGlossaryView({
   const groups = groupOrder.map((key) => ({ category: key, items: groupMap.get(key)! }));
   const selectedCount = rows.filter((row) => row.selected).length;
 
-  const domainLabel: Record<string, string> = {
-    video: t("nav.tasks") + " - Video",
-    audio: t("nav.tasks") + " - Audio",
-    document: t("nav.tasks") + " - Document",
-    general: t("settings.general"),
-    comic: "Comic",
-  };
+  const reapplyModes: ReapplyMode[] = [];
+  if (hasAsr) reapplyModes.push("asr", "proofread");
+  if (hasTranslate) reapplyModes.push("translate");
 
   return (
     <div>
@@ -270,7 +289,6 @@ export function TaskGlossaryView({
           placeholder={t("task.glossary.search")}
           value={entrySearch}
           onChange={(e) => setEntrySearch(e.target.value)}
-          style={{ marginBottom: 12 }}
         />
         {domainOrder.map((domain) => {
           const tables = glossariesByDomain.get(domain);
@@ -278,7 +296,7 @@ export function TaskGlossaryView({
           return (
             <div key={domain} className={styles.domainGroup}>
               <h3 className={styles.domainTitle}>
-                {domainLabel[domain] ?? domain}
+                {DOMAIN_LABELS[domain] ? t(DOMAIN_LABELS[domain]) : domain}
               </h3>
               {tables.map((table) => (
                 <label key={table.id} className={styles.checkRow}>
@@ -418,39 +436,27 @@ export function TaskGlossaryView({
         )}
       </section>
 
-      {/* Reapply section */}
-      {dirty && (
-        <section className={styles.reapplySection}>
+      {/* Reapply section: hidden when the task supports none of the modes,
+          which would otherwise render a framed box around one hint line. */}
+      {dirty && reapplyModes.length > 0 && (
+        <section
+          className={styles.reapplySection}
+          role="group"
+          aria-label={t("task.glossary.reapply.title")}
+        >
           <h2 className={styles.sectionTitle}>{t("task.glossary.reapply.title")}</h2>
           <p className={styles.reapplyHint}>{t("task.glossary.reapply.hint")}</p>
           <div className={styles.reapplyButtons}>
-            {hasAsr && (
+            {reapplyModes.map((mode) => (
               <button
+                key={mode}
                 type="button"
                 className={styles.secondary}
-                onClick={() => setReapplyMode("asr")}
+                onClick={() => setReapplyMode(mode)}
               >
-                {t("task.glossary.reapply.asr")}
+                {t(`task.glossary.reapply.${mode}`)}
               </button>
-            )}
-            {hasAsr && (
-              <button
-                type="button"
-                className={styles.secondary}
-                onClick={() => setReapplyMode("proofread")}
-              >
-                {t("task.glossary.reapply.proofread")}
-              </button>
-            )}
-            {hasTranslate && (
-              <button
-                type="button"
-                className={styles.secondary}
-                onClick={() => setReapplyMode("translate")}
-              >
-                {t("task.glossary.reapply.translate")}
-              </button>
-            )}
+            ))}
           </div>
         </section>
       )}

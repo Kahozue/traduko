@@ -709,6 +709,42 @@ def test_task_export_refuses_a_dub_source_with_no_dub_mix(tmp_path: Path) -> Non
     assert "export_audio_custom" not in types
 
 
+def test_task_export_warns_about_the_pending_stages_it_will_run_first(
+    tmp_path: Path,
+) -> None:
+    # Running the whole pending pipeline is the documented behavior, but
+    # "export" reads like "just export", so say what is about to happen.
+    env = _seeded_env(tmp_path)
+    input_file = tmp_path / "clip.mp4"
+    input_file.write_bytes(b"fake video")
+    created = runner.invoke(
+        app, ["task", "create", str(input_file), "--profile", "av-default"], env=env
+    )
+    assert created.exit_code == 0, created.output
+    task_id = created.output.strip().splitlines()[-1]
+
+    result = runner.invoke(
+        app, ["task", "export", task_id, "--kind", "video"], env=env
+    )
+
+    assert "will first run" in result.output
+    pending = sum(
+        1 for s in _show_task(task_id, env)["stages"] if s["type"] != "export_video"
+    )
+    assert str(pending) in result.output
+
+
+def test_task_export_of_a_finished_task_warns_about_nothing(tmp_path: Path) -> None:
+    env = _seeded_env(tmp_path)
+    task_id = _completed_task(tmp_path, env, "clip.mp4")
+
+    result = runner.invoke(
+        app, ["task", "export", task_id, "--kind", "video"], env=env
+    )
+
+    assert "will first run" not in result.output
+
+
 def test_task_export_refuses_when_the_disk_is_too_full(
     tmp_path: Path, monkeypatch
 ) -> None:

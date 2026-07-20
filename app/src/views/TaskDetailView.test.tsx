@@ -1014,6 +1014,27 @@ test("the export studio entry stays for a video task with no export stage", asyn
 
 // --- studio row (v3_5-11 M1) ------------------------------------------------
 
+test("internal working files stay out of the outputs list", async () => {
+  // 05-mix.filter is an ffmpeg filter script, not something to open.
+  const api: Partial<ApiClient> = {
+    showTask: vi.fn().mockResolvedValue({ ...task, status: "completed" as const }),
+    listArtifacts: vi.fn().mockResolvedValue([
+      { file: "05-mix.filter", index: 5, name: "mix.filter", schema_version: null, size: 300, mtime: 1 },
+      { file: "06-translation.json", index: 6, name: "translation.json", schema_version: 1, size: 2048, mtime: 2 },
+      { file: "07-output.srt", index: 7, name: "output.srt", schema_version: null, size: 4096, mtime: 3 },
+      { file: "08-dubbed.m4a", index: 8, name: "dubbed.m4a", schema_version: null, size: 9000, mtime: 4 },
+    ]),
+  };
+  renderWithConnection(
+    <TaskDetailView project="default" taskId="t1" onBack={() => {}} onOpenEditor={() => {}} />,
+    { api },
+  );
+  await waitFor(() => expect(screen.getByText("07-output.srt")).toBeInTheDocument());
+  expect(screen.getByText("08-dubbed.m4a")).toBeInTheDocument();
+  expect(screen.queryByText("05-mix.filter")).toBeNull();
+  expect(screen.queryByText("06-translation.json")).toBeNull();
+});
+
 test("studio entries sit in their own row, out of the header run controls", async () => {
   const dubTask: TaskRecord = {
     ...task,

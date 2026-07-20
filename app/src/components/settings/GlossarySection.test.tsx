@@ -1,4 +1,4 @@
-import { screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test, vi } from "vitest";
 import { ApiError, type ApiClient } from "../../lib/api/client";
@@ -102,9 +102,9 @@ test("exporting fetches the table content for download", async () => {
   const clickSpy = vi
     .spyOn(HTMLAnchorElement.prototype, "click")
     .mockImplementation(function (this: HTMLAnchorElement) {
-      expect(this.download).toBe("anime-terms.csv");
+      expect(this.download).toBe("Anime Terms.csv");
     });
-  await userEvent.click(await screen.findByRole("button", { name: "匯出" }));
+  await userEvent.click(await screen.findByRole("button", { name: "匯出 CSV" }));
   await waitFor(() =>
     expect(api.exportGlossary).toHaveBeenCalledWith("anime-terms", "csv"),
   );
@@ -143,6 +143,8 @@ test("a failed delete shows the humanized reason", async () => {
     },
   });
   await userEvent.click(await screen.findByRole("button", { name: "移除" }));
+  const dialog = await screen.findByRole("dialog");
+  await userEvent.click(within(dialog).getByRole("button", { name: "刪除" }));
   expect(await screen.findByRole("alert")).toHaveTextContent("磁碟空間不足");
 });
 
@@ -179,4 +181,55 @@ test("a clean import reports no skipped rows", async () => {
   const input = (await screen.findByLabelText("匯入名詞表檔案")) as HTMLInputElement;
   await userEvent.upload(input, file);
   await waitFor(() => expect(screen.queryByRole("status")).toBeNull());
+});
+
+// --- L4: export naming, JSON export, delete confirmation --------------------
+
+test("export uses the table name for the download, not its slug", async () => {
+  const { api } = setup();
+  const createSpy = vi.fn(() => "blob:x");
+  vi.stubGlobal("URL", { ...URL, createObjectURL: createSpy, revokeObjectURL: vi.fn() });
+  const names: string[] = [];
+  const clickSpy = vi
+    .spyOn(HTMLAnchorElement.prototype, "click")
+    .mockImplementation(function (this: HTMLAnchorElement) {
+      names.push(this.download);
+    });
+  await userEvent.click(await screen.findByRole("button", { name: "匯出 CSV" }));
+  await waitFor(() => expect(api.exportGlossary).toHaveBeenCalledWith("anime-terms", "csv"));
+  expect(names[0]).toBe("Anime Terms.csv");
+  clickSpy.mockRestore();
+  vi.unstubAllGlobals();
+});
+
+test("a table can also be exported as JSON", async () => {
+  const { api } = setup();
+  vi.stubGlobal("URL", {
+    ...URL,
+    createObjectURL: vi.fn(() => "blob:x"),
+    revokeObjectURL: vi.fn(),
+  });
+  const clickSpy = vi
+    .spyOn(HTMLAnchorElement.prototype, "click")
+    .mockImplementation(() => {});
+  await userEvent.click(await screen.findByRole("button", { name: "匯出 JSON" }));
+  await waitFor(() =>
+    expect(api.exportGlossary).toHaveBeenCalledWith("anime-terms", "json"),
+  );
+  clickSpy.mockRestore();
+  vi.unstubAllGlobals();
+});
+
+test("deleting a table asks first and only deletes on confirm", async () => {
+  const { api } = setup();
+  await userEvent.click(await screen.findByRole("button", { name: "移除" }));
+  const dialog = await screen.findByRole("dialog");
+  expect(dialog).toHaveTextContent("Anime Terms");
+  await userEvent.click(within(dialog).getByRole("button", { name: "取消" }));
+  expect(api.deleteGlossary).not.toHaveBeenCalled();
+
+  await userEvent.click(screen.getByRole("button", { name: "移除" }));
+  const again = await screen.findByRole("dialog");
+  await userEvent.click(within(again).getByRole("button", { name: "刪除" }));
+  await waitFor(() => expect(api.deleteGlossary).toHaveBeenCalledWith("anime-terms"));
 });

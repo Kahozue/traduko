@@ -365,6 +365,15 @@ def task_export(
     except TaskActionError as error:
         typer.echo(str(error))
         raise typer.Exit(code=1) from None
+    # Running the export runs everything still pending ahead of it, which is
+    # by design but not what "export" sounds like. Say so before starting.
+    pending = sum(
+        1
+        for stage in record.stages
+        if stage.status is StageStatus.PENDING and stage is not record.stages[-1]
+    )
+    if pending:
+        typer.echo(f"will first run {pending} unfinished stage(s)")
     typer.echo(stage_type)
 
     def print_event(event: Event) -> None:

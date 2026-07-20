@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { t, type MessageKey } from "../i18n";
 import { ApiError } from "../lib/api/client";
 import { useApi } from "../lib/connection";
 import { AUDIO_EXTENSIONS, VIDEO_EXTENSIONS } from "../lib/media";
+import { formatDateTime } from "../lib/time";
 import styles from "./ComposeDialog.module.css";
 
 // Sibling of CreateTaskDialog rather than a branch of it: a compose task
@@ -14,8 +15,10 @@ import styles from "./ComposeDialog.module.css";
 
 type ComposeKind = "video" | "audio";
 
-// What ingest_transcript can parse, mirroring core subtitles._PARSERS.
+// What ingest_transcript can parse, mirroring core subtitles._PARSERS. It
+// also reads a translation document, voicing its target text.
 const TRANSCRIPT_EXTENSIONS = ["srt", "vtt", "ass", "txt"];
+const TRANSCRIPT_DOCUMENTS = ["translation.json"];
 
 const PROFILE_OF: Record<ComposeKind, string> = {
   video: "video-compose",
@@ -27,8 +30,9 @@ const TITLE_OF: Record<ComposeKind, MessageKey> = {
   audio: "compose.title.audio",
 };
 
-function isTranscriptArtifact(file: string): boolean {
-  const ext = file.split(".").pop()?.toLowerCase() ?? "";
+function isTranscriptArtifact(item: { file: string; name: string }): boolean {
+  if (TRANSCRIPT_DOCUMENTS.includes(item.name)) return true;
+  const ext = item.file.split(".").pop()?.toLowerCase() ?? "";
   return TRANSCRIPT_EXTENSIONS.includes(ext);
 }
 
@@ -58,7 +62,19 @@ export function ComposeDialog({
     queryFn: () => api.listTasks(),
     enabled: source === "task",
   });
-  const taskRows = tasks ?? [];
+  // Only tasks that actually produced a transcript are worth offering; the
+  // old list let the user pick a task and then told them it was empty.
+  const allTaskRows = tasks ?? [];
+  const artifactQueries = useQueries({
+    queries: allTaskRows.map((row) => ({
+      queryKey: ["artifacts", row.project, row.id],
+      queryFn: () => api.listArtifacts(row.project, row.id),
+      enabled: source === "task",
+    })),
+  });
+  const taskRows = allTaskRows.filter((_, index) =>
+    (artifactQueries[index]?.data ?? []).some(isTranscriptArtifact),
+  );
   const selectedTask = taskRows.find((row) => `${row.project}/${row.id}` === sourceTask);
   const { data: artifacts } = useQuery({
     queryKey: ["artifacts", selectedTask?.project, selectedTask?.id],
@@ -66,7 +82,7 @@ export function ComposeDialog({
     enabled: selectedTask !== undefined,
   });
   const transcriptArtifacts = useMemo(
-    () => (artifacts ?? []).filter((item) => isTranscriptArtifact(item.file)),
+    () => (artifacts ?? []).filter(isTranscriptArtifact),
     [artifacts],
   );
 
@@ -227,7 +243,7 @@ export function ComposeDialog({
               >
                 {taskRows.map((row) => (
                   <option key={`${row.project}/${row.id}`} value={`${row.project}/${row.id}`}>
-                    {row.name}
+                    {row.name} · {row.profile} · {formatDateTime(row.created_at)}
                   </option>
                 ))}
               </select>

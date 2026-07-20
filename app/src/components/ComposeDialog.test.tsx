@@ -21,6 +21,24 @@ const TASK_ROWS = [
     created_at: "2026-07-16T10:00:00+00:00",
     updated_at: "2026-07-16T10:05:00+00:00",
   },
+  {
+    id: "t-2",
+    project: "default",
+    status: "completed" as const,
+    profile: "av-dub",
+    name: "第三集",
+    created_at: "2026-07-18T09:00:00+00:00",
+    updated_at: "2026-07-18T09:30:00+00:00",
+  },
+  {
+    id: "t-3",
+    project: "default",
+    status: "pending" as const,
+    profile: "av-default",
+    name: "沒有產物的任務",
+    created_at: "2026-07-19T09:00:00+00:00",
+    updated_at: "2026-07-19T09:00:00+00:00",
+  },
 ];
 
 const ARTIFACTS = [
@@ -45,7 +63,9 @@ const ARTIFACTS = [
 function makeApi(extra: Partial<ApiClient> = {}): Partial<ApiClient> {
   return {
     listTasks: vi.fn().mockResolvedValue(TASK_ROWS),
-    listArtifacts: vi.fn().mockResolvedValue(ARTIFACTS),
+    listArtifacts: vi.fn(async (_project: string, taskId: string) =>
+      taskId === "t-3" ? [] : ARTIFACTS,
+    ),
     ...extra,
   };
 }
@@ -144,8 +164,9 @@ test("the task-artifact source lists transcript artifacts and sends the source",
     expect(screen.getByLabelText("來源任務")).toBeInTheDocument(),
   );
   const artifactSelect = await screen.findByLabelText("逐字稿產物");
-  // JSON artifacts are not transcripts and must not be offered.
-  expect(within(artifactSelect).queryByText("04-translation.json")).toBeNull();
+  // A translation document is a valid compose source; ingest_transcript
+  // reads its target text.
+  expect(within(artifactSelect).getByText("04-translation.json")).toBeInTheDocument();
   await userEvent.selectOptions(artifactSelect, "06-subtitles.srt");
   await userEvent.click(screen.getByRole("button", { name: "建立" }));
 
@@ -176,4 +197,37 @@ test("cancel closes the dialog", async () => {
   await screen.findByText("製作音頻");
   await userEvent.click(screen.getByRole("button", { name: "取消" }));
   expect(onClose).toHaveBeenCalled();
+});
+
+
+// --- L5: source task legibility and filtering -------------------------------
+
+test("source tasks are identified by profile and date, not name alone", async () => {
+  renderWithConnection(
+    <ComposeDialog kind="audio" onClose={() => {}} onCreated={() => {}} />,
+    { api: makeApi() },
+  );
+  await screen.findByText("製作音頻");
+  await userEvent.click(screen.getByRole("button", { name: "既有任務產物" }));
+  const select = await screen.findByLabelText("來源任務");
+  // Two tasks share the name "第三集"; the option text has to tell them apart.
+  const options = within(select).getAllByRole("option");
+  const labels = options.map((option) => option.textContent ?? "");
+  expect(labels.some((label) => label.includes("subtitle-translate"))).toBe(true);
+  expect(labels.some((label) => label.includes("av-dub"))).toBe(true);
+  expect(new Set(labels).size).toBe(labels.length);
+});
+
+test("tasks with no transcript artifact are left out of the list", async () => {
+  renderWithConnection(
+    <ComposeDialog kind="audio" onClose={() => {}} onCreated={() => {}} />,
+    { api: makeApi() },
+  );
+  await screen.findByText("製作音頻");
+  await userEvent.click(screen.getByRole("button", { name: "既有任務產物" }));
+  const select = await screen.findByLabelText("來源任務");
+  await waitFor(() =>
+    expect(within(select).queryByText(/沒有產物的任務/)).toBeNull(),
+  );
+  expect(within(select).getAllByRole("option").length).toBe(2);
 });

@@ -66,6 +66,17 @@ const DOCUMENT_STAGES = [
 ];
 const COMIC_STAGES = ["ingest_comic", "bubble_detect", "ocr", "inpaint", "typeset"];
 
+// Deliverable file kinds listed under "outputs": media, subtitles and
+// documents. Everything else (.json documents, .filter scripts) is
+// pipeline plumbing the user has no reason to open.
+const OUTPUT_EXTENSIONS = new Set([
+  ".mp4", ".mkv", ".webm", ".mov", ".avi",
+  ".mp3", ".m4a", ".wav", ".opus", ".flac", ".aac", ".ogg",
+  ".srt", ".vtt", ".ass",
+  ".txt", ".md", ".pdf", ".docx", ".epub", ".html",
+  ".png", ".jpg", ".jpeg", ".webp",
+]);
+
 // One-line human summary for an event's payload; the raw JSON stays in the
 // row's tooltip instead of being dumped into the timeline.
 function summarizeEventData(data: Record<string, unknown>): string {
@@ -383,7 +394,12 @@ export function TaskDetailView({
   const editorKind = isDocumentTask ? "document" : "subtitle";
   const editorLabel = isDocumentTask ? t("task.textEditor") : t("task.subtitleEditor");
   const stageLabels = stageListLabels(task.stages);
-  const outputs = (artifacts ?? []).filter((item) => !item.file.endsWith(".json"));
+  // Outputs are what the user can open: intermediate documents and the
+  // pipeline's own working files (ffmpeg filter scripts, temp lists) are
+  // not, so the list is a whitelist of deliverable kinds.
+  const outputs = (artifacts ?? []).filter((item) =>
+    OUTPUT_EXTENSIONS.has(item.file.slice(item.file.lastIndexOf(".")).toLowerCase()),
+  );
 
   // Player classification goes by the input file itself, not the task's
   // domain; subtitle/text/document inputs stay null and render no player.

@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 import pytest
@@ -198,6 +199,84 @@ def test_ingest_transcript_missing_task_artifact_names_the_source(
     message = str(error.value)
     assert "task artifact" in message
     assert "t-src" in message
+
+
+def test_ingest_transcript_reads_translation_json_targets(tmp_path: Path) -> None:
+    # spec section 7 offers translation.json as a compose source; its target
+    # text is what should be voiced.
+    src = tmp_path / "05-translation.json"
+    src.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "language": "ja",
+                "target_language": "zh-TW",
+                "segments": [
+                    {"id": 1, "start": 1.0, "end": 2.0, "source": "おはよう", "target": "早安"},
+                    {"id": 2, "start": 3.0, "end": 4.5, "source": "またね", "target": "再見"},
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    ctx, progress = make_ctx(
+        tmp_path,
+        tmp_path / "movie.mp4",
+        params={"transcript": {"kind": "file", "path": str(src)}},
+    )
+
+    result = registry.create("ingest_transcript").run(ctx)
+
+    assert result.artifacts == ["01-segments.json"]
+    data = ctx.artifacts.read_latest_json("segments.json")
+    assert data["timestamps"] is True
+    assert data["segments"] == [
+        {"id": 1, "start": 1.0, "end": 2.0, "text": "早安"},
+        {"id": 2, "start": 3.0, "end": 4.5, "text": "再見"},
+    ]
+    assert progress == [(1, 1)]
+
+
+def test_ingest_transcript_translation_json_falls_back_to_source_text(
+    tmp_path: Path,
+) -> None:
+    src = tmp_path / "translation.json"
+    src.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "segments": [
+                    {"id": 1, "start": 0.0, "end": 1.0, "source": "hello", "target": ""},
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    ctx, _ = make_ctx(
+        tmp_path,
+        tmp_path / "movie.mp4",
+        params={"transcript": {"kind": "file", "path": str(src)}},
+    )
+
+    registry.create("ingest_transcript").run(ctx)
+
+    data = ctx.artifacts.read_latest_json("segments.json")
+    assert data["segments"][0]["text"] == "hello"
+
+
+def test_ingest_transcript_rejects_a_json_without_segments(tmp_path: Path) -> None:
+    src = tmp_path / "notes.json"
+    src.write_text(json.dumps({"schema_version": 1}), encoding="utf-8")
+    ctx, _ = make_ctx(
+        tmp_path,
+        tmp_path / "movie.mp4",
+        params={"transcript": {"kind": "file", "path": str(src)}},
+    )
+
+    with pytest.raises(base.StageError) as error:
+        registry.create("ingest_transcript").run(ctx)
+
+    assert "segments" in str(error.value)
 
 
 def test_ingest_transcript_rejects_unsupported_format(tmp_path: Path) -> None:

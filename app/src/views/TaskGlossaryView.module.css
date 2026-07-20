@@ -92,6 +92,7 @@
 
 .search {
   width: 100%;
+  margin-bottom: 12px;
   padding: 6px 10px;
   border: 1px solid var(--border);
   border-radius: var(--radius-s);
@@ -122,6 +123,16 @@
   gap: 8px;
   padding: 4px 0;
   font-size: var(--fs-note);
+  cursor: pointer;
+}
+
+/* Native controls default to the platform blue; the selected state is a
+   primary-color state and has to carry the product's accent. */
+.checkRow input,
+.radioLabel input,
+.switchRow input,
+.row input[type="checkbox"] {
+  accent-color: var(--accent);
   cursor: pointer;
 }
 
