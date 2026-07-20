@@ -10,15 +10,27 @@
   color: var(--text-secondary);
 }
 
-.badge[data-status="running"],
-.badge[data-status="waiting_review"] {
+/* Four states must stay tellable apart at a glance down the status column:
+   running (machine is working), waiting_review (the machine stopped and is
+   waiting on the human), paused (the human stopped it), pending (queued).
+   Amber is spent on waiting_review because that is the only one that costs
+   the user time by sitting unnoticed; paused is an idle state the user
+   themselves caused, so it drops to neutral with a ring to part it from the
+   flat neutral of pending/canceled. */
+.badge[data-status="running"] {
   background: var(--info-soft);
   color: var(--info);
 }
 
-.badge[data-status="paused"] {
+.badge[data-status="waiting_review"] {
   background: var(--warn-soft);
   color: var(--warn);
+}
+
+.badge[data-status="paused"] {
+  background: var(--neutral-soft);
+  color: var(--text-secondary);
+  box-shadow: inset 0 0 0 1px var(--border);
 }
 
 .badge[data-status="completed"] {

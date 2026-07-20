@@ -45,17 +45,25 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* Fixed width: the label swings between "1×" and "1.25×", and a button that
+   resized on every click would shove the row's trailing action sideways. */
 .speed {
   flex: none;
+  width: 52px;
   height: 28px;
-  padding: 0 6px;
+  padding: 0;
   border: 1px solid var(--border);
   border-radius: var(--radius-s);
   background: var(--bg-surface);
   color: var(--text-secondary);
-  font-family: inherit;
+  font-family: var(--font-mono);
   font-size: var(--fs-meta);
   cursor: pointer;
+  transition: background var(--transition);
+}
+
+.speed:hover {
+  background: var(--bg-inset);
 }
 
 .failed {

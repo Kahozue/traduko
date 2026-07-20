@@ -9,7 +9,11 @@ import styles from "./AudioTrack.module.css";
 // column of them reads as one list rather than a stack of native widgets.
 // Formats WKWebView cannot decode surface through onError as a plain notice.
 
-const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2];
+// Speed is a click-to-cycle button, not a dropdown: picking a rate while
+// listening should cost one click, and the order runs up from normal speed
+// through the faster rates before wrapping past the slow ones back to 1×,
+// so the common direction (faster) is always the next click.
+const SPEEDS = [1, 1.25, 1.5, 1.75, 2, 0.25, 0.5];
 
 function formatTime(seconds: number): string {
   if (!Number.isFinite(seconds)) return "--:--";
@@ -94,19 +98,15 @@ export function AudioTrack({ path }: { path: string }) {
       <span className={styles.time}>
         {formatTime(current)} / {formatTime(duration)}
       </span>
-      <select
+      <button
+        type="button"
         className={styles.speed}
         aria-label={t("player.speed")}
         title={t("player.speed")}
-        value={speed}
-        onChange={(e) => setSpeed(Number(e.target.value))}
+        onClick={() => setSpeed(SPEEDS[(SPEEDS.indexOf(speed) + 1) % SPEEDS.length])}
       >
-        {SPEEDS.map((rate) => (
-          <option key={rate} value={rate}>
-            {rate}×
-          </option>
-        ))}
-      </select>
+        {speed}×
+      </button>
     </div>
   );
 }

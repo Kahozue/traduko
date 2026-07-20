@@ -1,5 +1,8 @@
 /* Editing venue: the frame around the user's media stays strictly neutral
-   (--bg-canvas is zero-chroma in both themes), no accent, no semantic color. */
+   (--bg-canvas is zero-chroma in both themes), no accent, no semantic color.
+   That rule buys nothing for audio — there is no image whose color could be
+   biased — so an audio-only player sits on the ordinary surface instead of a
+   dark slab, and its fallback row inherits the light text colors. */
 
 .player {
   display: flex;
@@ -9,6 +12,24 @@
   padding: 12px;
   border-radius: var(--radius-m);
   background: var(--bg-canvas);
+}
+
+.player[data-kind="audio"] {
+  border: 1px solid var(--border);
+  background: var(--bg-subtle);
+}
+
+.player[data-kind="audio"] .fallbackText {
+  color: var(--text-secondary);
+}
+
+.player[data-kind="audio"] .reveal {
+  border-color: var(--border);
+  color: var(--text-primary);
+}
+
+.player[data-kind="audio"] .reveal:hover {
+  background: var(--bg-inset);
 }
 
 .video {

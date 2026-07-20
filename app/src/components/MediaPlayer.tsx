@@ -21,7 +21,7 @@ export function MediaPlayer({ path, kind }: { path: string; kind: "video" | "aud
 
   if (failed || src === null) {
     return (
-      <div className={`${styles.player} ${styles.fallback}`}>
+      <div className={`${styles.player} ${styles.fallback}`} data-kind={kind}>
         <span className={styles.fallbackText}>{t("task.player.unsupported")}</span>
         <button
           type="button"
@@ -35,7 +35,7 @@ export function MediaPlayer({ path, kind }: { path: string; kind: "video" | "aud
   }
 
   return (
-    <div className={styles.player}>
+    <div className={styles.player} data-kind={kind}>
       {kind === "video" ? (
         <video
           className={styles.video}

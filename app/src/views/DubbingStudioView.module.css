@@ -185,7 +185,7 @@
 
 .segmentTime {
   min-width: 56px;
-  color: var(--text-on-dark-dim);
+  color: var(--text-secondary);
   font-family: var(--font-mono);
   font-size: var(--fs-meta);
 }
@@ -194,7 +194,7 @@
   flex: 1;
   min-width: 0;
   overflow: hidden;
-  color: var(--text-on-dark);
+  color: var(--text-primary);
   font-size: var(--fs-note);
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -210,11 +210,14 @@
   font-size: var(--fs-note);
 }
 
-/* Preview frame: editing-venue canvas, strictly neutral in both themes. */
+/* Preview frame. The editing-venue canvas (--bg-canvas) exists to keep the UI
+   from biasing color perception of the user's media; this frame holds only
+   audio, so there is nothing to protect and the dark slab was pure weight. */
 .canvas {
   padding: 16px;
+  border: 1px solid var(--border);
   border-radius: var(--radius-m);
-  background: var(--bg-canvas);
+  background: var(--bg-subtle);
 }
 
 .previewList {
@@ -230,7 +233,7 @@
 }
 
 .previewLabel {
-  color: var(--text-on-dark-dim);
+  color: var(--text-secondary);
   font-size: var(--fs-note);
   min-width: 80px;
 }
