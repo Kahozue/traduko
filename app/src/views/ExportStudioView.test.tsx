@@ -2,7 +2,7 @@ import { expect, test, vi } from "vitest";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { renderWithConnection } from "../test/helpers";
-import type { ApiClient } from "../lib/api/client";
+import { ApiError, type ApiClient } from "../lib/api/client";
 import type {
   ArtifactListItem,
   ExportEstimate,
@@ -144,6 +144,35 @@ test("insufficient disk space blocks the export", async () => {
   await waitFor(() =>
     expect(screen.getByRole("button", { name: "開始匯出" })).toBeDisabled(),
   );
+});
+
+test("an unavailable estimate blocks the export and says why", async () => {
+  // The core refuses the same request, so an enabled button would only
+  // produce a failure later; the reason comes from the 422 itself.
+  const client = api({
+    estimateExport: vi
+      .fn()
+      .mockRejectedValue(
+        new ApiError(422, "no dub mix to export yet; finish the dubbing stages first"),
+      ),
+  });
+  render(client);
+  await screen.findByText("匯出工作室");
+  await waitFor(() =>
+    expect(screen.getByRole("button", { name: "開始匯出" })).toBeDisabled(),
+  );
+  expect(screen.getByText(/尚未合成配音|階段執行失敗/)).toBeInTheDocument();
+});
+
+test("a disk-space estimate failure explains the disk, not a generic error", async () => {
+  const client = api({
+    estimateExport: vi
+      .fn()
+      .mockRejectedValue(new ApiError(409, "not enough disk space for this export")),
+  });
+  render(client);
+  await screen.findByText("匯出工作室");
+  expect(await screen.findByText(/磁碟空間不足/)).toBeInTheDocument();
 });
 
 test("start export posts the panel parameters", async () => {

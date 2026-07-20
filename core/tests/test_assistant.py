@@ -1187,6 +1187,10 @@ def test_agent_export_task_appends_the_stage_left_pending(tmp_path: Path) -> Non
     ws = make_ws(tmp_path)
     record = _seeded_task(ws, "audio-dub", "in.wav")
     complete_task(ws, record)
+    # source=dub encodes the dub mix, so the mix has to be on disk.
+    artifacts = ws.store.task_dir(record.project, record.id) / "artifacts"
+    artifacts.mkdir(parents=True, exist_ok=True)
+    (artifacts / "05-dub-mix.wav").write_bytes(b"\0" * 4096)
     tools = action_tool_map(ws)
 
     result = json.loads(

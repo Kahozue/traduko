@@ -2,7 +2,9 @@ import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { t } from "../i18n";
+import { ApiError } from "../lib/api/client";
 import { useApi } from "../lib/connection";
+import { humanizeError } from "../lib/errors";
 import { alignmentToFlex, assStyleToCss } from "../lib/ass/preview";
 import { exportKindOf, mediaKindOf } from "../lib/media";
 import type { ExportEstimate, ExportParams, SubtitleStylePreset } from "../lib/api/types";
@@ -148,7 +150,9 @@ export function ExportStudioView({
   ]);
 
   const [estimate, setEstimate] = useState<ExportEstimate | null>(null);
-  const [estimateError, setEstimateError] = useState(false);
+  // The estimate call runs the same validation the export POST does, so a
+  // rejection here is the export's own reason, not just a missing number.
+  const [estimateError, setEstimateError] = useState<string | null>(null);
   const paramKey = JSON.stringify(params);
 
   // Debounced so dragging the quality slider does not hammer ffprobe.
@@ -161,12 +165,16 @@ export function ExportStudioView({
         .then((next) => {
           if (cancelled) return;
           setEstimate(next);
-          setEstimateError(false);
+          setEstimateError(null);
         })
-        .catch(() => {
+        .catch((cause: unknown) => {
           if (cancelled) return;
+          const raw =
+            cause instanceof ApiError && typeof cause.detail === "string"
+              ? cause.detail
+              : String(cause);
           setEstimate(null);
-          setEstimateError(true);
+          setEstimateError(humanizeError(raw).summary);
         });
     }, 300);
     return () => {
@@ -198,7 +206,9 @@ export function ExportStudioView({
   );
 
   const running = task?.status === "running";
-  const blocked = estimate !== null && !estimate.disk_ok;
+  // No estimate means the core already refused this request; starting the
+  // export would only reproduce the same rejection.
+  const blocked = estimateError !== null || (estimate !== null && !estimate.disk_ok);
 
   if (!task || kind === null) {
     return (
@@ -548,7 +558,9 @@ export function ExportStudioView({
       <section className={styles.block}>
         <h2 className={styles.sectionTitle}>{t("task.export.studio.estimate")}</h2>
         {estimateError ? (
-          <p className={styles.error}>{t("task.export.studio.estimateFailed")}</p>
+          <p className={styles.error}>
+            <span aria-hidden="true">!</span> {estimateError}
+          </p>
         ) : estimate ? (
           <>
             <dl className={styles.estimate} data-testid="export-estimate">

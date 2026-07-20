@@ -663,7 +663,6 @@ export const zhTW = {
   "task.export.studio.sampleText": "範例字幕 Sample",
   "task.export.studio.estimate": "估算",
   "task.export.studio.estimating": "估算中",
-  "task.export.studio.estimateFailed": "無法讀取來源媒體，估算不可用",
   "task.export.studio.size": "預估大小",
   "task.export.studio.eta": "預估耗時",
   "task.export.studio.diskFree": "磁碟可用",
@@ -747,6 +746,8 @@ export const zhTW = {
   "error.engineUnavailable.hint": "這個引擎尚未開放，請改選其他引擎。",
   "error.disk.summary": "磁碟空間不足",
   "error.disk.hint": "清出空間後再試，或降低輸出品質以縮小檔案。",
+  "error.dubMixMissing.summary": "尚未合成配音",
+  "error.dubMixMissing.hint": "先在配音工作室完成合成，再以配音混音為來源匯出。",
   "error.docChunks.summary": "部分段落尚未翻譯",
   "error.docChunks.hint":
     "供應商可能在翻譯途中失敗；確認供應商設定後重新執行，或在文本編輯器補上譯文。",

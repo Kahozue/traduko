@@ -77,6 +77,11 @@ const PATTERNS: { pattern: RegExp; summary: MessageKey; hint: MessageKey }[] = [
     summary: "error.dubTimestamps.summary",
     hint: "error.dubTimestamps.hint",
   },
+  {
+    pattern: /no dub mix|dub-mix\.wav artifact/i,
+    summary: "error.dubMixMissing.summary",
+    hint: "error.dubMixMissing.hint",
+  },
 ];
 
 export interface HumanError {

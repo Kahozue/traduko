@@ -10,7 +10,8 @@ from .asr.engines import stage_glossary_bias
 from .config import CoreConfig
 from .fsutil import atomic_write_text
 from .glossary import task_glossary_for_new_task
-from .media import media_kind_of
+from .artifacts import ArtifactStore
+from .media import check_disk_space, media_kind_of
 from .profiles import Profile, load_profile, profile_kind, stage_records_from
 from .models import (
     StageRecord,
@@ -271,6 +272,21 @@ def dub_group_stages(record: TaskRecord) -> list[StageRecord]:
     return stages
 
 
+def dub_group_tail_for(record: TaskRecord, domain: str) -> str:
+    """The stage type closing an appended dub group.
+
+    mux needs a video to mux the dubbed track into. A video-domain task fed a
+    subtitle file has none, so building a mux tail there guarantees a failure
+    minutes in; it ends in export_audio instead, which is what dubbing a
+    transcript actually produces.
+    """
+    if domain == "video":
+        kind = media_kind_of(Path(record.input_path)) if record.input_path else None
+        if kind != "video":
+            return DUB_GROUP_TAIL["audio"]
+    return DUB_GROUP_TAIL[domain]
+
+
 def append_dub_stages(record: TaskRecord, domain: str) -> list[StageRecord]:
     """Append the full dub group to a task that has none, mirroring the
     seeded dub profiles (diarize pauses for speaker review)."""
@@ -279,7 +295,7 @@ def append_dub_stages(record: TaskRecord, domain: str) -> list[StageRecord]:
         StageRecord(type="tts_synthesize"),
         StageRecord(type="align_duration"),
         StageRecord(type="mix_audio"),
-        StageRecord(type=DUB_GROUP_TAIL[domain]),
+        StageRecord(type=dub_group_tail_for(record, domain)),
     ]
     record.stages.extend(added)
     return added
@@ -654,6 +670,65 @@ def validate_export_request(record: TaskRecord, kind: str, params: dict) -> str:
     return "export_video" if kind == "video" else "export_audio_custom"
 
 
+def export_source_path(
+    ws: "Workspace", record: TaskRecord, kind: str, params: dict
+) -> Path:
+    """The media an export will actually read, mirroring the export stages.
+
+    An audio export from the dub mix reads the dub-mix.wav artifact, not the
+    task input: a compose task's input is a transcript, so probing it always
+    fails and the estimate (and its disk check) silently drop out.
+    """
+    if kind == "audio" and params.get("source", "dub") == "dub":
+        try:
+            return ArtifactStore(
+                ws.store.task_dir(record.project, record.id)
+            ).latest_path("dub-mix.wav")
+        except FileNotFoundError:
+            raise TaskActionError(
+                "no dub mix to export yet; finish the dubbing stages first"
+            ) from None
+    path = Path(record.input_path) if record.input_path else None
+    if path is None or not path.exists():
+        raise TaskActionError(f"task input file is missing: {record.input_path}")
+    return path
+
+
+def guard_export_disk_space(
+    ws: "Workspace", record: TaskRecord, kind: str, params: dict
+) -> None:
+    """Refuse an export the disk cannot hold.
+
+    spec 5-(3) puts this check before launching; keeping it in the core means
+    HTTP, CLI and agent all get it, instead of it living in the GUI's estimate
+    call alone. When the size cannot be estimated (no ffprobe, odd source) it
+    falls back to twice the source file size rather than skipping the check.
+    """
+    # Deferred imports: media pulls the stage params, stages pull this module.
+    from .media import MediaError, estimate_export, probe_media
+    from .stages.base import StageError
+    from .stages.export import audio_params_from, video_params_from
+
+    source = export_source_path(ws, record, kind, params)
+    try:
+        parsed = video_params_from(params) if kind == "video" else audio_params_from(params)
+        need = estimate_export(probe_media(source), parsed)["size_bytes"]
+    except (MediaError, StageError):
+        need = source.stat().st_size * 2
+    artifacts_dir = ws.store.task_dir(record.project, record.id) / "artifacts"
+    try:
+        ok, available = check_disk_space(artifacts_dir, need)
+    except MediaError:
+        # Cannot read the partition: do not block the export on that.
+        return
+    if not ok:
+        raise TaskActionError(
+            f"not enough disk space for this export: needs about "
+            f"{need // (1024 * 1024)} MB, {available // (1024 * 1024)} MB free",
+            status=409,
+        )
+
+
 def append_export_stage(
     ws: "Workspace", record: TaskRecord, kind: str, params: dict
 ) -> str:
@@ -661,6 +736,7 @@ def append_export_stage(
     export: the params snapshot and the numbered output keep earlier exports
     intact. Saves and returns the stage type."""
     stage_type = validate_export_request(record, kind, params)
+    guard_export_disk_space(ws, record, kind, params)
     record.stages.append(
         StageRecord(type=stage_type, status=StageStatus.PENDING, params=params)
     )

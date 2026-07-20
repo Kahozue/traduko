@@ -109,6 +109,7 @@ from ..tasks import (
     apply_dub_text_override,
     apply_model_override,
     append_export_stage,
+    export_source_path,
     apply_dub_params_change,
     apply_switches_change,
     apply_translation_change,
@@ -715,14 +716,12 @@ def estimate_task_export(
 ) -> dict:
     ws: Workspace = request.app.state.workspace
     record = _load_task(ws, project, task_id)
-    if not record.input_path or not Path(record.input_path).exists():
-        raise HTTPException(
-            status_code=422,
-            detail=f"task input file is missing: {record.input_path}",
-        )
     fields = query.model_dump()
     try:
         validate_export_request(record, query.kind, fields)
+        # An audio export from the dub mix encodes the mix, not the task
+        # input: a compose task's input is a transcript that never probes.
+        source = export_source_path(ws, record, query.kind, fields)
     except TaskActionError as error:
         raise _http(error) from None
     params = (
@@ -731,7 +730,7 @@ def estimate_task_export(
         else audio_params_from(fields)
     )
     try:
-        probe = probe_media(Path(record.input_path))
+        probe = probe_media(source)
     except MediaError as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
     estimate = estimate_export(probe, params)

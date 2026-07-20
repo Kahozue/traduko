@@ -691,12 +691,10 @@ def _completed_task(tmp_path: Path, env: dict[str, str], input_name: str) -> str
     return task_id
 
 
-def test_task_export_appends_the_stage_and_reports_a_readable_error(
-    tmp_path: Path,
-) -> None:
-    # An audio export with source=dub on a task that never dubbed: the stage
-    # must be appended with its params snapshot, and the run must surface a
-    # readable error rather than a stack trace.
+def test_task_export_refuses_a_dub_source_with_no_dub_mix(tmp_path: Path) -> None:
+    # An audio export with source=dub on a task that never dubbed is turned
+    # away at request time with a readable reason, instead of appending a
+    # stage that is certain to fail once the queue reaches it.
     env = _seeded_env(tmp_path)
     task_id = _completed_task(tmp_path, env, "in.wav")
 
@@ -705,13 +703,29 @@ def test_task_export_appends_the_stage_and_reports_a_readable_error(
         ["task", "export", task_id, "--kind", "audio", "--source", "dub"],
         env=env,
     )
-    assert result.exit_code == 0, result.output
-    assert "failed" in result.output
-    assert "dub-mix.wav" in result.output
-    payload = _show_task(task_id, env)
-    last = payload["stages"][-1]
-    assert last["type"] == "export_audio_custom"
-    assert last["params"]["source"] == "dub"
+    assert result.exit_code == 1
+    assert "no dub mix" in result.output
+    types = [s["type"] for s in _show_task(task_id, env)["stages"]]
+    assert "export_audio_custom" not in types
+
+
+def test_task_export_refuses_when_the_disk_is_too_full(
+    tmp_path: Path, monkeypatch
+) -> None:
+    # The space check lives in the core, so the CLI is guarded too, not just
+    # the GUI's estimate call.
+    env = _seeded_env(tmp_path)
+    task_id = _completed_task(tmp_path, env, "clip.mp4")
+    monkeypatch.setattr("traduko.tasks.check_disk_space", lambda d, need: (False, 1024))
+
+    result = runner.invoke(
+        app, ["task", "export", task_id, "--kind", "video"], env=env
+    )
+
+    assert result.exit_code == 1
+    assert "disk space" in result.output
+    types = [s["type"] for s in _show_task(task_id, env)["stages"]]
+    assert "export_video" not in types
 
 
 def test_task_export_rejects_video_export_for_a_non_video_input(

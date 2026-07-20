@@ -2590,7 +2590,11 @@ def test_patch_switches_dub_on_appends_audio_dub_group(tmp_path: Path) -> None:
 
 def test_patch_switches_dub_on_appends_video_dub_group(tmp_path: Path) -> None:
     with service(tmp_path) as (client, headers, token):
-        task_id = create_task(client, headers, tmp_path, profile="av-default")
+        task_id = client.post(
+            "/tasks",
+            json={"input_path": str(make_video(tmp_path)), "profile": "av-default"},
+            headers=headers,
+        ).json()["id"]
         write_task_artifact(client, "default", task_id, 2, "asr.json", TIMESTAMPED_ASR)
 
         response = client.patch(
@@ -2695,6 +2699,48 @@ def test_patch_switches_diarize_rejects_a_task_with_nothing_to_diarize(
 
         assert response.status_code == 409, response.text
         assert "transcription" in response.json()["detail"]
+
+
+def test_patch_switches_dub_on_a_subtitle_input_ends_in_export_audio(
+    tmp_path: Path,
+) -> None:
+    # M6: a video-domain task fed an .srt has no video to mux into, so the
+    # appended group must end in export_audio rather than a mux that is
+    # guaranteed to blow up on a subtitle file.
+    with service(tmp_path) as (client, headers, token):
+        task_id = create_task(client, headers, tmp_path, profile="subtitle-translate")
+
+        response = client.patch(
+            f"/tasks/default/{task_id}/switches", json={"dub": True}, headers=headers
+        )
+
+        assert response.status_code == 200, response.text
+        types = [stage["type"] for stage in response.json()["stages"]]
+        assert types[-5:] == [
+            "diarize",
+            "tts_synthesize",
+            "align_duration",
+            "mix_audio",
+            "export_audio",
+        ]
+        assert "mux" not in types
+
+
+def test_patch_switches_dub_on_a_video_input_still_ends_in_mux(tmp_path: Path) -> None:
+    with service(tmp_path) as (client, headers, token):
+        task_id = client.post(
+            "/tasks",
+            json={"input_path": str(make_video(tmp_path)), "profile": "av-default"},
+            headers=headers,
+        ).json()["id"]
+        write_task_artifact(client, "default", task_id, 2, "asr.json", TIMESTAMPED_ASR)
+
+        response = client.patch(
+            f"/tasks/default/{task_id}/switches", json={"dub": True}, headers=headers
+        )
+
+        assert response.status_code == 200, response.text
+        assert [s["type"] for s in response.json()["stages"]][-1] == "mux"
 
 
 def test_patch_switches_dub_requires_timestamped_transcript(tmp_path: Path) -> None:
@@ -3005,6 +3051,8 @@ def test_post_export_appends_stage_and_enqueues(tmp_path: Path) -> None:
 def test_post_export_audio_kind_appends_audio_stage(tmp_path: Path) -> None:
     with service(tmp_path) as (client, headers, token):
         task_id = _export_task(client, headers, tmp_path)
+        # source defaults to the dub mix, so the mix has to exist.
+        _write_dub_mix(client, task_id)
         client.app.state.worker.enqueue = lambda project, task_id: True
         resp = client.post(
             f"/tasks/default/{task_id}/exports",
@@ -3154,6 +3202,7 @@ def test_export_estimate_probe_failure_422(tmp_path: Path, monkeypatch) -> None:
 def test_export_estimate_audio_kind_uses_bitrate(tmp_path: Path, monkeypatch) -> None:
     with service(tmp_path) as (client, headers, token):
         task_id = _export_task(client, headers, tmp_path)
+        _write_dub_mix(client, task_id)
         monkeypatch.setattr(
             "traduko.service.app.probe_media",
             lambda path: {
@@ -3174,6 +3223,108 @@ def test_export_estimate_audio_kind_uses_bitrate(tmp_path: Path, monkeypatch) ->
         assert resp.json()["size_bytes"] == pytest.approx(
             192 * 1000 * 100 / 8, rel=0.01
         )
+
+
+def _write_dub_mix(client, task_id: str, size: int = 4096) -> Path:
+    """A dub-mix.wav artifact under its real prefixed name."""
+    store = client.app.state.workspace.store
+    artifacts = store.task_dir("default", task_id) / "artifacts"
+    artifacts.mkdir(parents=True, exist_ok=True)
+    path = artifacts / "05-dub-mix.wav"
+    path.write_bytes(b"\0" * size)
+    return path
+
+
+def test_export_estimate_dub_source_probes_the_dub_mix(
+    tmp_path: Path, monkeypatch
+) -> None:
+    # A compose task's input is a transcript: probing it always fails, but the
+    # dub mix is what an audio export with source=dub actually encodes.
+    from traduko.media import MediaError
+
+    with service(tmp_path) as (client, headers, token):
+        task_id = _subtitle_input_task(client, headers, tmp_path)
+        mix = _write_dub_mix(client, task_id)
+        probed: list[Path] = []
+
+        def fake_probe(path):
+            probed.append(Path(path))
+            if Path(path).suffix != ".wav":
+                raise MediaError("ffprobe failed: not media")
+            return {
+                "duration": 60.0,
+                "bit_rate": None,
+                "width": None,
+                "height": None,
+                "video_codec": None,
+                "audio_streams": [],
+            }
+
+        monkeypatch.setattr("traduko.service.app.probe_media", fake_probe)
+        resp = client.get(
+            f"/tasks/default/{task_id}/exports/estimate",
+            params={"kind": "audio", "source": "dub", "format": "m4a"},
+            headers=headers,
+        )
+
+        assert resp.status_code == 200, resp.text
+        assert probed == [mix]
+        assert resp.json()["size_bytes"] > 0
+
+
+def test_export_estimate_dub_source_without_a_mix_says_so(tmp_path: Path) -> None:
+    with service(tmp_path) as (client, headers, token):
+        task_id = _subtitle_input_task(client, headers, tmp_path)
+
+        resp = client.get(
+            f"/tasks/default/{task_id}/exports/estimate",
+            params={"kind": "audio", "source": "dub", "format": "m4a"},
+            headers=headers,
+        )
+
+        assert resp.status_code == 422, resp.text
+        detail = resp.json()["detail"]
+        assert "dub" in detail
+        # The old message blamed the input file, which was never the source.
+        assert "task input file is missing" not in detail
+
+
+def test_post_export_refuses_when_the_disk_is_too_full(
+    tmp_path: Path, monkeypatch
+) -> None:
+    # spec 5-(3): the space check must live in the core, not only in the GUI's
+    # estimate call, or every non-GUI entrance bypasses it.
+    with service(tmp_path) as (client, headers, token):
+        task_id = _export_task(client, headers, tmp_path)
+        client.app.state.worker.enqueue = lambda project, task_id: True
+        monkeypatch.setattr(
+            "traduko.tasks.check_disk_space", lambda d, need: (False, 1024)
+        )
+
+        resp = client.post(
+            f"/tasks/default/{task_id}/exports",
+            json={"kind": "video", "params": {"container": "mp4", "crf": 22}},
+            headers=headers,
+        )
+
+        assert resp.status_code == 409, resp.text
+        assert "disk space" in resp.json()["detail"]
+        stages = _stages_of(client, headers, task_id)
+        assert not any(s["type"] == "export_video" for s in stages)
+
+
+def test_post_export_passes_when_the_disk_has_room(tmp_path: Path) -> None:
+    with service(tmp_path) as (client, headers, token):
+        task_id = _export_task(client, headers, tmp_path)
+        client.app.state.worker.enqueue = lambda project, task_id: True
+
+        resp = client.post(
+            f"/tasks/default/{task_id}/exports",
+            json={"kind": "video", "params": {"container": "mp4", "crf": 22}},
+            headers=headers,
+        )
+
+        assert resp.status_code == 202, resp.text
 
 
 # --- translation defaults (v3_5-08) -----------------------------------------
@@ -3713,6 +3864,7 @@ def test_audio_export_from_the_original_needs_a_media_input(tmp_path: Path) -> N
 def test_audio_export_of_the_dub_works_without_a_media_input(tmp_path: Path) -> None:
     with service(tmp_path) as (client, headers, token):
         task_id = _subtitle_input_task(client, headers, tmp_path)
+        _write_dub_mix(client, task_id)
         client.app.state.worker.enqueue = lambda project, task_id: True
         resp = client.post(
             f"/tasks/default/{task_id}/exports",
