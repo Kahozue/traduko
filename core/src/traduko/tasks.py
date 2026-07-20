@@ -302,16 +302,153 @@ def apply_dub_text_override(record: TaskRecord, dub_text: str | None) -> None:
             stage.params.pop("dub_text", None)
 
 
-class TaskCreateError(Exception):
-    """Rejected create-task input. Raised by the shared create chain so the
-    HTTP endpoint, the CLI and the agent tool reject the same inputs with the
-    same messages; status carries the HTTP mapping (404 unknown profile, 400
-    missing input, 422 invalid fields) and the other entrances translate it
-    to their own idiom (non-zero exit, ToolError)."""
+class TaskActionError(Exception):
+    """Rejected task action (create, switches, translation, dub params,
+    export). Raised by the shared helpers so the HTTP endpoint, the CLI and
+    the agent tool reject the same inputs with the same messages; status
+    carries the HTTP mapping (404 not found, 400 missing input, 409 wrong
+    state, 422 invalid fields) and the other entrances translate it to
+    their own idiom (non-zero exit, ToolError)."""
 
     def __init__(self, message: str, status: int = 422) -> None:
         super().__init__(message)
         self.status = status
+
+
+class TaskCreateError(TaskActionError):
+    """Rejected create-task input."""
+
+
+def dub_enable_error(ws: "Workspace", record: TaskRecord) -> str | None:
+    """The one hard condition for dubbing: a timestamped transcript, either
+    already produced, guaranteed by the input format, or promised by a
+    timestamped ASR engine still ahead. None when eligible."""
+    from .artifacts import ArtifactStore
+    from .asr.engines import engine_timestamps, resolve_engine
+
+    artifacts = ArtifactStore(ws.store.task_dir(record.project, record.id))
+    for name in ("segments.json", "translation.json"):
+        try:
+            artifacts.latest_path(name)
+            return None
+        except FileNotFoundError:
+            pass
+    try:
+        asr = artifacts.read_latest_json("asr.json")
+    except FileNotFoundError:
+        asr = None
+    if asr is not None:
+        if asr.get("timestamps", True) is not False:
+            return None
+        return (
+            "dub requires a timestamped transcript; the asr artifact has no "
+            "timestamps — re-run transcription with a timestamped engine"
+        )
+    if Path(record.input_path).suffix.lower() in (".srt", ".vtt"):
+        return None
+    for stage in record.stages:
+        if stage.type != "asr":
+            continue
+        engine_id = resolve_engine(stage.params, ws.config)
+        if engine_id is None or engine_timestamps(engine_id):
+            return None
+        return (
+            "dub requires a timestamped transcript, but asr engine "
+            f"'{engine_id}' returns no timestamps"
+        )
+    return "dub requires a timestamped transcript"
+
+
+def validate_switches_change(
+    record: TaskRecord, changed: dict[str, bool | None]
+) -> dict[str, bool]:
+    """The field validation half of a switches change: drops unset fields and
+    rejects an empty or ill-domained request. Kept apart from the apply half
+    so each entrance can run its own is-the-task-busy guard in between."""
+    applied = {name: value for name, value in changed.items() if value is not None}
+    if not applied:
+        raise TaskActionError("translate, diarize or dub required")
+    if "translate" in applied and task_domain(record) != "audio":
+        raise TaskActionError("translate switch is audio-domain only")
+    return applied
+
+
+def apply_switches_change(
+    ws: "Workspace", record: TaskRecord, changed: dict[str, bool]
+) -> None:
+    """Apply validated switch values: the dub hard condition, appending the
+    dub group when a task never had one, then the status recalc. Saves."""
+    if changed.get("dub"):
+        error = dub_enable_error(ws, record)
+        if error is not None:
+            raise TaskActionError(error, status=409)
+        if not any(stage.type == "tts_synthesize" for stage in record.stages):
+            domain = task_domain(record)
+            if domain not in DUB_GROUP_TAIL:
+                raise TaskActionError(
+                    "dub switch applies to video and audio tasks only"
+                )
+            append_dub_stages(record, domain)
+    switches = record.switches or TaskSwitches()
+    for name, value in changed.items():
+        setattr(switches, name, value)
+    record.switches = switches
+    # Recalc only the switches this request set; the others already shaped
+    # their stages when they were applied.
+    recalc_stages_for_switches(record, TaskSwitches(**changed))
+    ws.store.save(record)
+
+
+def translate_stages_or_error(record: TaskRecord) -> list[StageRecord]:
+    stages = [s for s in record.stages if s.type in TRANSLATE_STAGE_TYPES]
+    if not stages:
+        raise TaskActionError("task has no translate stage")
+    return stages
+
+
+def translation_settings(record: TaskRecord) -> dict:
+    """Task-level translation settings, read off the first translate stage.
+    A write covers every translate stage, so the first one speaks for all."""
+    first = translate_stages_or_error(record)[0]
+    return {
+        "stage_type": first.type,
+        "target_language": first.params.get("target_language") or "",
+        "style": first.params.get("style") or "",
+        "prompt_override": first.params.get("prompt_override") or "",
+    }
+
+
+def apply_translation_change(
+    ws: "Workspace",
+    record: TaskRecord,
+    *,
+    target_language: str | None = None,
+    style: str | None = None,
+    prompt_override: str | None = None,
+) -> dict:
+    """Write task-level translation settings onto every translate stage.
+    None leaves a field as is; "" clears style / prompt_override. Saves and
+    returns the updated settings."""
+    stages = translate_stages_or_error(record)
+    if target_language is not None and not target_language.strip():
+        raise TaskActionError("target_language cannot be empty")
+    for stage in stages:
+        if target_language is not None:
+            stage.params["target_language"] = target_language
+        for name, value in (("style", style), ("prompt_override", prompt_override)):
+            if value is None:
+                continue
+            if value:
+                stage.params[name] = value
+            else:
+                stage.params.pop(name, None)
+    if target_language is not None:
+        # qc_scan reads the same language for its untranslated heuristic.
+        for stage in record.stages:
+            if stage.type == "qc_scan":
+                stage.params["target_language"] = target_language
+    ws.store.save(record)
+    return translation_settings(record)
 
 
 def validate_voice_mode(mode: str | None) -> None:

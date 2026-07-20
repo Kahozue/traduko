@@ -100,23 +100,25 @@ from ..skillhub import SkillsManager, SkillValidationError
 from ..styles import SubtitleStyle
 from ..styles_render import render_style_frame
 from ..tasks import (
-    DUB_GROUP_TAIL,
     DUB_GROUP_TYPES,
     DUB_TEXT_MODES,
+    TRANSLATE_STAGE_TYPES,
     TaskCreateError,
     VOICE_MODES,
-    append_dub_stages,
     apply_asr_engine_override,
     apply_dub_text_override,
     apply_model_override,
+    apply_switches_change,
+    apply_translation_change,
     apply_voice_mode_override,
     create_task_from_profile,
     dub_group_stages,
     ensure_glossary_proofread_stage,
-    TRANSLATE_STAGE_TYPES,
-    recalc_stages_for_switches,
-    task_domain,
+    TaskActionError,
+    translate_stages_or_error,
+    translation_settings,
     validate_dub_text,
+    validate_switches_change,
     validate_voice_mode,
 )
 from ..sync.engine import (
@@ -383,6 +385,10 @@ def _validate_dub_text(dub_text: str | None) -> None:
         raise HTTPException(status_code=error.status, detail=str(error)) from None
 
 
+def _http(error: TaskActionError) -> HTTPException:
+    return HTTPException(status_code=error.status, detail=str(error))
+
+
 def _load_task(ws: Workspace, project: str, task_id: str) -> TaskRecord:
     try:
         return ws.store.load(project, task_id)
@@ -531,45 +537,6 @@ def update_task(
     return record.model_dump()
 
 
-def _dub_enable_error(ws: Workspace, record: TaskRecord) -> str | None:
-    """The one hard condition for dubbing: a timestamped transcript, either
-    already produced, guaranteed by the input format, or promised by a
-    timestamped ASR engine still ahead. None when eligible."""
-    artifacts = ArtifactStore(ws.store.task_dir(record.project, record.id))
-    for name in ("segments.json", "translation.json"):
-        try:
-            artifacts.latest_path(name)
-            return None
-        except FileNotFoundError:
-            pass
-    try:
-        asr = artifacts.read_latest_json("asr.json")
-    except FileNotFoundError:
-        asr = None
-    if asr is not None:
-        if asr.get("timestamps", True) is not False:
-            return None
-        return (
-            "dub requires a timestamped transcript; the asr artifact has no "
-            "timestamps — re-run transcription with a timestamped engine"
-        )
-    if Path(record.input_path).suffix.lower() in (".srt", ".vtt"):
-        return None
-    from ..asr.engines import engine_timestamps, resolve_engine
-
-    for stage in record.stages:
-        if stage.type != "asr":
-            continue
-        engine_id = resolve_engine(stage.params, ws.config)
-        if engine_id is None or engine_timestamps(engine_id):
-            return None
-        return (
-            "dub requires a timestamped transcript, but asr engine "
-            f"'{engine_id}' returns no timestamps"
-        )
-    return "dub requires a timestamped transcript"
-
-
 class TaskSwitchesRequest(BaseModel):
     # Each switch: True/False applies it, omitted leaves it as is.
     translate: bool | None = None
@@ -583,46 +550,20 @@ def patch_task_switches(
 ) -> dict:
     ws: Workspace = request.app.state.workspace
     record = _load_task(ws, project, task_id)
-    changed = {
-        name: value
-        for name, value in (
-            ("translate", body.translate),
-            ("diarize", body.diarize),
-            ("dub", body.dub),
+    try:
+        changed = validate_switches_change(
+            record,
+            {"translate": body.translate, "diarize": body.diarize, "dub": body.dub},
         )
-        if value is not None
-    }
-    if not changed:
-        raise HTTPException(
-            status_code=422, detail="translate, diarize or dub required"
-        )
-    if "translate" in changed and task_domain(record) != "audio":
-        raise HTTPException(
-            status_code=422, detail="translate switch is audio-domain only"
-        )
+    except TaskActionError as error:
+        raise _http(error) from None
     worker: TaskWorker = request.app.state.worker
     if worker.is_active(project, task_id):
         raise HTTPException(status_code=409, detail="task is queued or running")
-    if changed.get("dub"):
-        error = _dub_enable_error(ws, record)
-        if error is not None:
-            raise HTTPException(status_code=409, detail=error)
-        if not any(stage.type == "tts_synthesize" for stage in record.stages):
-            domain = task_domain(record)
-            if domain not in DUB_GROUP_TAIL:
-                raise HTTPException(
-                    status_code=422,
-                    detail="dub switch applies to video and audio tasks only",
-                )
-            append_dub_stages(record, domain)
-    switches = record.switches or TaskSwitches()
-    for name, value in changed.items():
-        setattr(switches, name, value)
-    record.switches = switches
-    # Recalc only the switches this request set; the others already shaped
-    # their stages when they were applied.
-    recalc_stages_for_switches(record, TaskSwitches(**changed))
-    ws.store.save(record)
+    try:
+        apply_switches_change(ws, record, changed)
+    except TaskActionError as error:
+        raise _http(error) from None
     return record.model_dump()
 
 
@@ -1092,25 +1033,6 @@ def put_task_glossary_entries(
 _VALID_REAPPLY_MODES = frozenset({"asr", "proofread", "translate"})
 
 
-def _translate_stages_or_422(record: TaskRecord) -> list[StageRecord]:
-    stages = [s for s in record.stages if s.type in TRANSLATE_STAGE_TYPES]
-    if not stages:
-        raise HTTPException(status_code=422, detail="task has no translate stage")
-    return stages
-
-
-def _translation_payload(record: TaskRecord) -> dict:
-    """Task-level translation settings, read off the first translate stage.
-    A PATCH writes every translate stage, so the first one speaks for all."""
-    first = _translate_stages_or_422(record)[0]
-    return {
-        "stage_type": first.type,
-        "target_language": first.params.get("target_language") or "",
-        "style": first.params.get("style") or "",
-        "prompt_override": first.params.get("prompt_override") or "",
-    }
-
-
 class TranslationRequest(BaseModel):
     # None leaves the field as is; "" clears style / prompt_override.
     target_language: str | None = None
@@ -1121,7 +1043,10 @@ class TranslationRequest(BaseModel):
 @router.get("/tasks/{project}/{task_id}/translation")
 def get_translation(request: Request, project: str, task_id: str) -> dict:
     ws: Workspace = request.app.state.workspace
-    return _translation_payload(_load_task(ws, project, task_id))
+    try:
+        return translation_settings(_load_task(ws, project, task_id))
+    except TaskActionError as error:
+        raise _http(error) from None
 
 
 @router.patch("/tasks/{project}/{task_id}/translation")
@@ -1130,32 +1055,23 @@ def patch_translation(
 ) -> dict:
     ws: Workspace = request.app.state.workspace
     record = _load_task(ws, project, task_id)
-    stages = _translate_stages_or_422(record)
+    try:
+        translate_stages_or_error(record)
+    except TaskActionError as error:
+        raise _http(error) from None
     worker: TaskWorker = request.app.state.worker
     if worker.is_active(project, task_id):
         raise HTTPException(status_code=409, detail="task is queued or running")
-    if body.target_language is not None and not body.target_language.strip():
-        raise HTTPException(
-            status_code=422, detail="target_language cannot be empty"
+    try:
+        return apply_translation_change(
+            ws,
+            record,
+            target_language=body.target_language,
+            style=body.style,
+            prompt_override=body.prompt_override,
         )
-    for stage in stages:
-        if body.target_language is not None:
-            stage.params["target_language"] = body.target_language
-        for name in ("style", "prompt_override"):
-            value = getattr(body, name)
-            if value is None:
-                continue
-            if value:
-                stage.params[name] = value
-            else:
-                stage.params.pop(name, None)
-    if body.target_language is not None:
-        # qc_scan reads the same language for its untranslated heuristic.
-        for stage in record.stages:
-            if stage.type == "qc_scan":
-                stage.params["target_language"] = body.target_language
-    ws.store.save(record)
-    return _translation_payload(record)
+    except TaskActionError as error:
+        raise _http(error) from None
 
 
 @router.post("/tasks/{project}/{task_id}/retranslate", status_code=202)
@@ -1164,7 +1080,10 @@ def retranslate(request: Request, project: str, task_id: str) -> dict:
     downstream artifact and edit is regenerated; the UI confirms first."""
     ws: Workspace = request.app.state.workspace
     record = _load_task(ws, project, task_id)
-    start = _translate_stages_or_422(record)[0]
+    try:
+        start = translate_stages_or_error(record)[0]
+    except TaskActionError as error:
+        raise _http(error) from None
     worker: TaskWorker = request.app.state.worker
     if worker.is_active(project, task_id):
         raise HTTPException(status_code=409, detail="task is queued or running")

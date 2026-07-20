@@ -462,3 +462,117 @@ def test_create_compose_task_without_a_transcript_is_rejected(
     # A rejected create leaves nothing on disk.
     tasks_dir = tmp_path / "projects" / "default" / "tasks"
     assert not tasks_dir.exists() or not any(tasks_dir.iterdir())
+
+
+# --- task switches / translate-opts (v3_5-10, deferred from v3_5-04/08) ------
+
+
+def _seeded_env(tmp_path: Path) -> dict[str, str]:
+    from traduko.workspace import Workspace
+
+    Workspace.open(tmp_path)
+    return {"TRADUKO_DATA_ROOT": str(tmp_path)}
+
+
+def _create_audio_dub_task(tmp_path: Path, env: dict[str, str]) -> str:
+    input_file = tmp_path / "in.wav"
+    input_file.write_bytes(b"fake audio")
+    created = runner.invoke(
+        app, ["task", "create", str(input_file), "--profile", "audio-dub"], env=env
+    )
+    assert created.exit_code == 0, created.output
+    return created.output.strip().splitlines()[-1]
+
+
+def _show_task(task_id: str, env: dict[str, str]) -> dict:
+    shown = runner.invoke(app, ["task", "show", task_id], env=env)
+    return json.loads(shown.output)
+
+
+def test_task_switches_prints_current_values(tmp_path: Path) -> None:
+    env = _seeded_env(tmp_path)
+    task_id = _create_audio_dub_task(tmp_path, env)
+
+    result = runner.invoke(app, ["task", "switches", task_id], env=env)
+    assert result.exit_code == 0, result.output
+    assert "translate: True" in result.output
+    assert "dub: False" in result.output
+
+
+def test_task_switches_disables_the_dub_group(tmp_path: Path) -> None:
+    env = _seeded_env(tmp_path)
+    input_file = tmp_path / "clip.mp4"
+    input_file.write_bytes(b"fake video")
+    created = runner.invoke(
+        app, ["task", "create", str(input_file), "--profile", "av-dub"], env=env
+    )
+    assert created.exit_code == 0, created.output
+    task_id = created.output.strip().splitlines()[-1]
+
+    result = runner.invoke(app, ["task", "switches", task_id, "--no-dub"], env=env)
+    assert result.exit_code == 0, result.output
+    assert "dub: False" in result.output
+    payload = _show_task(task_id, env)
+    mix = next(s for s in payload["stages"] if s["type"] == "mix_audio")
+    assert mix["status"] == "skipped"
+
+
+def test_task_switches_rejects_a_running_task(tmp_path: Path) -> None:
+    from traduko.models import TaskStatus
+    from traduko.workspace import Workspace
+
+    env = _seeded_env(tmp_path)
+    task_id = _create_audio_dub_task(tmp_path, env)
+    ws = Workspace.open(tmp_path)
+    record = ws.store.load("default", task_id)
+    record.status = TaskStatus.RUNNING
+    ws.store.save(record)
+
+    result = runner.invoke(app, ["task", "switches", task_id, "--no-dub"], env=env)
+    assert result.exit_code == 1
+    assert "running" in result.output
+
+
+def test_task_translate_opts_prints_current_values(tmp_path: Path) -> None:
+    env = _seeded_env(tmp_path)
+    task_id = _create_audio_dub_task(tmp_path, env)
+
+    result = runner.invoke(app, ["task", "translate-opts", task_id], env=env)
+    assert result.exit_code == 0, result.output
+    assert "target_language:" in result.output
+
+
+def test_task_translate_opts_updates_target_language(tmp_path: Path) -> None:
+    env = _seeded_env(tmp_path)
+    task_id = _create_audio_dub_task(tmp_path, env)
+
+    result = runner.invoke(
+        app,
+        ["task", "translate-opts", task_id, "--target-language", "ja"],
+        env=env,
+    )
+    assert result.exit_code == 0, result.output
+    assert "target_language: ja" in result.output
+    payload = _show_task(task_id, env)
+    translate = next(s for s in payload["stages"] if s["type"] == "translate")
+    assert translate["params"]["target_language"] == "ja"
+
+
+def test_task_translate_opts_rejects_a_running_task(tmp_path: Path) -> None:
+    from traduko.models import TaskStatus
+    from traduko.workspace import Workspace
+
+    env = _seeded_env(tmp_path)
+    task_id = _create_audio_dub_task(tmp_path, env)
+    ws = Workspace.open(tmp_path)
+    record = ws.store.load("default", task_id)
+    record.status = TaskStatus.RUNNING
+    ws.store.save(record)
+
+    result = runner.invoke(
+        app,
+        ["task", "translate-opts", task_id, "--target-language", "ja"],
+        env=env,
+    )
+    assert result.exit_code == 1
+    assert "running" in result.output

@@ -10,11 +10,19 @@ from .eventlog import EventLogger
 from .events import Event
 from .executor import PipelineExecutor
 from .glossary import GlossaryStore, resolve_effective_glossary
-from .models import StageRecord, StageStatus, TaskGlossary, TaskStatus
+from .models import StageRecord, StageStatus, TaskGlossary, TaskStatus, TaskSwitches
 from .notify import Notifier
 from .paths import ENV_DATA_ROOT
 from .preflight import PreflightReport, run_preflight
-from .tasks import TaskCreateError, create_task_from_profile
+from .tasks import (
+    TaskActionError,
+    TaskCreateError,
+    apply_switches_change,
+    apply_translation_change,
+    create_task_from_profile,
+    translation_settings,
+    validate_switches_change,
+)
 from .workspace import Workspace
 
 app = typer.Typer(no_args_is_help=True)
@@ -172,6 +180,84 @@ def task_rerun(
     ws.store.reset_for_rerun(record)
     result = PipelineExecutor(ws.store, ws.bus, ws.root).run(record)
     typer.echo(result.status.value)
+
+
+def _reject_running(record) -> None:
+    """The CLI's version of the HTTP 409: the record status stands in for the
+    service worker queue, since a CLI run holds RUNNING while it works."""
+    if record.status is TaskStatus.RUNNING:
+        typer.echo("task is queued or running")
+        raise typer.Exit(code=1)
+
+
+def _echo_switches(record) -> None:
+    switches = record.switches or TaskSwitches()
+    for name in ("translate", "diarize", "dub"):
+        value = getattr(switches, name)
+        typer.echo(f"{name}: {'unset' if value is None else value}")
+
+
+@task_app.command("switches")
+def task_switches(
+    ctx: typer.Context,
+    task_id: str = typer.Argument(...),
+    project: Optional[str] = typer.Option(None, "--project"),
+    translate: Optional[bool] = typer.Option(
+        None, "--translate/--no-translate", help="Audio-domain translate switch."
+    ),
+    diarize: Optional[bool] = typer.Option(None, "--diarize/--no-diarize"),
+    dub: Optional[bool] = typer.Option(None, "--dub/--no-dub"),
+) -> None:
+    """Show or set the task's pipeline switches (no flags: show)."""
+    ws: Workspace = ctx.obj
+    record = ws.store.load(project or ws.config.default_project, task_id)
+    changed = {"translate": translate, "diarize": diarize, "dub": dub}
+    if all(value is None for value in changed.values()):
+        _echo_switches(record)
+        return
+    try:
+        applied = validate_switches_change(record, changed)
+        _reject_running(record)
+        apply_switches_change(ws, record, applied)
+    except TaskActionError as error:
+        typer.echo(str(error))
+        raise typer.Exit(code=1) from None
+    _echo_switches(record)
+
+
+@task_app.command("translate-opts")
+def task_translate_opts(
+    ctx: typer.Context,
+    task_id: str = typer.Argument(...),
+    project: Optional[str] = typer.Option(None, "--project"),
+    target_language: Optional[str] = typer.Option(None, "--target-language"),
+    style: Optional[str] = typer.Option(
+        None, "--style", help="Translation style; empty string clears it."
+    ),
+    prompt_override: Optional[str] = typer.Option(
+        None, "--prompt-override", help="Task prompt override; empty string clears."
+    ),
+) -> None:
+    """Show or set the task's translation settings (no flags: show)."""
+    ws: Workspace = ctx.obj
+    record = ws.store.load(project or ws.config.default_project, task_id)
+    try:
+        if all(v is None for v in (target_language, style, prompt_override)):
+            settings = translation_settings(record)
+        else:
+            _reject_running(record)
+            settings = apply_translation_change(
+                ws,
+                record,
+                target_language=target_language,
+                style=style,
+                prompt_override=prompt_override,
+            )
+    except TaskActionError as error:
+        typer.echo(str(error))
+        raise typer.Exit(code=1) from None
+    for name in ("stage_type", "target_language", "style", "prompt_override"):
+        typer.echo(f"{name}: {settings[name]}")
 
 
 @task_app.command("list")
