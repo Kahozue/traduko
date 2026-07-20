@@ -431,7 +431,8 @@ def _build_action_tools(ws: Workspace, created_task_ids: list[str]) -> list[Agen
     normal PENDING state for the operator to review and start, so nothing
     irreversible happens without a human. Config still only moves through the
     proposal channel."""
-    from ..tasks import TaskCreateError, create_task_from_profile
+    from ..models import TaskStatus
+    from ..tasks import TaskActionError, TaskCreateError, create_task_from_profile
 
     def list_profiles(args: dict) -> str:
         names = sorted(path.stem for path in (ws.root / "profiles").glob("*.yaml"))
@@ -582,6 +583,132 @@ def _build_action_tools(ws: Workspace, created_task_ids: list[str]) -> list[Agen
         return json.dumps(
             {"task_id": record.id, "glossary": record.glossary.model_dump(),
              "note": "task glossary updated; reapply via the task page or rerun to take effect"},
+            ensure_ascii=False,
+        )
+
+    # --- task surface tools (switches / redub / export / translation) --------
+    # Same safety model as create/rerun: these change task state but never
+    # run anything; the operator starts the task.
+
+    def _load_idle_task(args: dict):
+        project = str(args["project"])
+        task_id = str(args["task_id"])
+        try:
+            record = ws.store.load(project, task_id)
+        except FileNotFoundError:
+            raise ToolError(f"task not found: {project}/{task_id}") from None
+        if record.status is TaskStatus.RUNNING:
+            raise ToolError("task is queued or running")
+        return record
+
+    def set_task_switches(args: dict) -> str:
+        from ..tasks import apply_switches_change, validate_switches_change
+
+        record = _load_idle_task(args)
+        changed = {
+            name: (bool(args[name]) if name in args else None)
+            for name in ("translate", "diarize", "dub")
+        }
+        try:
+            applied = validate_switches_change(record, changed)
+            apply_switches_change(ws, record, applied)
+        except TaskActionError as error:
+            raise ToolError(str(error)) from None
+        return json.dumps(
+            {
+                "task_id": record.id,
+                "switches": (record.switches.model_dump()
+                             if record.switches else None),
+                "note": "switches updated; the operator runs the task",
+            },
+            ensure_ascii=False,
+        )
+
+    def redub_task(args: dict) -> str:
+        from ..tasks import reset_dub_stages
+
+        record = _load_idle_task(args)
+        try:
+            reset_from = reset_dub_stages(
+                ws, record, str(args.get("from", "synthesize"))
+            )
+        except TaskActionError as error:
+            raise ToolError(str(error)) from None
+        return json.dumps(
+            {
+                "task_id": record.id,
+                "status": record.status.value,
+                "reset_from": reset_from,
+                "note": "dub stages reset to pending; the operator must run the task",
+            },
+            ensure_ascii=False,
+        )
+
+    def export_task(args: dict) -> str:
+        from ..tasks import append_export_stage
+
+        record = _load_idle_task(args)
+        params = args.get("params") or {}
+        if not isinstance(params, dict):
+            raise ToolError("params must be an object of export panel fields")
+        try:
+            stage_type = append_export_stage(
+                ws, record, str(args.get("kind", "video")), params
+            )
+        except TaskActionError as error:
+            raise ToolError(str(error)) from None
+        return json.dumps(
+            {
+                "task_id": record.id,
+                "stage_type": stage_type,
+                "status": record.status.value,
+                "note": "export stage appended pending; the operator must run the task",
+            },
+            ensure_ascii=False,
+        )
+
+    def set_translation(args: dict) -> str:
+        from ..tasks import apply_translation_change
+
+        record = _load_idle_task(args)
+        try:
+            settings = apply_translation_change(
+                ws,
+                record,
+                target_language=(
+                    str(args["target_language"])
+                    if "target_language" in args else None
+                ),
+                style=(str(args["style"]) if "style" in args else None),
+                prompt_override=(
+                    str(args["prompt_override"])
+                    if "prompt_override" in args else None
+                ),
+            )
+        except TaskActionError as error:
+            raise ToolError(str(error)) from None
+        return json.dumps(
+            {"task_id": record.id, **settings,
+             "note": "translation settings updated; retranslate to regenerate"},
+            ensure_ascii=False,
+        )
+
+    def retranslate_task(args: dict) -> str:
+        from ..tasks import reset_for_retranslate
+
+        record = _load_idle_task(args)
+        try:
+            reset_from = reset_for_retranslate(ws, record)
+        except TaskActionError as error:
+            raise ToolError(str(error)) from None
+        return json.dumps(
+            {
+                "task_id": record.id,
+                "status": record.status.value,
+                "reset_from": reset_from,
+                "note": "translate and downstream stages reset to pending; "
+                "the operator must run the task",
+            },
             ensure_ascii=False,
         )
 
@@ -762,6 +889,164 @@ def _build_action_tools(ws: Workspace, created_task_ids: list[str]) -> list[Agen
             },
             handler=_safe(apply_glossary_to_task),
         ),
+        AgentTool(
+            name="set_task_switches",
+            description=(
+                "Set a task's pipeline switches (translate is audio-domain "
+                "only). Switched-off stages are marked skipped and keep their "
+                "artifacts; switching dubbing on appends the dub stage group "
+                "when the task never had one. Nothing is run automatically."
+            ),
+            parameters={
+                "project": {
+                    "type": "string",
+                    "required": True,
+                    "description": "project the task is filed under",
+                },
+                "task_id": {
+                    "type": "string",
+                    "required": True,
+                    "description": "id of the task",
+                },
+                "translate": {
+                    "type": "boolean",
+                    "required": False,
+                    "description": "audio-domain translate switch",
+                },
+                "diarize": {
+                    "type": "boolean",
+                    "required": False,
+                    "description": "speaker diarization switch",
+                },
+                "dub": {
+                    "type": "boolean",
+                    "required": False,
+                    "description": "dubbing switch",
+                },
+            },
+            handler=_safe(set_task_switches),
+        ),
+        AgentTool(
+            name="redub_task",
+            description=(
+                "Reset a task's dub stages back to PENDING so the next run "
+                "re-synthesizes the dub. The task is left PENDING for the "
+                "operator to run; it is never started automatically."
+            ),
+            parameters={
+                "project": {
+                    "type": "string",
+                    "required": True,
+                    "description": "project the task is filed under",
+                },
+                "task_id": {
+                    "type": "string",
+                    "required": True,
+                    "description": "id of the task",
+                },
+                "from": {
+                    "type": "string",
+                    "required": False,
+                    "description": (
+                        "reset point: synthesize (default) or diarize to "
+                        "also redo speaker assignment"
+                    ),
+                },
+            },
+            handler=_safe(redub_task),
+        ),
+        AgentTool(
+            name="export_task",
+            description=(
+                "Append a one-off export stage to a task (video or audio "
+                "panel snapshot in params, e.g. {\"source\": \"dub\", "
+                "\"format\": \"mp3\"}). The stage is left PENDING for the "
+                "operator to run; it is never started automatically."
+            ),
+            parameters={
+                "project": {
+                    "type": "string",
+                    "required": True,
+                    "description": "project the task is filed under",
+                },
+                "task_id": {
+                    "type": "string",
+                    "required": True,
+                    "description": "id of the task",
+                },
+                "kind": {
+                    "type": "string",
+                    "required": True,
+                    "description": "export kind: video or audio",
+                },
+                "params": {
+                    "type": "object",
+                    "required": False,
+                    "description": "export panel fields; omitted fields use defaults",
+                },
+            },
+            handler=_safe(export_task),
+        ),
+        AgentTool(
+            name="set_translation",
+            description=(
+                "Set a task's translation settings on every translate stage: "
+                "target_language, style, prompt_override (empty string "
+                "clears style/prompt_override). Takes effect on the next "
+                "translate run; use retranslate_task to redo an existing one."
+            ),
+            parameters={
+                "project": {
+                    "type": "string",
+                    "required": True,
+                    "description": "project the task is filed under",
+                },
+                "task_id": {
+                    "type": "string",
+                    "required": True,
+                    "description": "id of the task",
+                },
+                "target_language": {
+                    "type": "string",
+                    "required": False,
+                    "description": "target language code, e.g. zh-TW",
+                },
+                "style": {
+                    "type": "string",
+                    "required": False,
+                    "description": "translation style; empty string clears",
+                },
+                "prompt_override": {
+                    "type": "string",
+                    "required": False,
+                    "description": "task prompt override; empty string clears",
+                },
+            },
+            handler=_safe(set_translation),
+        ),
+        AgentTool(
+            name="retranslate_task",
+            description=(
+                "Reset a task's translate stage and everything after it back "
+                "to PENDING so the next run regenerates the translation and "
+                "all downstream artifacts (edits included). The task is left "
+                "PENDING for the operator to run; it is never started "
+                "automatically."
+            ),
+            parameters={
+                "project": {
+                    "type": "string",
+                    "required": True,
+                    "description": "project the task is filed under",
+                },
+                "task_id": {
+                    "type": "string",
+                    "required": True,
+                    "description": "id of the task",
+                },
+            },
+            handler=_safe(retranslate_task),
+        ),
     ]
 
 
@@ -803,6 +1088,11 @@ _TOOL_KINDS = {
     "rerun_task": "execute",
     "glossary_upsert_entry": "execute",
     "apply_glossary_to_task": "execute",
+    "set_task_switches": "execute",
+    "redub_task": "execute",
+    "export_task": "execute",
+    "set_translation": "execute",
+    "retranslate_task": "execute",
 }
 
 

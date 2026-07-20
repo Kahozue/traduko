@@ -118,6 +118,8 @@ from ..tasks import (
     dub_group_stages,
     dub_params_settings,
     ensure_glossary_proofread_stage,
+    reset_dub_stages,
+    reset_for_retranslate,
     TaskActionError,
     translate_stages_or_error,
     translation_settings,
@@ -647,22 +649,10 @@ def dub_redub(
     worker: TaskWorker = request.app.state.worker
     if worker.is_active(project, task_id):
         raise HTTPException(status_code=409, detail="task is queued or running")
-    start_type = "diarize" if body.from_ == "diarize" else "tts_synthesize"
-    if not any(stage.type == start_type for stage in group):
-        raise HTTPException(
-            status_code=422,
-            detail=f"dub group has no {start_type} stage to reset from",
-        )
-    resetting = False
-    for stage in group:
-        if stage.type == start_type:
-            resetting = True
-        if resetting and stage.status != StageStatus.RUNNING:
-            stage.status = StageStatus.PENDING
-            stage.error = None
-    if record.status == TaskStatus.COMPLETED:
-        record.status = TaskStatus.PENDING
-    ws.store.save(record)
+    try:
+        reset_dub_stages(ws, record, body.from_)
+    except TaskActionError as error:
+        raise _http(error) from None
     return _enqueue_or_409(request, record)
 
 
@@ -987,24 +977,14 @@ def retranslate(request: Request, project: str, task_id: str) -> dict:
     downstream artifact and edit is regenerated; the UI confirms first."""
     ws: Workspace = request.app.state.workspace
     record = _load_task(ws, project, task_id)
-    try:
-        start = translate_stages_or_error(record)[0]
-    except TaskActionError as error:
-        raise _http(error) from None
     worker: TaskWorker = request.app.state.worker
     if worker.is_active(project, task_id):
         raise HTTPException(status_code=409, detail="task is queued or running")
-    resetting = False
-    for stage in record.stages:
-        if stage is start:
-            resetting = True
-        if resetting and stage.status != StageStatus.RUNNING:
-            stage.status = StageStatus.PENDING
-            stage.error = None
-    if record.status == TaskStatus.COMPLETED:
-        record.status = TaskStatus.PENDING
-    ws.store.save(record)
-    return {**_enqueue_or_409(request, record), "reset_from": start.type}
+    try:
+        reset_from = reset_for_retranslate(ws, record)
+    except TaskActionError as error:
+        raise _http(error) from None
+    return {**_enqueue_or_409(request, record), "reset_from": reset_from}
 
 
 class ReapplyRequest(BaseModel):

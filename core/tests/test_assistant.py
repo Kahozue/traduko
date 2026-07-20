@@ -1117,3 +1117,137 @@ def test_agent_create_task_rejects_a_malformed_transcript_argument(
         tools["create_task"].handler(
             {"profile": "audio-compose", "transcript": "lines.srt"}
         )
+
+
+# --- task surface tools (v3_5-10: switches / redub / export / translation) ---
+
+
+def _seeded_task(ws, profile: str, input_name: str):
+    from traduko.tasks import create_task_from_profile
+
+    input_file = ws.root / input_name
+    input_file.write_bytes(b"fake bytes")
+    return create_task_from_profile(
+        ws, profile=profile, input_path=str(input_file)
+    )
+
+
+def test_agent_set_task_switches_disables_the_dub_group(tmp_path: Path) -> None:
+    ws = make_ws(tmp_path)
+    record = _seeded_task(ws, "av-dub", "clip.mp4")
+    tools = action_tool_map(ws)
+
+    result = json.loads(
+        tools["set_task_switches"].handler(
+            {"project": record.project, "task_id": record.id, "dub": False}
+        )
+    )
+    assert result["switches"]["dub"] is False
+    reloaded = ws.store.load(record.project, record.id)
+    mix = next(s for s in reloaded.stages if s.type == "mix_audio")
+    assert mix.status is StageStatus.SKIPPED
+
+
+def test_agent_set_task_switches_rejects_a_running_task(tmp_path: Path) -> None:
+    ws = make_ws(tmp_path)
+    record = _seeded_task(ws, "av-dub", "clip.mp4")
+    record.status = TaskStatus.RUNNING
+    ws.store.save(record)
+    tools = action_tool_map(ws)
+
+    with pytest.raises(ToolError, match="running"):
+        tools["set_task_switches"].handler(
+            {"project": record.project, "task_id": record.id, "dub": False}
+        )
+
+
+def test_agent_redub_task_resets_the_dub_group_left_pending(tmp_path: Path) -> None:
+    ws = make_ws(tmp_path)
+    record = _seeded_task(ws, "av-dub", "clip.mp4")
+    complete_task(ws, record)
+    tools = action_tool_map(ws)
+
+    result = json.loads(
+        tools["redub_task"].handler(
+            {"project": record.project, "task_id": record.id}
+        )
+    )
+    assert result["reset_from"] == "tts_synthesize"
+    assert "operator" in result["note"]
+    reloaded = ws.store.load(record.project, record.id)
+    assert reloaded.status is TaskStatus.PENDING
+    by_type = {s.type: s.status for s in reloaded.stages}
+    assert by_type["tts_synthesize"] is StageStatus.PENDING
+    assert by_type["mix_audio"] is StageStatus.PENDING
+    assert by_type["diarize"] is StageStatus.COMPLETED
+    assert by_type["asr"] is StageStatus.COMPLETED
+
+
+def test_agent_export_task_appends_the_stage_left_pending(tmp_path: Path) -> None:
+    ws = make_ws(tmp_path)
+    record = _seeded_task(ws, "audio-dub", "in.wav")
+    complete_task(ws, record)
+    tools = action_tool_map(ws)
+
+    result = json.loads(
+        tools["export_task"].handler(
+            {
+                "project": record.project,
+                "task_id": record.id,
+                "kind": "audio",
+                "params": {"source": "dub", "format": "mp3"},
+            }
+        )
+    )
+    assert result["stage_type"] == "export_audio_custom"
+    reloaded = ws.store.load(record.project, record.id)
+    assert reloaded.status is TaskStatus.PENDING
+    assert reloaded.stages[-1].type == "export_audio_custom"
+    assert reloaded.stages[-1].params == {"source": "dub", "format": "mp3"}
+    assert reloaded.stages[-1].status is StageStatus.PENDING
+
+
+def test_agent_export_task_keeps_the_kind_gate(tmp_path: Path) -> None:
+    ws = make_ws(tmp_path)
+    record = _seeded_task(ws, "audio-dub", "in.wav")
+    tools = action_tool_map(ws)
+
+    with pytest.raises(ToolError, match="no video to export"):
+        tools["export_task"].handler(
+            {"project": record.project, "task_id": record.id, "kind": "video"}
+        )
+
+
+def test_agent_set_translation_and_retranslate(tmp_path: Path) -> None:
+    ws = make_ws(tmp_path)
+    record = _seeded_task(ws, "audio-dub", "in.wav")
+    complete_task(ws, record)
+    tools = action_tool_map(ws)
+
+    result = json.loads(
+        tools["set_translation"].handler(
+            {
+                "project": record.project,
+                "task_id": record.id,
+                "target_language": "ja",
+            }
+        )
+    )
+    assert result["target_language"] == "ja"
+    reloaded = ws.store.load(record.project, record.id)
+    translate = next(s for s in reloaded.stages if s.type == "translate")
+    assert translate.params["target_language"] == "ja"
+
+    result = json.loads(
+        tools["retranslate_task"].handler(
+            {"project": record.project, "task_id": record.id}
+        )
+    )
+    assert result["reset_from"] == "translate"
+    assert "operator" in result["note"]
+    reloaded = ws.store.load(record.project, record.id)
+    assert reloaded.status is TaskStatus.PENDING
+    by_type = {s.type: s.status for s in reloaded.stages}
+    assert by_type["translate"] is StageStatus.PENDING
+    assert by_type["export_audio"] is StageStatus.PENDING
+    assert by_type["asr"] is StageStatus.COMPLETED

@@ -544,6 +544,48 @@ def apply_dub_params_change(
     return dub_params_settings(record)
 
 
+def reset_dub_stages(
+    ws: "Workspace", record: TaskRecord, from_: str = "synthesize"
+) -> str:
+    """Reset the dub group from tts_synthesize (or diarize) so the next run
+    re-synthesizes. Saves; running the task is the caller's business."""
+    group = dub_group_or_error(record)
+    start_type = "diarize" if from_ == "diarize" else "tts_synthesize"
+    if not any(stage.type == start_type for stage in group):
+        raise TaskActionError(
+            f"dub group has no {start_type} stage to reset from"
+        )
+    resetting = False
+    for stage in group:
+        if stage.type == start_type:
+            resetting = True
+        if resetting and stage.status != StageStatus.RUNNING:
+            stage.status = StageStatus.PENDING
+            stage.error = None
+    if record.status == TaskStatus.COMPLETED:
+        record.status = TaskStatus.PENDING
+    ws.store.save(record)
+    return start_type
+
+
+def reset_for_retranslate(ws: "Workspace", record: TaskRecord) -> str:
+    """Reset the translate stage and everything after it. Every downstream
+    artifact and edit is regenerated on the next run; callers confirm first.
+    Saves; running the task is the caller's business."""
+    start = translate_stages_or_error(record)[0]
+    resetting = False
+    for stage in record.stages:
+        if stage is start:
+            resetting = True
+        if resetting and stage.status != StageStatus.RUNNING:
+            stage.status = StageStatus.PENDING
+            stage.error = None
+    if record.status == TaskStatus.COMPLETED:
+        record.status = TaskStatus.PENDING
+    ws.store.save(record)
+    return start.type
+
+
 def validate_export_request(record: TaskRecord, kind: str, params: dict) -> str:
     """Validate an export request and name its stage type. The params
     snapshot is parsed up front so a bad value is rejected here rather than
