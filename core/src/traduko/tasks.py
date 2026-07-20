@@ -430,7 +430,18 @@ def apply_switches_change(
                 raise TaskActionError(
                     "dub switch applies to video and audio tasks only"
                 )
-            append_dub_stages(record, domain)
+            added = append_dub_stages(record, domain)
+            # The group ships with speaker separation, but that switch is the
+            # user's, not the group's: a task that turned diarize off must not
+            # get it (or its review checkpoint) back for enabling dubbing.
+            # Synthesis falls back to a single voice when it finds no
+            # speakers.json, so the skipped stage costs the dub nothing.
+            existing = (record.switches or TaskSwitches()).diarize
+            if existing is False and "diarize" not in changed:
+                for stage in added:
+                    if stage.type == "diarize":
+                        stage.status = StageStatus.SKIPPED
+                        stage.pause_after = False
     if changed.get("diarize") and not any(
         stage.type == "diarize" for stage in record.stages
     ):
@@ -608,6 +619,11 @@ def reset_dub_stages(
         if resetting and stage.status != StageStatus.RUNNING:
             stage.status = StageStatus.PENDING
             stage.error = None
+    # Redubbing from diarize un-skips speaker separation, so the switch has to
+    # say so too. Leaving it off would put the task page's chip and the stage
+    # that is about to run in direct contradiction.
+    if start_type == "diarize" and record.switches is not None:
+        record.switches.diarize = True
     if record.status == TaskStatus.COMPLETED:
         record.status = TaskStatus.PENDING
     ws.store.save(record)

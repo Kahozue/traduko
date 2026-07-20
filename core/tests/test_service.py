@@ -2588,6 +2588,31 @@ def test_patch_switches_dub_on_appends_audio_dub_group(tmp_path: Path) -> None:
         assert body["switches"]["dub"] is True
 
 
+def test_patch_switches_dub_on_respects_diarize_already_off(tmp_path: Path) -> None:
+    # Speaker separation is the user's switch, not the dub group's: enabling
+    # dubbing must not smuggle it (or its review checkpoint) back in.
+    with service(tmp_path) as (client, headers, token):
+        task_id = create_task(client, headers, tmp_path, profile="audio-transcribe")
+        write_task_artifact(client, "default", task_id, 2, "asr.json", TIMESTAMPED_ASR)
+        client.patch(
+            f"/tasks/default/{task_id}/switches",
+            json={"diarize": False},
+            headers=headers,
+        )
+
+        body = client.patch(
+            f"/tasks/default/{task_id}/switches", json={"dub": True}, headers=headers
+        ).json()
+
+        diarize = next(s for s in body["stages"] if s["type"] == "diarize")
+        assert diarize["status"] == "skipped"
+        assert body["switches"]["diarize"] is False
+        assert body["switches"]["dub"] is True
+        # Synthesis still runs; it falls back to one voice with no speakers.
+        synth = next(s for s in body["stages"] if s["type"] == "tts_synthesize")
+        assert synth["status"] == "pending"
+
+
 def test_patch_switches_dub_on_appends_video_dub_group(tmp_path: Path) -> None:
     with service(tmp_path) as (client, headers, token):
         task_id = client.post(
@@ -3008,6 +3033,32 @@ def test_redub_from_diarize_resets_diarize_onward(tmp_path: Path) -> None:
         assert by_type["diarize"] == "pending"
         assert by_type["tts_synthesize"] == "pending"
         assert by_type["mix_audio"] == "pending"
+
+
+def test_redub_from_diarize_turns_the_diarize_switch_back_on(tmp_path: Path) -> None:
+    # Un-skipping the stage without moving the switch would leave the task
+    # page's chip saying "off" about a stage that is queued to run.
+    with service(tmp_path) as (client, headers, token):
+        task_id = _dub_task(client, headers, tmp_path)
+        client.patch(
+            f"/tasks/default/{task_id}/switches",
+            json={"diarize": False},
+            headers=headers,
+        )
+        ws = client.app.state.workspace
+        assert ws.store.load("default", task_id).switches.diarize is False
+
+        resp = client.post(
+            f"/tasks/default/{task_id}/dub/redub",
+            json={"from": "diarize"},
+            headers=headers,
+        )
+
+        assert resp.status_code == 202
+        rec = ws.store.load("default", task_id)
+        assert rec.switches.diarize is True
+        by_type = {s.type: s.status for s in rec.stages}
+        assert by_type["diarize"] == "pending"
 
 
 def test_redub_running_409(tmp_path: Path) -> None:

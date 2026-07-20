@@ -4,6 +4,7 @@ from pathlib import Path
 import pytest
 
 from traduko import skillhub
+from traduko.artifacts import ArtifactStore
 from traduko.agents.assistant import (
     AssistantLLMError,
     AssistantUnavailable,
@@ -61,7 +62,9 @@ def test_build_assistant_tools_returns_only_read_only_diagnostics(
     names = sorted(tool.name for tool in build_assistant_tools(ws))
     assert names == [
         "budget_status",
+        "list_artifacts",
         "list_tasks",
+        "read_artifact",
         "read_config",
         "read_logs",
         "run_preflight",
@@ -1255,3 +1258,94 @@ def test_agent_set_translation_and_retranslate(tmp_path: Path) -> None:
     assert by_type["translate"] is StageStatus.PENDING
     assert by_type["export_audio"] is StageStatus.PENDING
     assert by_type["asr"] is StageStatus.COMPLETED
+
+
+def test_read_artifact_returns_transcript_content(tmp_path: Path) -> None:
+    # The assistant knew artifact names from task_detail but could not open
+    # one; without this it can describe a task's shape, never its content.
+    ws = make_ws(tmp_path)
+    record = create_task(ws)
+    store = ArtifactStore(ws.store.task_dir(record.project, record.id))
+    store.write_json(
+        6,
+        "translation.json",
+        {"segments": [{"id": 1, "source": "hello", "target": "你好"}]},
+    )
+    tools = tool_map(ws)
+
+    listing = json.loads(
+        tools["list_artifacts"].handler(
+            {"project": record.project, "task_id": record.id}
+        )
+    )
+    assert listing == [
+        {
+            "file": "06-translation.json",
+            "name": "translation.json",
+            "size": listing[0]["size"],
+            "readable": True,
+        }
+    ]
+
+    body = json.loads(
+        tools["read_artifact"].handler(
+            {
+                "project": record.project,
+                "task_id": record.id,
+                "name": "translation.json",
+            }
+        )
+    )
+    assert body["file"] == "06-translation.json"
+    assert body["truncated"] is False
+    assert body["content"]["segments"][0]["target"] == "你好"
+
+
+def test_read_artifact_truncates_long_documents(tmp_path: Path) -> None:
+    ws = make_ws(tmp_path)
+    record = create_task(ws)
+    store = ArtifactStore(ws.store.task_dir(record.project, record.id))
+    store.write_json(
+        1, "asr.json", {"segments": [{"id": i, "source": str(i)} for i in range(200)]}
+    )
+    tools = tool_map(ws)
+    body = json.loads(
+        tools["read_artifact"].handler(
+            {
+                "project": record.project,
+                "task_id": record.id,
+                "name": "asr.json",
+                "items": 5,
+            }
+        )
+    )
+    assert body["truncated"] is True
+    assert len(body["content"]["segments"]) == 5
+
+
+def test_read_artifact_reads_text_deliverables(tmp_path: Path) -> None:
+    ws = make_ws(tmp_path)
+    record = create_task(ws)
+    task_dir = ws.store.task_dir(record.project, record.id)
+    (task_dir / "artifacts").mkdir(parents=True, exist_ok=True)
+    (task_dir / "artifacts" / "07-output.srt").write_text(
+        "1\n00:00:00,000 --> 00:00:01,000\n你好\n", encoding="utf-8"
+    )
+    tools = tool_map(ws)
+    body = json.loads(
+        tools["read_artifact"].handler(
+            {"project": record.project, "task_id": record.id, "name": "output.srt"}
+        )
+    )
+    assert "你好" in body["text"]
+
+
+def test_read_artifact_refuses_media_and_paths(tmp_path: Path) -> None:
+    ws = make_ws(tmp_path)
+    record = create_task(ws)
+    tools = tool_map(ws)
+    for name in ("dub-mix.wav", "../../config/config.yaml", "logs/core.log"):
+        with pytest.raises(ToolError):
+            tools["read_artifact"].handler(
+                {"project": record.project, "task_id": record.id, "name": name}
+            )
