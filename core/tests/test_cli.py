@@ -517,6 +517,41 @@ def test_task_switches_disables_the_dub_group(tmp_path: Path) -> None:
     assert mix["status"] == "skipped"
 
 
+def test_task_switches_diarize_on_inserts_the_stage_from_the_cli(tmp_path: Path) -> None:
+    env = _seeded_env(tmp_path)
+    input_file = tmp_path / "talk.mp3"
+    input_file.write_bytes(b"fake audio")
+    created = runner.invoke(
+        app, ["task", "create", str(input_file), "--profile", "audio-transcribe"], env=env
+    )
+    assert created.exit_code == 0, created.output
+    task_id = created.output.strip().splitlines()[-1]
+
+    result = runner.invoke(app, ["task", "switches", task_id, "--diarize"], env=env)
+    assert result.exit_code == 0, result.output
+    types = [s["type"] for s in _show_task(task_id, env)["stages"]]
+    assert types == ["extract_audio", "asr", "diarize", "export_transcript"]
+
+
+def test_task_switches_diarize_rejects_a_task_with_no_transcription(
+    tmp_path: Path,
+) -> None:
+    env = _seeded_env(tmp_path)
+    input_file = tmp_path / "lines.srt"
+    input_file.write_text("1\n00:00:01,000 --> 00:00:02,000\nhi\n", encoding="utf-8")
+    created = runner.invoke(
+        app,
+        ["task", "create", str(input_file), "--profile", "subtitle-translate"],
+        env=env,
+    )
+    assert created.exit_code == 0, created.output
+    task_id = created.output.strip().splitlines()[-1]
+
+    result = runner.invoke(app, ["task", "switches", task_id, "--diarize"], env=env)
+    assert result.exit_code == 1
+    assert "transcription" in result.output
+
+
 def test_task_switches_rejects_a_running_task(tmp_path: Path) -> None:
     from traduko.models import TaskStatus
     from traduko.workspace import Workspace

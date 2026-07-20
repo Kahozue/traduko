@@ -736,8 +736,39 @@ test("audio task renders its applicable pipeline switches", async () => {
   const group = await screen.findByRole("group", { name: "管線開關" });
   expect(within(group).getByRole("button", { name: /翻譯/ })).toBeInTheDocument();
   expect(within(group).getByRole("button", { name: /配音/ })).toBeInTheDocument();
-  // No diarize stage in this pipeline: the diarize switch does not render.
-  expect(within(group).queryByRole("button", { name: /說話人分離/ })).toBeNull();
+  // No diarize stage yet, but the task transcribes, so the switch renders
+  // and turning it on inserts the stage (spec 4-(3), core-side append).
+  expect(within(group).getByRole("button", { name: /說話人分離/ })).toBeInTheDocument();
+});
+
+test("an stt-only task can turn on speaker separation", async () => {
+  const sttTask: TaskRecord = {
+    ...task,
+    profile: "audio-transcribe",
+    input_path: "/tmp/talk.mp3",
+    stages: [stageOf("extract_audio"), stageOf("asr"), stageOf("export_transcript")],
+    switches: { translate: null, diarize: null, dub: null },
+  };
+  const patchTaskSwitches = vi.fn().mockResolvedValue(sttTask);
+  renderTask(sttTask, { patchTaskSwitches });
+  const group = await screen.findByRole("group", { name: "管線開關" });
+  const chip = within(group).getByRole("button", { name: /說話人分離/ });
+  expect(chip).toHaveAttribute("aria-pressed", "false");
+  await userEvent.click(chip);
+  await waitFor(() =>
+    expect(patchTaskSwitches).toHaveBeenCalledWith("default", "t1", { diarize: true }),
+  );
+});
+
+test("a task with nothing to transcribe hides the speaker separation switch", async () => {
+  // A subtitle task has no audio: the core answers 409, so no dead chip.
+  renderTask({
+    ...task,
+    input_path: "/tmp/in.srt",
+    stages: [stageOf("ingest_subtitle"), stageOf("translate")],
+  });
+  await screen.findAllByText("t1");
+  expect(screen.queryByRole("button", { name: /說話人分離/ })).toBeNull();
 });
 
 test("toggling a switch PATCHes the switches endpoint", async () => {

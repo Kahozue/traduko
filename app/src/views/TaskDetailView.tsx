@@ -54,6 +54,8 @@ const SWITCH_LABELS: Record<SwitchName, Parameters<typeof t>[0]> = {
   diarize: "task.switches.diarize",
   dub: "task.switches.dub",
 };
+// Stage types the core's insert_diarize_stage slots speaker separation after.
+const TRANSCRIPTION_STAGE_TYPES = ["asr", "segment"];
 const AUDIO_DOMAIN_STAGES = ["export_transcript", "export_audio"];
 const DOCUMENT_STAGES = [
   "ingest_document",
@@ -312,7 +314,15 @@ export function TaskDetailView({
     ) {
       switchNames.push("translate");
     }
-    if (stageTypes.has("diarize")) switchNames.push("diarize");
+    // Diarize renders once the task has something to diarize: turning it on
+    // inserts the stage after transcription (spec 4-(3)). A task with no
+    // transcription stage has no audio to separate, and the core 409s.
+    if (
+      stageTypes.has("diarize") ||
+      TRANSCRIPTION_STAGE_TYPES.some((type) => stageTypes.has(type))
+    ) {
+      switchNames.push("diarize");
+    }
     switchNames.push("dub");
   }
   const switchValue = (name: SwitchName): boolean => {

@@ -2608,6 +2608,95 @@ def test_patch_switches_dub_on_appends_video_dub_group(tmp_path: Path) -> None:
         ]
 
 
+def test_patch_switches_diarize_on_inserts_the_stage_after_transcription(
+    tmp_path: Path,
+) -> None:
+    # spec 4-(3): speaker separation is independent of dubbing, so an STT-only
+    # task can turn it on and get a speaker-tagged transcript.
+    with service(tmp_path) as (client, headers, token):
+        task_id = create_task(client, headers, tmp_path, profile="audio-transcribe")
+
+        response = client.patch(
+            f"/tasks/default/{task_id}/switches", json={"diarize": True}, headers=headers
+        )
+
+        assert response.status_code == 200, response.text
+        body = response.json()
+        assert [stage["type"] for stage in body["stages"]] == [
+            "extract_audio",
+            "asr",
+            "diarize",
+            "export_transcript",
+        ]
+        inserted = body["stages"][2]
+        assert inserted["status"] == "pending"
+        assert inserted["pause_after"] is True
+        assert body["switches"]["diarize"] is True
+        # No dub group came along for the ride.
+        assert not any(s["type"] == "tts_synthesize" for s in body["stages"])
+
+
+def test_patch_switches_diarize_inserts_after_the_last_transcription_stage(
+    tmp_path: Path,
+) -> None:
+    with service(tmp_path) as (client, headers, token):
+        task_id = create_task(client, headers, tmp_path, profile="audio-translate")
+
+        response = client.patch(
+            f"/tasks/default/{task_id}/switches", json={"diarize": True}, headers=headers
+        )
+
+        assert response.status_code == 200, response.text
+        types = [stage["type"] for stage in response.json()["stages"]]
+        # segment is the last transcription-shaped stage; diarize follows it
+        # and stays ahead of translate.
+        assert types.index("diarize") == types.index("segment") + 1
+        assert types.index("diarize") < types.index("translate")
+
+
+def test_patch_switches_diarize_off_then_on_reuses_the_existing_stage(
+    tmp_path: Path,
+) -> None:
+    with service(tmp_path) as (client, headers, token):
+        task_id = create_task(client, headers, tmp_path, profile="audio-transcribe")
+        client.patch(
+            f"/tasks/default/{task_id}/switches", json={"diarize": True}, headers=headers
+        )
+
+        off = client.patch(
+            f"/tasks/default/{task_id}/switches",
+            json={"diarize": False},
+            headers=headers,
+        ).json()
+        assert [s["status"] for s in off["stages"] if s["type"] == "diarize"] == [
+            "skipped"
+        ]
+
+        on = client.patch(
+            f"/tasks/default/{task_id}/switches", json={"diarize": True}, headers=headers
+        ).json()
+        # Re-enabling flips the existing stage back, it does not insert a second.
+        assert [s["type"] for s in on["stages"]].count("diarize") == 1
+        assert [s["status"] for s in on["stages"] if s["type"] == "diarize"] == [
+            "pending"
+        ]
+
+
+def test_patch_switches_diarize_rejects_a_task_with_nothing_to_diarize(
+    tmp_path: Path,
+) -> None:
+    with service(tmp_path) as (client, headers, token):
+        # A subtitle task has no audio to separate speakers from.
+        task_id = create_task(client, headers, tmp_path, profile="subtitle-translate")
+
+        response = client.patch(
+            f"/tasks/default/{task_id}/switches", json={"diarize": True}, headers=headers
+        )
+
+        assert response.status_code == 409, response.text
+        assert "transcription" in response.json()["detail"]
+
+
 def test_patch_switches_dub_requires_timestamped_transcript(tmp_path: Path) -> None:
     with service(tmp_path) as (client, headers, token):
         task_id = create_task(client, headers, tmp_path, profile="audio-transcribe")

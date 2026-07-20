@@ -285,6 +285,32 @@ def append_dub_stages(record: TaskRecord, domain: str) -> list[StageRecord]:
     return added
 
 
+# Stage types that produce the transcript diarize annotates. Speaker
+# separation slots in right after the last of them, ahead of translation.
+_TRANSCRIPTION_STAGE_TYPES = ("asr", "segment")
+
+
+def insert_diarize_stage(record: TaskRecord) -> StageRecord:
+    """Insert speaker separation after the last transcription stage.
+
+    spec 4-(3) makes diarize independent of dubbing, so an STT-only task can
+    turn it on without dragging in the whole dub group. Raises when the task
+    has nothing to diarize (a subtitle task has no audio).
+    """
+    last = -1
+    for index, stage in enumerate(record.stages):
+        if stage.type in _TRANSCRIPTION_STAGE_TYPES:
+            last = index
+    if last < 0:
+        raise TaskActionError(
+            "task has no transcription stage to separate speakers from",
+            status=409,
+        )
+    stage = StageRecord(type="diarize", pause_after=True)
+    record.stages.insert(last + 1, stage)
+    return stage
+
+
 DUB_TEXT_MODES = ("auto", "translation", "original")
 
 
@@ -389,6 +415,10 @@ def apply_switches_change(
                     "dub switch applies to video and audio tasks only"
                 )
             append_dub_stages(record, domain)
+    if changed.get("diarize") and not any(
+        stage.type == "diarize" for stage in record.stages
+    ):
+        insert_diarize_stage(record)
     switches = record.switches or TaskSwitches()
     for name, value in changed.items():
         setattr(switches, name, value)
