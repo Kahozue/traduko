@@ -451,6 +451,153 @@ def apply_translation_change(
     return translation_settings(record)
 
 
+def dub_group_or_error(record: TaskRecord) -> list[StageRecord]:
+    stages = dub_group_stages(record)
+    if not stages:
+        raise TaskActionError("task has no dub group")
+    return stages
+
+
+def _dub_stage(record: TaskRecord, stage_type: str) -> StageRecord | None:
+    for stage in record.stages:
+        if stage.type == stage_type:
+            return stage
+    return None
+
+
+def dub_params_settings(record: TaskRecord) -> dict:
+    tts = _dub_stage(record, "tts_synthesize")
+    diarize = _dub_stage(record, "diarize")
+    tts_params = tts.params if tts else {}
+    diarize_params = diarize.params if diarize else {}
+    return {
+        "engine_id": tts_params.get("tts_engine"),
+        "voice_mode": tts_params.get("voice_mode") or "clone",
+        "instruction": tts_params.get("voice_instruction"),
+        "cfg": tts_params.get("cfg"),
+        "timesteps": tts_params.get("timesteps"),
+        "seed": tts_params.get("seed"),
+        "denoise": tts_params.get("denoise"),
+        "preview_voice": tts_params.get("preview_voice"),
+        "preview_rate": tts_params.get("preview_rate"),
+        "dub_text": diarize_params.get("dub_text")
+        or tts_params.get("dub_text")
+        or "auto",
+    }
+
+
+def apply_dub_params_change(
+    ws: "Workspace",
+    record: TaskRecord,
+    *,
+    engine_id: str | None = None,
+    voice_mode: str | None = None,
+    instruction: str | None = None,
+    cfg: float | None = None,
+    timesteps: int | None = None,
+    seed: int | None = None,
+    denoise: float | None = None,
+    preview_voice: str | None = None,
+    preview_rate: int | None = None,
+    dub_text: str | None = None,
+) -> dict:
+    """Write dub-studio parameters onto the dub stages. None leaves a field
+    as is; "" clears engine_id / voice_mode / instruction / dub_text
+    overrides. Saves and returns the updated settings."""
+    # Deferred import: the stages package pulls this module back in.
+    from .dubbing.engines import resolve_tts_engine
+
+    if engine_id:
+        try:
+            resolve_tts_engine(engine_id)
+        except Exception as error:  # DubbingError
+            raise TaskActionError(str(error)) from error
+    validate_voice_mode(voice_mode)
+    validate_dub_text(dub_text)
+    tts = _dub_stage(record, "tts_synthesize")
+    if tts is not None:
+        if engine_id is not None:
+            if engine_id == "":
+                tts.params.pop("tts_engine", None)
+            else:
+                tts.params["tts_engine"] = engine_id
+        if cfg is not None:
+            tts.params["cfg"] = cfg
+        if timesteps is not None:
+            tts.params["timesteps"] = timesteps
+        if seed is not None:
+            tts.params["seed"] = seed
+        if denoise is not None:
+            tts.params["denoise"] = denoise
+        if preview_voice is not None:
+            if preview_voice == "":
+                tts.params.pop("preview_voice", None)
+            else:
+                tts.params["preview_voice"] = preview_voice
+        if preview_rate is not None:
+            tts.params["preview_rate"] = preview_rate
+    # voice_mode / instruction / dub_text ride on the dub stages via the
+    # existing override helpers so the same normalization rules apply.
+    apply_voice_mode_override(record, voice_mode, instruction)
+    apply_dub_text_override(record, dub_text)
+    ws.store.save(record)
+    return dub_params_settings(record)
+
+
+def validate_export_request(record: TaskRecord, kind: str, params: dict) -> str:
+    """Validate an export request and name its stage type. The params
+    snapshot is parsed up front so a bad value is rejected here rather than
+    failing the stage minutes into the queue; both panels encode from the
+    task input, so a task whose input is not the right kind of media (a
+    compose task's input is its transcript) is turned away too."""
+    # Deferred import: the stages package pulls this module back in.
+    from .stages.base import StageError
+    from .stages.export import audio_params_from, video_params_from
+
+    try:
+        if kind == "video":
+            video_params_from(params)
+        elif kind == "audio":
+            audio_params_from(params)
+        else:
+            raise TaskActionError(f"unknown export kind: {kind}")
+    except StageError as error:
+        raise TaskActionError(str(error)) from error
+    if not record.input_path or not Path(record.input_path).exists():
+        raise TaskActionError(f"task input file is missing: {record.input_path}")
+    input_kind = media_kind_of(Path(record.input_path))
+    if kind == "video" and input_kind != "video":
+        raise TaskActionError(
+            f"this task has no video to export: {record.input_path}"
+        )
+    if (
+        kind == "audio"
+        and params.get("source", "dub") == "original"
+        and input_kind is None
+    ):
+        raise TaskActionError(
+            "the original audio source needs a media input; "
+            f"this task's input is {record.input_path}"
+        )
+    return "export_video" if kind == "video" else "export_audio_custom"
+
+
+def append_export_stage(
+    ws: "Workspace", record: TaskRecord, kind: str, params: dict
+) -> str:
+    """Append a validated one-off export stage. A fresh stage instance per
+    export: the params snapshot and the numbered output keep earlier exports
+    intact. Saves and returns the stage type."""
+    stage_type = validate_export_request(record, kind, params)
+    record.stages.append(
+        StageRecord(type=stage_type, status=StageStatus.PENDING, params=params)
+    )
+    if record.status == TaskStatus.COMPLETED:
+        record.status = TaskStatus.PENDING
+    ws.store.save(record)
+    return stage_type
+
+
 def validate_voice_mode(mode: str | None) -> None:
     if mode and mode not in VOICE_MODES:
         raise TaskCreateError(f"voice_mode must be one of: {', '.join(VOICE_MODES)}")

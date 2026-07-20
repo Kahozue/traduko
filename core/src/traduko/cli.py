@@ -17,10 +17,15 @@ from .preflight import PreflightReport, run_preflight
 from .tasks import (
     TaskActionError,
     TaskCreateError,
+    append_export_stage,
+    apply_dub_params_change,
     apply_switches_change,
     apply_translation_change,
     create_task_from_profile,
+    dub_group_or_error,
+    dub_params_settings,
     translation_settings,
+    validate_export_request,
     validate_switches_change,
 )
 from .workspace import Workspace
@@ -258,6 +263,118 @@ def task_translate_opts(
         raise typer.Exit(code=1) from None
     for name in ("stage_type", "target_language", "style", "prompt_override"):
         typer.echo(f"{name}: {settings[name]}")
+
+
+@task_app.command("dub-params")
+def task_dub_params(
+    ctx: typer.Context,
+    task_id: str = typer.Argument(...),
+    project: Optional[str] = typer.Option(None, "--project"),
+    engine_id: Optional[str] = typer.Option(
+        None, "--engine-id", help='TTS engine id; empty string clears.'
+    ),
+    voice_mode: Optional[str] = typer.Option(
+        None, "--voice-mode", help="clone, design, or preview."
+    ),
+    instruction: Optional[str] = typer.Option(
+        None, "--instruction", help="Voice design instruction; empty string clears."
+    ),
+    dub_text: Optional[str] = typer.Option(
+        None, "--dub-text", help="auto, translation, or original."
+    ),
+) -> None:
+    """Show or set the task's dubbing parameters (no flags: show)."""
+    ws: Workspace = ctx.obj
+    record = ws.store.load(project or ws.config.default_project, task_id)
+    try:
+        dub_group_or_error(record)
+        if all(v is None for v in (engine_id, voice_mode, instruction, dub_text)):
+            settings = dub_params_settings(record)
+        else:
+            _reject_running(record)
+            settings = apply_dub_params_change(
+                ws,
+                record,
+                engine_id=engine_id,
+                voice_mode=voice_mode,
+                instruction=instruction,
+                dub_text=dub_text,
+            )
+    except TaskActionError as error:
+        typer.echo(str(error))
+        raise typer.Exit(code=1) from None
+    for name, value in settings.items():
+        typer.echo(f"{name}: {'unset' if value is None else value}")
+
+
+@task_app.command("export")
+def task_export(
+    ctx: typer.Context,
+    task_id: str = typer.Argument(...),
+    project: Optional[str] = typer.Option(None, "--project"),
+    kind: str = typer.Option("video", "--kind", help="video or audio."),
+    width: Optional[int] = typer.Option(None, "--width"),
+    height: Optional[int] = typer.Option(None, "--height"),
+    crf: Optional[int] = typer.Option(None, "--crf"),
+    audio_track: Optional[str] = typer.Option(
+        None, "--audio-track", help="original or dub."
+    ),
+    subtitles: Optional[str] = typer.Option(
+        None, "--subtitles", help="none, source, target, bilingual, or burn variants."
+    ),
+    video_codec: Optional[str] = typer.Option(None, "--video-codec"),
+    video_bitrate_kbps: Optional[int] = typer.Option(None, "--video-bitrate-kbps"),
+    fps: Optional[int] = typer.Option(None, "--fps"),
+    audio_codec: Optional[str] = typer.Option(None, "--audio-codec"),
+    audio_bitrate_kbps: Optional[int] = typer.Option(None, "--audio-bitrate-kbps"),
+    fmt: Optional[str] = typer.Option(
+        None, "--format", help="Audio export container (m4a, mp3, ...)."
+    ),
+    source: Optional[str] = typer.Option(
+        None, "--source", help="Audio export source: dub or original."
+    ),
+    bitrate_kbps: Optional[int] = typer.Option(None, "--bitrate-kbps"),
+    sample_rate: Optional[int] = typer.Option(None, "--sample-rate"),
+    channels: Optional[int] = typer.Option(None, "--channels"),
+) -> None:
+    """Append a one-off export stage and run it (equivalent to POST /exports)."""
+    ws: Workspace = ctx.obj
+    record = ws.store.load(project or ws.config.default_project, task_id)
+    fields = {
+        "width": width,
+        "height": height,
+        "crf": crf,
+        "audio_track": audio_track,
+        "subtitles": subtitles,
+        "video_codec": video_codec,
+        "video_bitrate_kbps": video_bitrate_kbps,
+        "fps": fps,
+        "audio_codec": audio_codec,
+        "audio_bitrate_kbps": audio_bitrate_kbps,
+        "format": fmt,
+        "source": source,
+        "bitrate_kbps": bitrate_kbps,
+        "sample_rate": sample_rate,
+        "channels": channels,
+    }
+    params = {name: value for name, value in fields.items() if value is not None}
+    try:
+        validate_export_request(record, kind, params)
+        _reject_running(record)
+        stage_type = append_export_stage(ws, record, kind, params)
+    except TaskActionError as error:
+        typer.echo(str(error))
+        raise typer.Exit(code=1) from None
+    typer.echo(stage_type)
+
+    def print_event(event: Event) -> None:
+        typer.echo(f"[{event.type}] {json.dumps(event.data, ensure_ascii=False)}")
+
+    ws.bus.subscribe(print_event)
+    EventLogger(ws.root).attach(ws.bus)
+    Notifier.from_config(ws.config).attach(ws.bus)
+    result = PipelineExecutor(ws.store, ws.bus, ws.root).run(record)
+    typer.echo(result.status.value)
 
 
 @task_app.command("list")

@@ -576,3 +576,132 @@ def test_task_translate_opts_rejects_a_running_task(tmp_path: Path) -> None:
     )
     assert result.exit_code == 1
     assert "running" in result.output
+
+
+# --- task dub-params / export (v3_5-10, deferred from v3_5-06/07) ------------
+
+
+def _create_av_dub_task(tmp_path: Path, env: dict[str, str]) -> str:
+    input_file = tmp_path / "clip.mp4"
+    input_file.write_bytes(b"fake video")
+    created = runner.invoke(
+        app, ["task", "create", str(input_file), "--profile", "av-dub"], env=env
+    )
+    assert created.exit_code == 0, created.output
+    return created.output.strip().splitlines()[-1]
+
+
+def test_task_dub_params_prints_current_values(tmp_path: Path) -> None:
+    env = _seeded_env(tmp_path)
+    task_id = _create_av_dub_task(tmp_path, env)
+
+    result = runner.invoke(app, ["task", "dub-params", task_id], env=env)
+    assert result.exit_code == 0, result.output
+    assert "voice_mode: clone" in result.output
+    assert "dub_text: auto" in result.output
+
+
+def test_task_dub_params_writes_to_the_dub_stages(tmp_path: Path) -> None:
+    env = _seeded_env(tmp_path)
+    task_id = _create_av_dub_task(tmp_path, env)
+
+    result = runner.invoke(
+        app,
+        [
+            "task", "dub-params", task_id,
+            "--voice-mode", "design",
+            "--instruction", "a calm low voice",
+            "--dub-text", "original",
+        ],
+        env=env,
+    )
+    assert result.exit_code == 0, result.output
+    assert "voice_mode: design" in result.output
+    payload = _show_task(task_id, env)
+    tts = next(s for s in payload["stages"] if s["type"] == "tts_synthesize")
+    assert tts["params"]["voice_mode"] == "design"
+    assert tts["params"]["voice_instruction"] == "a calm low voice"
+    assert tts["params"]["dub_text"] == "original"
+    diarize = next(s for s in payload["stages"] if s["type"] == "diarize")
+    assert diarize["params"]["voice_mode"] == "design"
+
+
+def test_task_dub_params_rejects_an_unknown_engine(tmp_path: Path) -> None:
+    env = _seeded_env(tmp_path)
+    task_id = _create_av_dub_task(tmp_path, env)
+
+    result = runner.invoke(
+        app, ["task", "dub-params", task_id, "--engine-id", "nope"], env=env
+    )
+    assert result.exit_code == 1
+    assert "nope" in result.output
+
+
+def _completed_task(tmp_path: Path, env: dict[str, str], input_name: str) -> str:
+    profile_dir = tmp_path / "profiles"
+    if not (profile_dir / "passthrough.yaml").exists():
+        (profile_dir / "passthrough.yaml").write_text(
+            "schema_version: 1\nname: passthrough\nstages:\n  - type: noop\n",
+            encoding="utf-8",
+        )
+    input_file = tmp_path / input_name
+    input_file.write_bytes(b"fake bytes")
+    created = runner.invoke(
+        app, ["task", "create", str(input_file), "--profile", "passthrough"], env=env
+    )
+    assert created.exit_code == 0, created.output
+    task_id = created.output.strip().splitlines()[-1]
+    ran = runner.invoke(app, ["task", "run", task_id], env=env)
+    assert ran.exit_code == 0, ran.output
+    return task_id
+
+
+def test_task_export_appends_the_stage_and_reports_a_readable_error(
+    tmp_path: Path,
+) -> None:
+    # An audio export with source=dub on a task that never dubbed: the stage
+    # must be appended with its params snapshot, and the run must surface a
+    # readable error rather than a stack trace.
+    env = _seeded_env(tmp_path)
+    task_id = _completed_task(tmp_path, env, "in.wav")
+
+    result = runner.invoke(
+        app,
+        ["task", "export", task_id, "--kind", "audio", "--source", "dub"],
+        env=env,
+    )
+    assert result.exit_code == 0, result.output
+    assert "failed" in result.output
+    assert "dub-mix.wav" in result.output
+    payload = _show_task(task_id, env)
+    last = payload["stages"][-1]
+    assert last["type"] == "export_audio_custom"
+    assert last["params"]["source"] == "dub"
+
+
+def test_task_export_rejects_video_export_for_a_non_video_input(
+    tmp_path: Path,
+) -> None:
+    env = _seeded_env(tmp_path)
+    task_id = _completed_task(tmp_path, env, "in.wav")
+
+    result = runner.invoke(
+        app, ["task", "export", task_id, "--kind", "video"], env=env
+    )
+    assert result.exit_code == 1
+    assert "no video to export" in result.output
+
+
+def test_task_export_rejects_original_source_for_a_non_media_input(
+    tmp_path: Path,
+) -> None:
+    env = _seeded_env(tmp_path)
+    task_id = _completed_task(tmp_path, env, "in.srt")
+
+    result = runner.invoke(
+        app,
+        ["task", "export", task_id, "--kind", "audio", "--source", "original"],
+        env=env,
+    )
+    assert result.exit_code == 1
+    assert "original audio source needs a media input" in result.output
