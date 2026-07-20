@@ -1,6 +1,6 @@
 [project]
 name = "traduko"
-version = "0.3.0"
+version = "0.4.0"
 description = "Engine core for Traduko, an open-source automatic translation workstation"
 requires-python = ">=3.11"
 dependencies = [

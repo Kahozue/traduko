@@ -18,11 +18,15 @@ The project is an orchestration layer over existing tools rather than a new engi
 
 ![Task dashboard, grouped by project with per-domain views in the sidebar](docs/screenshot-tasks-light.png)
 
-![Task detail: pipeline stages with live progress, per-task model and ASR engine chips](docs/screenshot-task-light.png)
+![Task detail: inline player, studio entries, pipeline switches, and stage progress](docs/screenshot-task-light.png)
 
-![Subtitle editor with proofreading annotations](docs/screenshot-editor-light.png)
+![Outputs grouped by kind: audio plays inline, subtitle files preview in place with adjustable text size](docs/screenshot-outputs-light.png)
+
+![Subtitle editor: both the translation and the proofread note are editable](docs/screenshot-editor-light.png)
 
 ![ASS style editor with a live CSS-approximation preview](docs/screenshot-style-light.png)
+
+![Dubbing studio: engine and parameters, speakers with reference audio, per-segment preview](docs/screenshot-dub-light.png)
 
 ![Built-in assistant proposing a config change as an approvable diff, dark theme](docs/screenshot-assistant-dark.png)
 
@@ -30,20 +34,23 @@ The project is an orchestration layer over existing tools rather than a new engi
 
 ![Speech-recognition engine menu and dubbing engine, dark theme](docs/screenshot-asr-dark.png)
 
-![Budget ledger with per-task spend, dark theme](docs/screenshot-budget-dark.png)
+![Budget ledger: per-model spend share and ranking, dark theme](docs/screenshot-budget-dark.png)
 
 ## Features
 
 - Input can be a video, an audio file, or an existing subtitle file (SRT/VTT/ASS/TXT). Output formats are SRT, VTT, and ASS, with optional hardburn into the video.
 - Pipelines are defined as YAML profiles listing a sequence of stages. Stages can be added, removed, or reconfigured, and a manual review checkpoint can be placed after any stage.
-- The desktop app includes a subtitle table editor for revising translations line by line, and an ASS style editor with a CSS approximation preview and exact frame rendering through ffmpeg. Saving edits resets downstream stages so the task can be re-run from that point.
+- The desktop app includes a subtitle table editor for revising translations line by line, and an ASS style editor with a CSS approximation preview and exact frame rendering through ffmpeg. Proofread notes, and quality notes on documents, are editable in the same way as the translation column and are saved alongside it; notes are not pipeline inputs, so editing one leaves downstream stages alone. Saving a translation does reset downstream stages, so the task can be re-run from that point.
 - The task page has a built-in media player and three full-screen studios: a dubbing studio (TTS engine and parameters, dub text as translation or source, per-speaker reference audio, previews, and two-level redub), an export studio (video and audio encoding parameters, output estimates with a disk space check, exports run as appended stages), and translation settings (target language, prompt override, retranslate).
+- Outputs are listed by kind: video, audio, images, documents. Audio plays inline with a scrubber and speed control, subtitle and plain-text outputs open a preview in place with an adjustable text size, and anything else is handed to the system.
 - Translation, speaker diarization, and dubbing can be switched on and off per task from the task page. A switched-off stage is marked skipped and keeps its artifacts; switching it back on resumes from there. Enabling dubbing on a task that never had dub stages appends the dub stage group at the end.
+- Speaker diarization is optional. With it off, synthesis voices every line as one speaker rather than blocking the dub, and enabling dubbing does not drag a switched-off diarization stage (or its review checkpoint) back in.
 - Translation defaults are configured per task domain (video, audio, document): target language, style, and prompt override are applied when a task is created and can be overridden per task.
 - "Compose audio" and "Compose video" produce a dubbed result straight from a transcript: the transcript can be an srt/vtt/txt file on disk or an artifact of an existing task; the synthesized speech is exported as audio, or mixed into a given video file. A plain-text transcript without timestamps lays the speech clips end to end.
 - Proofreading runs as a tool-using agent loop: it can consult the glossary and surrounding context and revise lines over multiple rounds. Intensity is configurable; if the budget runs out mid-proofread, the current best version is kept.
 - Token usage is priced and metered. A task pauses when it reaches its budget cap and can be resumed after the cap is raised. Translation progress is written to disk incrementally, so an interrupted task does not lose completed work.
 - Glossaries are managed as multiple tables, each bound to one task domain or shared, with categories and CSV/JSON import/export. A task selects any set of global tables plus its own task-local table; glossaries also bias speech recognition (supported engines take a prompt, the rest can get a lightweight proofread stage), and changes can be reapplied to existing tasks. Prompt templates for translation and proofreading are plain text files in the data directory and can be edited directly.
+- The built-in assistant can inspect task status, budget, configuration, logs, and preflight results, and can read the contents of a task's artifacts: transcripts, translations, proofread and quality notes, speaker assignments, and subtitle or plain-text deliverables. It cannot change settings itself; it files a proposal that takes effect only after the operator approves it in the panel.
 - A preflight check validates the input file, ffmpeg, the ASR model, LLM credentials, and budget before a task starts.
 - Task events can be sent to webhooks, Discord, and email. A Discord bot provides slash commands for listing, running, pausing, and canceling tasks, and keeps a progress message updated in the channel.
 - Settings, prompts, glossaries, and task records can be synced between machines through a shared local folder (for example a Dropbox directory) or WebDAV. Glossary changes are merged row by row; conflicting rows are left for a manual decision. Tasks from other machines are shown read-only.
@@ -70,7 +77,9 @@ The data directory defaults to the platform user-data location (`~/Library/Appli
 
 ## Installation
 
-Currently built from source. Requirements:
+On macOS (Apple silicon), download the dmg from [Releases](https://github.com/Kahozue/traduko/releases). It bundles the core, so no separate Python install is needed. The app is not notarized, so the first launch needs an allow in System Settings → Privacy & Security.
+
+On other platforms, or when local speech recognition is needed, build from source. Requirements:
 
 - Python 3.11+ and [uv](https://docs.astral.sh/uv/)
 - ffmpeg (media processing and hardburn)
