@@ -27,6 +27,9 @@ const STAGE_TYPE_KEYS: Record<string, MessageKey> = {
   translate_pdf: "stage.translate_pdf",
   export_transcript: "stage.export_transcript",
   export_audio: "stage.export_audio",
+  glossary_proofread: "stage.glossary_proofread",
+  export_video: "stage.export_video",
+  export_audio_custom: "stage.export_audio_custom",
 };
 
 const STAGE_STATUS_KEYS: Record<string, MessageKey> = {

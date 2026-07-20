@@ -37,9 +37,13 @@ Traduko 對影片、音訊或字幕檔執行可設定的管線：抽取音軌、
 - 輸入可以是影片、音訊檔或既有字幕檔（SRT/VTT/ASS/TXT）。輸出格式為 SRT、VTT、ASS，可選擇硬燒進影片。
 - 管線以 YAML profile 定義階段序列。階段可以增刪與調整參數，任意階段之後可以設置人工檢查點。
 - 桌面應用內含字幕表格編輯器（逐句修改譯文）與 ASS 樣式編輯器（CSS 近似預覽加 ffmpeg 精確渲染幀）。存回修改會重置下游階段，任務可從該處續跑。
+- 任務頁內建影音播放器與三個全屏工作室：配音工作室（TTS 引擎與參數、配音文本選譯文或原文、說話人參考音、試聽與兩層重配）、匯出工作室（影片與音頻編碼參數、輸出估算與磁碟空間檢查、以追加階段執行匯出）、翻譯設定（目標語言與提示詞覆寫、重新翻譯）。
+- 影音任務的翻譯、說話人分離、配音三段可在任務頁獨立開關。關閉的階段標記為略過並保留既有產物，重新開啟後接續執行；從未含配音階段的任務開啟配音時，自動在尾端補上配音階段群。
+- 翻譯預設依任務域（影片、音頻、文件）設定目標語言、風格與提示詞覆寫，建任務時自動套用，單一任務可再覆寫。
+- 「製作音頻」與「製作影片」從逐字稿直接產出配音成品：逐字稿可以是磁碟上的 srt/vtt/txt 或既有任務的產物，合成語音後音頻直接輸出、影片則混入指定的影片檔。純文字逐字稿沒有時間碼時，語音片段依序首尾相接。
 - 校對是帶工具的 agent 迴圈：可查詢名詞表與前後文，分多輪修訂譯文。強度可設定；若校對中途預算用盡，保留目前的最佳版本。
 - Token 用量會計價與計量。任務達到預算上限時暫停，提高上限後可續跑。翻譯進度逐批寫入磁碟，中斷不會失去已完成的部分。
-- 名詞表維持全檔術語一致。翻譯與校對的提示詞模板是資料目錄下的純文字檔，可直接編輯。
+- 名詞表以多表管理維持術語一致：各表綁定單一任務域或通用，支援分類、CSV/JSON 匯入匯出。任務可複選全域表並疊加任務專屬表；名詞表同時偏置語音辨識（支援的引擎注入提示，其餘可插入輕量校對階段），修改後可對既有任務重新套用。翻譯與校對的提示詞模板是資料目錄下的純文字檔，可直接編輯。
 - 任務執行前會做預檢：輸入檔、ffmpeg、ASR 模型、LLM 憑證與預算。
 - 任務事件可送往 Webhook、Discord 與 Email。Discord bot 提供 slash 指令（列出、執行、暫停、取消任務），並在頻道內維護一則隨進度更新的訊息。
 - 設定、提示詞、名詞表與任務紀錄可以透過共享資料夾（例如 Dropbox 目錄）或 WebDAV 在多台機器間同步。名詞表逐列合併，衝突的列留給人工決定；其他機器的任務以唯讀顯示。
@@ -107,7 +111,7 @@ cd app && pnpm tauri build
 
 ## 使用
 
-首次啟動會在資料目錄產生預設 profile（`av-default`、`av-dub`、`subtitle-translate`、`novel-translate`、`translate-pdf`、`audio-transcribe`、`audio-translate`、`audio-dub`）、提示詞模板、字幕樣式與計價表。這些都是帶註解的純文字檔，可以直接修改。
+首次啟動會在資料目錄產生預設 profile（`av-default`、`av-dub`、`subtitle-translate`、`novel-translate`、`translate-pdf`、`audio-transcribe`、`audio-translate`、`audio-dub`、`video-compose`、`audio-compose`）、提示詞模板、字幕樣式與計價表。這些都是帶註解的純文字檔，可以直接修改。
 
 CLI 基本操作：
 
@@ -119,6 +123,15 @@ uv run traduko task run <task-id>
 # 查看任務
 uv run traduko task list
 uv run traduko task show <task-id>
+
+# 從逐字稿製作配音音頻
+uv run traduko task create --profile audio-compose --transcript lines.srt
+
+# 管線開關、翻譯設定、配音參數與追加匯出（無旗標為讀取）
+uv run traduko task switches <task-id> --no-dub
+uv run traduko task translate-opts <task-id> --target-language ja
+uv run traduko task dub-params <task-id> --voice-mode design
+uv run traduko task export <task-id> --kind audio --source dub
 
 # 啟動常駐服務（桌面應用的後端）
 uv run traduko serve

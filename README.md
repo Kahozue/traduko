@@ -37,9 +37,13 @@ The project is an orchestration layer over existing tools rather than a new engi
 - Input can be a video, an audio file, or an existing subtitle file (SRT/VTT/ASS/TXT). Output formats are SRT, VTT, and ASS, with optional hardburn into the video.
 - Pipelines are defined as YAML profiles listing a sequence of stages. Stages can be added, removed, or reconfigured, and a manual review checkpoint can be placed after any stage.
 - The desktop app includes a subtitle table editor for revising translations line by line, and an ASS style editor with a CSS approximation preview and exact frame rendering through ffmpeg. Saving edits resets downstream stages so the task can be re-run from that point.
+- The task page has a built-in media player and three full-screen studios: a dubbing studio (TTS engine and parameters, dub text as translation or source, per-speaker reference audio, previews, and two-level redub), an export studio (video and audio encoding parameters, output estimates with a disk space check, exports run as appended stages), and translation settings (target language, prompt override, retranslate).
+- Translation, speaker diarization, and dubbing can be switched on and off per task from the task page. A switched-off stage is marked skipped and keeps its artifacts; switching it back on resumes from there. Enabling dubbing on a task that never had dub stages appends the dub stage group at the end.
+- Translation defaults are configured per task domain (video, audio, document): target language, style, and prompt override are applied when a task is created and can be overridden per task.
+- "Compose audio" and "Compose video" produce a dubbed result straight from a transcript: the transcript can be an srt/vtt/txt file on disk or an artifact of an existing task; the synthesized speech is exported as audio, or mixed into a given video file. A plain-text transcript without timestamps lays the speech clips end to end.
 - Proofreading runs as a tool-using agent loop: it can consult the glossary and surrounding context and revise lines over multiple rounds. Intensity is configurable; if the budget runs out mid-proofread, the current best version is kept.
 - Token usage is priced and metered. A task pauses when it reaches its budget cap and can be resumed after the cap is raised. Translation progress is written to disk incrementally, so an interrupted task does not lose completed work.
-- A glossary keeps terminology consistent across the file. Prompt templates for translation and proofreading are plain text files in the data directory and can be edited directly.
+- Glossaries are managed as multiple tables, each bound to one task domain or shared, with categories and CSV/JSON import/export. A task selects any set of global tables plus its own task-local table; glossaries also bias speech recognition (supported engines take a prompt, the rest can get a lightweight proofread stage), and changes can be reapplied to existing tasks. Prompt templates for translation and proofreading are plain text files in the data directory and can be edited directly.
 - A preflight check validates the input file, ffmpeg, the ASR model, LLM credentials, and budget before a task starts.
 - Task events can be sent to webhooks, Discord, and email. A Discord bot provides slash commands for listing, running, pausing, and canceling tasks, and keeps a progress message updated in the channel.
 - Settings, prompts, glossaries, and task records can be synced between machines through a shared local folder (for example a Dropbox directory) or WebDAV. Glossary changes are merged row by row; conflicting rows are left for a manual decision. Tasks from other machines are shown read-only.
@@ -107,7 +111,7 @@ The bundled core does not include faster-whisper; run the core from a Python env
 
 ## Usage
 
-On first start the data directory is seeded with default profiles (`av-default`, `av-dub`, `subtitle-translate`, `novel-translate`, `translate-pdf`, `audio-transcribe`, `audio-translate`, `audio-dub`), prompt templates, subtitle styles, and a pricing table. All of these are commented plain-text files and can be edited.
+On first start the data directory is seeded with default profiles (`av-default`, `av-dub`, `subtitle-translate`, `novel-translate`, `translate-pdf`, `audio-transcribe`, `audio-translate`, `audio-dub`, `video-compose`, `audio-compose`), prompt templates, subtitle styles, and a pricing table. All of these are commented plain-text files and can be edited.
 
 CLI basics:
 
@@ -119,6 +123,16 @@ uv run traduko task run <task-id>
 # inspect tasks
 uv run traduko task list
 uv run traduko task show <task-id>
+
+# compose a dubbed audio file from a transcript
+uv run traduko task create --profile audio-compose --transcript lines.srt
+
+# pipeline switches, translation settings, dub parameters, one-off exports
+# (no flags reads the current values)
+uv run traduko task switches <task-id> --no-dub
+uv run traduko task translate-opts <task-id> --target-language ja
+uv run traduko task dub-params <task-id> --voice-mode design
+uv run traduko task export <task-id> --kind audio --source dub
 
 # start the resident service (the desktop app's backend)
 uv run traduko serve

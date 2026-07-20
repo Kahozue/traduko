@@ -22,6 +22,21 @@ describe("stageTypeLabel", () => {
   // Every stage type shipped in the core's seed profiles must have a label
   // key wired up, so a new pipeline stage cannot leak a raw English ID into
   // the stage list again (QA v3 M1: export_transcript/export_audio).
+  test("covers the stage types appended outside of seed profiles", () => {
+    // glossary_proofread is inserted next to asr, export_video and
+    // export_audio_custom are appended by the export studio; none of them
+    // appear in a seed profile, so the seed sweep below never sees them.
+    for (const type of [
+      "glossary_proofread",
+      "export_video",
+      "export_audio_custom",
+    ]) {
+      expect(stageTypeLabel(type), `missing label for stage type "${type}"`).not.toBe(
+        type,
+      );
+    }
+  });
+
   test("covers every stage type in the core seed profiles", () => {
     const types = new Set(
       [...seeds.matchAll(/^\s*- type: (\w+)$/gm)].map((match) => match[1]),
