@@ -1,9 +1,17 @@
 import { expect, test, vi } from "vitest";
-import { screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { renderWithConnection } from "../test/helpers";
 import type { ApiClient } from "../lib/api/client";
-import type { ArtifactListItem, DubParams, TtsEngineInfo, TaskRecord } from "../lib/api/types";
+import type {
+  ArtifactListItem,
+  DubManifestDoc,
+  DubParams,
+  SayVoice,
+  SpeakersDoc,
+  TtsEngineInfo,
+  TaskRecord,
+} from "../lib/api/types";
 import { DubbingStudioView } from "./DubbingStudioView";
 
 vi.mock("@tauri-apps/api/core", () => ({
@@ -53,11 +61,66 @@ const TASK: TaskRecord = {
 };
 
 const ARTIFACTS: ArtifactListItem[] = [
+  { file: "01-translation.json", index: 1, name: "translation.json", schema_version: 1, size: 500, mtime: 0 },
   { file: "02-speakers.json", index: 2, name: "speakers.json", schema_version: 1, size: 200, mtime: 1 },
   { file: "03-dub-manifest.json", index: 3, name: "dub-manifest.json", schema_version: 1, size: 400, mtime: 2 },
+  { file: "03-ref-S1.wav", index: 3, name: "ref-S1.wav", schema_version: null, size: 1200, mtime: 2 },
+  { file: "03-ref-S2.wav", index: 3, name: "ref-S2.wav", schema_version: null, size: 1300, mtime: 2 },
   { file: "04-dub-timeline.json", index: 4, name: "dub-timeline.json", schema_version: 1, size: 300, mtime: 3 },
   { file: "05-dub-mix.wav", index: 5, name: "dub-mix.wav", schema_version: null, size: 9000, mtime: 4 },
 ];
+
+const SPEAKERS: SpeakersDoc = {
+  schema_version: 1,
+  speakers: [
+    { id: "S1", label: "Speaker 1", ref_start: 1.0, ref_end: 5.0, ref_text: "早安" },
+    { id: "S2", label: "Speaker 2", ref_start: 9.0, ref_end: 12.0, ref_text: "午安" },
+  ],
+  segments: [
+    { id: 1, speaker: "S1" },
+    { id: 2, speaker: "S2" },
+  ],
+};
+
+const MANIFEST: DubManifestDoc = {
+  schema_version: 1,
+  segments: [
+    { id: 1, speaker: "S1", file: "03-dub/seg-1.wav", duration: 1.4, status: "synthesized", error: "" },
+    { id: 2, speaker: "S2", file: "", duration: 0, status: "failed", error: "empty dub text" },
+  ],
+};
+
+const TIMELINE = {
+  schema_version: 1,
+  mode: "timed",
+  note: "",
+  segments: [
+    { id: 1, start: 61.5, window: 2.0, duration: 1.4, tempo: 1.0, regenerated: false, file: "03-dub/seg-1.wav", status: "fit" },
+    { id: 2, start: 70.0, window: 2.0, duration: 0.0, tempo: 1.0, regenerated: false, file: "", status: "failed" },
+  ],
+};
+
+const TRANSLATION = {
+  segments: [
+    { id: 1, start: 61.5, end: 63.5, source: "good morning", target: "早安" },
+    { id: 2, start: 70.0, end: 72.0, source: "good afternoon", target: "午安" },
+  ],
+};
+
+const VOICES: SayVoice[] = [
+  { name: "Meijia", locale: "zh_TW" },
+  { name: "Alex", locale: "en_US" },
+];
+
+function readArtifactFake() {
+  return vi.fn(async (_p: string, _t: string, name: string) => {
+    if (name === "speakers.json") return SPEAKERS;
+    if (name === "dub-manifest.json") return MANIFEST;
+    if (name === "dub-timeline.json") return TIMELINE;
+    if (name === "translation.json") return TRANSLATION;
+    throw new Error(`no artifact ${name}`);
+  });
+}
 
 function api(overrides: Partial<ApiClient> = {}) {
   return {
@@ -70,6 +133,8 @@ function api(overrides: Partial<ApiClient> = {}) {
       ...params,
     })),
     dubRedub: vi.fn().mockResolvedValue({ queued: true }),
+    listDubVoices: vi.fn().mockResolvedValue({ voices: VOICES }),
+    readArtifact: readArtifactFake(),
     ...overrides,
   } as unknown as ApiClient;
 }
@@ -96,7 +161,8 @@ test("selecting say_preview switches the parameter area", async () => {
   await screen.findByText("配音工作室");
   // VoxCPM2 is the default selected engine; design instruction only for design mode.
   await userEvent.click(await screen.findByRole("button", { name: /macOS say/ }));
-  expect(screen.getByText(/voice/i)).toBeInTheDocument();
+  expect(screen.getByLabelText("語音")).toBeInTheDocument();
+  expect(screen.getByLabelText("語速")).toBeInTheDocument();
 });
 
 test("apply and resynthesize writes params and triggers redub", async () => {
@@ -124,12 +190,14 @@ test("prefixed stage artifacts still detect speakers and the dub mix", async () 
   await screen.findByText("配音工作室");
   await waitFor(() => expect(screen.queryByText("尚未分離說話人")).toBeNull());
   expect(screen.queryByText("尚未合成片段")).toBeNull();
-  const audio = await waitFor(() => {
-    const el = document.querySelector("audio");
-    expect(el).not.toBeNull();
+  const mix = await waitFor(() => {
+    const el = [...document.querySelectorAll("audio")].find((node) =>
+      node.getAttribute("src")?.includes("dub-mix.wav"),
+    );
+    expect(el).toBeDefined();
     return el!;
   });
-  expect(audio.getAttribute("src")).toContain("05-dub-mix.wav");
+  expect(mix.getAttribute("src")).toContain("05-dub-mix.wav");
 });
 
 test("missing artifacts render the speaker and preview empty states", async () => {
@@ -137,4 +205,108 @@ test("missing artifacts render the speaker and preview empty states", async () =
   await screen.findByText("配音工作室");
   expect(await screen.findByText("尚未分離說話人")).toBeInTheDocument();
   expect(await screen.findByText("尚未合成片段")).toBeInTheDocument();
+});
+
+// --- M7: the studio's missing half (v3_5-11 Task 6) -------------------------
+
+test("the speaker section lists speakers with their reference audio", async () => {
+  render();
+  await screen.findByText("配音工作室");
+  const section = await screen.findByRole("group", { name: "說話人" });
+  expect(await within(section).findByText("Speaker 1")).toBeInTheDocument();
+  expect(within(section).getByText("Speaker 2")).toBeInTheDocument();
+  expect(within(section).getByText(/早安/)).toBeInTheDocument();
+  // Reference clips play from their real prefixed filenames.
+  const players = section.querySelectorAll("audio");
+  expect(players.length).toBe(2);
+  expect(players[0].getAttribute("src")).toContain("03-ref-S1.wav");
+});
+
+test("without speakers the section offers to separate them now", async () => {
+  const client = api({
+    listArtifacts: vi.fn().mockResolvedValue([]),
+    readArtifact: vi.fn().mockRejectedValue(new Error("missing")),
+  });
+  render(client);
+  await screen.findByText("配音工作室");
+  const separate = await screen.findByRole("button", { name: "立即分離" });
+  await userEvent.click(separate);
+  const dialog = await screen.findByRole("dialog");
+  await userEvent.click(within(dialog).getByRole("button", { name: "立即分離" }));
+  await waitFor(() =>
+    expect(client.dubRedub).toHaveBeenCalledWith("default", "t1", "diarize"),
+  );
+});
+
+test("the preview section lists each segment with its timecode and text", async () => {
+  render();
+  await screen.findByText("配音工作室");
+  const rows = await screen.findAllByTestId("dub-segment");
+  expect(rows.length).toBe(2);
+  expect(rows[0]).toHaveTextContent("01:01");
+  expect(rows[0]).toHaveTextContent("早安");
+  expect(rows[0].querySelector("audio")?.getAttribute("src")).toContain("03-dub/seg-1.wav");
+  // A failed segment says so instead of offering a player.
+  expect(rows[1]).toHaveTextContent(/失敗|empty dub text/);
+  expect(rows[1].querySelector("audio")).toBeNull();
+});
+
+test("a manifest without a mix still renders the segment list", async () => {
+  // Regression: both branches were false, so the section rendered blank.
+  const client = api({
+    listArtifacts: vi.fn().mockResolvedValue(
+      ARTIFACTS.filter((item) => item.name !== "dub-mix.wav"),
+    ),
+  });
+  render(client);
+  await screen.findByText("配音工作室");
+  expect((await screen.findAllByTestId("dub-segment")).length).toBe(2);
+  expect(screen.queryByText("尚未合成片段")).toBeNull();
+});
+
+test("the say engine offers system voices from the core", async () => {
+  render();
+  await screen.findByText("配音工作室");
+  await userEvent.click(await screen.findByRole("button", { name: /macOS say/ }));
+  const select = await screen.findByLabelText("語音");
+  expect(within(select).getByRole("option", { name: /Meijia/ })).toBeInTheDocument();
+  expect(within(select).getByRole("option", { name: /Alex/ })).toBeInTheDocument();
+});
+
+test("picking the say engine locks the voice mode to preview", async () => {
+  const client = api();
+  render(client);
+  await screen.findByText("配音工作室");
+  await userEvent.click(await screen.findByRole("button", { name: /macOS say/ }));
+  await userEvent.click(screen.getByRole("button", { name: /套用並重新合成/ }));
+  await waitFor(() => expect(client.patchDubParams).toHaveBeenCalled());
+  const body = (client.patchDubParams as ReturnType<typeof vi.fn>).mock.calls[0][2];
+  expect(body).toMatchObject({ engine_id: "say_preview", voice_mode: "preview" });
+});
+
+test("picking the preview voice mode selects the say engine", async () => {
+  render();
+  await screen.findByText("配音工作室");
+  await userEvent.selectOptions(await screen.findByLabelText("聲音模式"), "preview");
+  await waitFor(() =>
+    expect(screen.getByRole("button", { name: /macOS say/ })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    ),
+  );
+});
+
+test("voxcpm2 advanced parameters post only what was filled in", async () => {
+  const client = api();
+  render(client);
+  await screen.findByText("配音工作室");
+  await userEvent.click(await screen.findByText("進階參數"));
+  await userEvent.type(screen.getByLabelText("種子"), "42");
+  await userEvent.click(screen.getByRole("button", { name: /套用並重新合成/ }));
+  await waitFor(() => expect(client.patchDubParams).toHaveBeenCalled());
+  const body = (client.patchDubParams as ReturnType<typeof vi.fn>).mock.calls[0][2];
+  expect(body.seed).toBe(42);
+  // Blank fields follow the global defaults rather than pinning a value.
+  expect(body.cfg).toBeUndefined();
+  expect(body.timesteps).toBeUndefined();
 });

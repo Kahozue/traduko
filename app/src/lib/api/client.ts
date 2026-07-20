@@ -37,6 +37,7 @@ import type {
   TaskIndexRow,
   TaskRecord,
   TaskTranslationDoc,
+  SayVoice,
   TtsEngineInfo,
   DubParams,
 } from "./types";
@@ -316,6 +317,11 @@ export class ApiClient {
   // Dubbing studio engine catalog (static list including placeholder).
   listDubEngines(): Promise<{ engines: TtsEngineInfo[] }> {
     return this.request(`/dub/engines`);
+  }
+
+  // System voices for the say preview engine; empty off macOS.
+  listDubVoices(): Promise<{ voices: SayVoice[] }> {
+    return this.request(`/dub/voices`);
   }
 
   // Aggregated dub params for a task's dub group.

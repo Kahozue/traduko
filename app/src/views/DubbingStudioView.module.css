@@ -109,6 +109,102 @@
   font-size: var(--fs-body);
 }
 
+.hintNote {
+  margin: 0 0 12px;
+  color: var(--text-secondary);
+  font-size: var(--fs-note);
+}
+
+.fieldNarrow {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 120px;
+  color: var(--text-secondary);
+  font-size: var(--fs-note);
+}
+
+.advanced {
+  margin-top: 4px;
+}
+
+.summary {
+  color: var(--text-secondary);
+  font-size: var(--fs-note);
+  cursor: pointer;
+}
+
+/* Speaker list: management venue, so it stays off the canvas. */
+.speakerList {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.speakerRow {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.speakerText {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 220px;
+}
+
+.speakerName {
+  font-size: var(--fs-body);
+  font-weight: 500;
+}
+
+.speakerRef,
+.speakerSpan {
+  color: var(--text-secondary);
+  font-size: var(--fs-note);
+}
+
+.emptyRow {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+/* Per-segment preview rows live on the canvas with the mix. */
+.segmentRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.segmentTime {
+  min-width: 56px;
+  color: var(--text-on-dark-dim);
+  font-family: var(--font-mono);
+  font-size: var(--fs-meta);
+}
+
+.segmentText {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-on-dark);
+  font-size: var(--fs-note);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.segmentAudio {
+  width: 260px;
+}
+
+.segmentFailed {
+  width: 260px;
+  color: var(--danger);
+  font-size: var(--fs-note);
+}
+
 /* Preview frame: editing-venue canvas, strictly neutral in both themes. */
 .canvas {
   padding: 16px;

@@ -690,6 +690,42 @@ export interface ExportEstimate {
 // appended stage, so the field names match the stage params exactly.
 export type ExportParams = Record<string, string | number>;
 
+// GET /dub/voices: the say engine's system voices. Empty off macOS.
+export interface SayVoice {
+  name: string;
+  locale: string;
+}
+
+// dub-manifest.json: one entry per synthesized segment.
+export interface DubManifestSegment {
+  id: number;
+  speaker: string;
+  file: string;
+  duration: number;
+  status: "synthesized" | "failed";
+  error: string;
+}
+
+export interface DubManifestDoc {
+  schema_version: number;
+  segments: DubManifestSegment[];
+}
+
+// speakers.json: the diarized speakers and their reference spans.
+export interface DubSpeaker {
+  id: string;
+  label: string;
+  ref_start: number;
+  ref_end: number;
+  ref_text: string;
+}
+
+export interface SpeakersDoc {
+  schema_version: number;
+  speakers: DubSpeaker[];
+  segments: { id: number; speaker: string }[];
+}
+
 export interface DubParams {
   engine_id: string | null;
   voice_mode: string;

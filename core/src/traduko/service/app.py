@@ -60,6 +60,8 @@ from ..config import CoreConfig, load_config, save_config
 from ..documents.model import DocTranslationDoc
 from ..dubbing.models import SpeakersDoc
 from ..dubbing.engines import TTS_ENGINES, resolve_tts_engine
+from ..dubbing.client import DubbingError
+from ..dubbing.preview import list_voices as list_say_voices, say_available
 from ..dubbing.setup import DubbingManager
 from ..eventlog import EventLogger
 from ..executor import reset_stages_after_artifact
@@ -1247,6 +1249,23 @@ def dub_engines() -> dict:
             for engine in TTS_ENGINES
         ]
     }
+
+
+@router.get("/dub/voices")
+def dub_voices() -> dict:
+    """System voices for the say preview engine's voice picker.
+
+    Empty rather than an error when say is unavailable (any non-macOS host)
+    or the listing fails: the studio then falls back to letting the engine
+    pick a voice for the segment's language, which is the default anyway.
+    """
+    if not say_available():
+        return {"voices": []}
+    try:
+        voices = list_say_voices()
+    except DubbingError:
+        return {"voices": []}
+    return {"voices": [{"name": v.name, "locale": v.locale} for v in voices]}
 
 
 @router.post("/dubbing/install", status_code=202)

@@ -2849,6 +2849,45 @@ def test_dub_engines_endpoint_lists_catalog(tmp_path: Path) -> None:
         assert by_id["cloud_placeholder"]["available"] is False
 
 
+def test_dub_voices_endpoint_lists_system_voices(tmp_path: Path, monkeypatch) -> None:
+    from traduko.dubbing.preview import SayVoice
+
+    monkeypatch.setattr("traduko.service.app.say_available", lambda: True)
+    monkeypatch.setattr(
+        "traduko.service.app.list_say_voices",
+        lambda: [SayVoice(name="Meijia", locale="zh_TW"), SayVoice(name="Alex", locale="en_US")],
+    )
+    with service(tmp_path) as (client, headers, token):
+        resp = client.get("/dub/voices", headers=headers)
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["voices"] == [
+            {"name": "Meijia", "locale": "zh_TW"},
+            {"name": "Alex", "locale": "en_US"},
+        ]
+
+
+def test_dub_voices_endpoint_is_empty_off_macos(tmp_path: Path, monkeypatch) -> None:
+    # A dropdown with nothing in it beats a 500 on Linux; the studio falls
+    # back to letting the engine pick.
+    monkeypatch.setattr("traduko.service.app.say_available", lambda: False)
+    with service(tmp_path) as (client, headers, token):
+        resp = client.get("/dub/voices", headers=headers)
+        assert resp.status_code == 200
+        assert resp.json()["voices"] == []
+
+
+def test_dub_voices_endpoint_survives_a_failing_say(tmp_path: Path, monkeypatch) -> None:
+    from traduko.dubbing.client import DubbingError
+
+    def boom():
+        raise DubbingError("say -v ? failed")
+
+    monkeypatch.setattr("traduko.service.app.say_available", lambda: True)
+    monkeypatch.setattr("traduko.service.app.list_say_voices", boom)
+    with service(tmp_path) as (client, headers, token):
+        assert client.get("/dub/voices", headers=headers).json()["voices"] == []
+
+
 def _dub_task(client, headers, tmp_path, profile="with-dub"):
     create_profile(
         tmp_path,
