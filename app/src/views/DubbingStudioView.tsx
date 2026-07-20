@@ -32,6 +32,11 @@ export function DubbingStudioView({
     queryKey: ["task", project, taskId],
     queryFn: () => api.showTask(project, taskId),
   });
+  const { data: artifacts } = useQuery({
+    queryKey: ["artifacts", project, taskId, task?.updated_at],
+    queryFn: () => api.listArtifacts(project, taskId),
+    enabled: !!task,
+  });
   const { data: enginesDoc } = useQuery({
     queryKey: ["dub-engines"],
     queryFn: () => api.listDubEngines(),
@@ -78,15 +83,17 @@ export function DubbingStudioView({
     return `${dataRoot}/projects/${project}/tasks/${taskId}/artifacts/${file}`;
   }
 
-  const hasSpeakers = task?.stages.some(
-    (s) => s.type === "diarize" && s.artifacts.includes("speakers.json"),
-  ) ?? false;
-  const hasManifest = task?.stages.some(
-    (s) => s.type === "tts_synthesize" && s.artifacts.includes("dub-manifest.json"),
-  ) ?? false;
-  const hasMix = task?.stages.some(
-    (s) => s.artifacts.includes("dub-mix.wav"),
-  ) ?? false;
+  // On disk every artifact carries an index prefix (05-dub-mix.wav); the
+  // listing's `name` field strips it, so detection and playback both go
+  // through the listing rather than the stage records.
+  function artifactFile(name: string): string | null {
+    return artifacts?.find((item) => item.name === name)?.file ?? null;
+  }
+
+  const hasSpeakers = artifactFile("speakers.json") !== null;
+  const hasManifest = artifactFile("dub-manifest.json") !== null;
+  const mixFile = artifactFile("dub-mix.wav");
+  const hasMix = mixFile !== null;
 
   function buildBody(): Partial<DubParams> {
     const body: Partial<DubParams> = {
@@ -220,13 +227,13 @@ export function DubbingStudioView({
         <div className={styles.canvas}>
           {hasManifest || hasMix ? (
             <div className={styles.previewList}>
-              {hasMix && (
+              {mixFile && (
                 <div className={styles.previewRow}>
                   <span className={styles.previewLabel}>{t("task.dub.studio.mix")}</span>
                   <audio
                     controls
                     className={styles.audio}
-                    src={convertFileSrc(artifactPath("dub-mix.wav"))}
+                    src={convertFileSrc(artifactPath(mixFile))}
                   />
                 </div>
               )}

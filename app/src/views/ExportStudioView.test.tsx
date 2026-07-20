@@ -3,7 +3,12 @@ import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { renderWithConnection } from "../test/helpers";
 import type { ApiClient } from "../lib/api/client";
-import type { ExportEstimate, SubtitleStylePreset, TaskRecord } from "../lib/api/types";
+import type {
+  ArtifactListItem,
+  ExportEstimate,
+  SubtitleStylePreset,
+  TaskRecord,
+} from "../lib/api/types";
 import { ExportStudioView } from "./ExportStudioView";
 
 vi.mock("@tauri-apps/api/core", () => ({
@@ -34,6 +39,8 @@ const ESTIMATE: ExportEstimate = {
   height: 1080,
 };
 
+// Stage artifacts carry the writer's index prefix (05-dub-mix.wav), as the
+// core records them; detection must go through the artifacts listing.
 function task(overrides: Partial<TaskRecord> = {}): TaskRecord {
   return {
     schema_version: 1,
@@ -49,7 +56,7 @@ function task(overrides: Partial<TaskRecord> = {}): TaskRecord {
         status: "completed",
         params: {},
         pause_after: false,
-        artifacts: ["dub-mix.wav"],
+        artifacts: ["05-dub-mix.wav"],
         error: null,
       },
     ],
@@ -60,9 +67,14 @@ function task(overrides: Partial<TaskRecord> = {}): TaskRecord {
   };
 }
 
+const ARTIFACTS: ArtifactListItem[] = [
+  { file: "05-dub-mix.wav", index: 5, name: "dub-mix.wav", schema_version: null, size: 9000, mtime: 1 },
+];
+
 function api(overrides: Record<string, unknown> = {}) {
   return {
     showTask: vi.fn().mockResolvedValue(task()),
+    listArtifacts: vi.fn().mockResolvedValue(ARTIFACTS),
     getStyles: vi.fn().mockResolvedValue(STYLES),
     estimateExport: vi.fn().mockResolvedValue(ESTIMATE),
     createExport: vi.fn().mockResolvedValue({ queued: true }),
@@ -165,12 +177,15 @@ test("the dubbed audio track is unavailable without a dub mix", async () => {
             status: "completed",
             params: {},
             pause_after: false,
-            artifacts: ["translation.json"],
+            artifacts: ["03-translation.json"],
             error: null,
           },
         ],
       }),
     ),
+    listArtifacts: vi.fn().mockResolvedValue([
+      { file: "03-translation.json", index: 3, name: "translation.json", schema_version: 1, size: 100, mtime: 1 },
+    ]),
   });
   render(client);
   await screen.findByText("匯出工作室");
@@ -178,6 +193,19 @@ test("the dubbed audio track is unavailable without a dub mix", async () => {
   expect(
     Array.from((select as HTMLSelectElement).options).find((o) => o.value === "dub"),
   ).toBeDisabled();
+});
+
+// Guard for H1: the real prefixed artifact shape must not disable the dub
+// sources that actually exist on disk.
+test("prefixed stage artifacts keep the dubbed audio track available", async () => {
+  render();
+  await screen.findByText("匯出工作室");
+  const select = await screen.findByLabelText("音軌");
+  await waitFor(() =>
+    expect(
+      Array.from((select as HTMLSelectElement).options).find((o) => o.value === "dub"),
+    ).toBeEnabled(),
+  );
 });
 
 const COMPOSE_STAGES = [
@@ -194,7 +222,7 @@ const COMPOSE_STAGES = [
     status: "completed" as const,
     params: {},
     pause_after: false,
-    artifacts: ["dub-mix.wav"],
+    artifacts: ["05-dub-mix.wav"],
     error: null,
   },
   {
@@ -207,6 +235,12 @@ const COMPOSE_STAGES = [
   },
 ];
 
+const COMPOSE_ARTIFACTS: ArtifactListItem[] = [
+  { file: "01-segments.json", index: 1, name: "segments.json", schema_version: 1, size: 300, mtime: 1 },
+  { file: "05-dub-mix.wav", index: 5, name: "dub-mix.wav", schema_version: null, size: 9000, mtime: 2 },
+  { file: "06-dubbed.m4a", index: 6, name: "dubbed.m4a", schema_version: null, size: 8000, mtime: 3 },
+];
+
 function composeTask() {
   return task({
     input_path: "/tmp/lines.srt",
@@ -215,15 +249,22 @@ function composeTask() {
   });
 }
 
+function composeApi() {
+  return api({
+    showTask: vi.fn().mockResolvedValue(composeTask()),
+    listArtifacts: vi.fn().mockResolvedValue(COMPOSE_ARTIFACTS),
+  });
+}
+
 test("a compose task lands in the audio panel despite its transcript input", async () => {
-  render(api({ showTask: vi.fn().mockResolvedValue(composeTask()) }));
+  render(composeApi());
   await screen.findByText("匯出工作室");
   expect(await screen.findByLabelText("格式")).toBeInTheDocument();
   expect(screen.queryByLabelText("容器")).not.toBeInTheDocument();
 });
 
 test("a compose task cannot export the original audio it never had", async () => {
-  render(api({ showTask: vi.fn().mockResolvedValue(composeTask()) }));
+  render(composeApi());
   await screen.findByText("匯出工作室");
   const sourceSelect = await screen.findByLabelText("來源");
   const original = within(sourceSelect).getByRole("option", { name: "原始音訊" });
@@ -231,8 +272,19 @@ test("a compose task cannot export the original audio it never had", async () =>
   expect(sourceSelect).toHaveValue("dub");
 });
 
+// Guard for H1: the dub-mix source option must be selectable when the mix
+// exists under its prefixed on-disk name.
+test("a compose task offers the dub mix source with prefixed artifacts", async () => {
+  render(composeApi());
+  await screen.findByText("匯出工作室");
+  const sourceSelect = await screen.findByLabelText("來源");
+  await waitFor(() =>
+    expect(within(sourceSelect).getByRole("option", { name: "配音混音" })).toBeEnabled(),
+  );
+});
+
 test("a compose task shows no source preview", async () => {
-  render(api({ showTask: vi.fn().mockResolvedValue(composeTask()) }));
+  render(composeApi());
   await screen.findByText("匯出工作室");
   await screen.findByLabelText("格式");
   // Nothing to play: the input is a transcript, not a recording.

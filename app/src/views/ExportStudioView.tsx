@@ -60,6 +60,11 @@ export function ExportStudioView({
     queryKey: ["task", project, taskId],
     queryFn: () => api.showTask(project, taskId),
   });
+  const { data: artifacts } = useQuery({
+    queryKey: ["artifacts", project, taskId, task?.updated_at],
+    queryFn: () => api.listArtifacts(project, taskId),
+    enabled: !!task,
+  });
   const { data: stylesDoc } = useQuery({
     queryKey: ["styles"],
     queryFn: () => api.getStyles(),
@@ -69,8 +74,9 @@ export function ExportStudioView({
   // A compose task has no source recording, so neither the original-audio
   // source nor the source preview has anything behind it.
   const hasSourceMedia = task ? mediaKindOf(task.input_path) !== null : false;
-  const hasDubMix =
-    task?.stages.some((stage) => stage.artifacts.includes("dub-mix.wav")) ?? false;
+  // Detection goes through the artifacts listing: on disk the mix is
+  // 05-dub-mix.wav, and the listing's `name` field strips the prefix.
+  const hasDubMix = (artifacts ?? []).some((item) => item.name === "dub-mix.wav");
 
   // Video panel.
   const [container, setContainer] = useState("mp4");
@@ -93,12 +99,15 @@ export function ExportStudioView({
   const [sampleRate, setSampleRate] = useState<number | "">("");
   const [channels, setChannels] = useState<number | "">("");
 
-  // The dubbed track is only offered once a dub mix exists.
+  // The dubbed track is only offered once a dub mix exists. Wait for the
+  // artifacts listing so a slow query does not flip the selection away from
+  // a mix that actually exists.
   useEffect(() => {
+    if (artifacts === undefined) return;
     if (!hasDubMix && audioTrack === "dub") setAudioTrack("original");
     if (!hasDubMix && source === "dub" && hasSourceMedia) setSource("original");
     if (!hasSourceMedia && source === "original") setSource("dub");
-  }, [hasDubMix, audioTrack, source, hasSourceMedia]);
+  }, [artifacts, hasDubMix, audioTrack, source, hasSourceMedia]);
 
   const params = useMemo<ExportParams>(() => {
     if (kind === "audio") {
