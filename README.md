@@ -4,7 +4,7 @@
 
 # Traduko
 
-An automated translation workstation for the desktop. Give it video, audio, subtitles, or documents, and the pipeline handles speech recognition, translation, proofreading, dubbing, and export.
+An automated translation workstation for the desktop. Give it video, audio, subtitles, or documents, and the pipeline handles speech recognition, translation, proofreading, dubbing, and export. Proofreading is itself a tool-using agent, and the interface can be operated by one.
 
 [Features](#features) · [Interface](#interface) · [Architecture](#architecture) · [Installation](#installation) · [Usage](#usage) · [Roadmap](#roadmap) · [繁體中文](README.zh-TW.md)
 
@@ -15,6 +15,8 @@ An automated translation workstation for the desktop. Give it video, audio, subt
 Traduko runs a configurable pipeline over each input: audio extraction, speech recognition, segmentation, LLM translation, optional agent-based proofreading, dub synthesis, and export to subtitles or finished media. The name is the Esperanto word for "translation".
 
 It is an orchestration layer over existing tools: ffmpeg for media handling, faster-whisper or cloud engines for speech recognition, and any OpenAI-compatible endpoint, Anthropic, or Gemini for translation. Traduko turns them into tasks that can be paused, resumed, and kept within a spending budget.
+
+What the project builds itself is the agent wiring. Proofreading runs as a multi-round loop that consults the glossary and surrounding context before revising lines and leaving notes. The built-in assistant reads every artifact a task produces and can change task settings or re-run stages; changing global configuration is limited to filing a proposal that an operator approves. Its tool set extends through MCP servers and Skills.
 
 ![Task dashboard, grouped by project, with per-domain views in the sidebar](docs/screenshot-tasks-light.png)
 
@@ -42,13 +44,20 @@ It is an orchestration layer over existing tools: ffmpeg for media handling, fas
 | Translation settings | Target language and prompt override, retranslate. Defaults are configured per task domain (video, audio, document), applied at task creation, and can be overridden per task. |
 | Output browser | Outputs grouped as video, audio, images, and documents. Audio plays inline; subtitle and plain-text outputs preview in place with an adjustable text size. |
 
-### Glossaries and proofreading
+### Agent
+
+| Feature | Description |
+| --- | --- |
+| Agent proofreading | Proofreading runs as a tool-using loop over multiple rounds: it consults the glossary and surrounding context, revises lines, and leaves notes. Intensity is configurable, and if the budget runs out mid-proofread the current best version is kept. |
+| Built-in assistant | Reads task status, budget, configuration, logs, preflight results, and artifact contents (transcripts, translations, proofread and quality notes, speaker assignments). It can create tasks, flip pipeline switches, redub, retranslate, and export; changing global configuration is limited to filing a proposal that takes effect only after an operator approves it. |
+| MCP and Skills | MCP servers can be mounted, and their tools join the assistant's tool set directly. Skills are plain text files, validated for format and passed through a safety gate before loading. |
+
+### Glossaries
 
 | Feature | Description |
 | --- | --- |
 | Multi-table glossaries | Each table is bound to one task domain or shared, with categories and CSV/JSON import/export. A task selects any set of global tables plus its own task-local table. |
 | ASR biasing | Glossaries also bias speech recognition: supported engines take a prompt injection, the rest can get a lightweight proofread stage. Changes can be reapplied to existing tasks. |
-| Agent proofreading | Proofreading runs as a tool-using agent loop that consults the glossary and surrounding context and revises lines over multiple rounds. Intensity is configurable; if the budget runs out mid-proofread, the current best version is kept. |
 | Prompt templates | Translation and proofreading prompts are plain text files in the data directory and can be edited directly. |
 
 ### Spending and reliability
@@ -60,11 +69,10 @@ It is an orchestration layer over existing tools: ffmpeg for media handling, fas
 | Incremental writes | Translation progress is written to disk in batches, so an interrupted task keeps its completed work. |
 | Files first | All tasks, artifacts, and settings are human-readable files under the data directory. SQLite serves only as an index and can be rebuilt from the files at any time. |
 
-### Assistant and integrations
+### Integrations and sync
 
 | Feature | Description |
 | --- | --- |
-| Built-in assistant | Can inspect task status, budget, configuration, logs, and preflight results, and read artifact contents such as transcripts, translations, and notes. Setting changes are filed as proposals that take effect only after the operator approves them. |
 | Event notifications | Task events go to webhooks, Discord, and email. A Discord bot provides slash commands and keeps a progress message updated in the channel. |
 | Multi-machine sync | Settings, prompts, glossaries, and task records sync through a shared folder or WebDAV. Glossaries merge row by row; conflicts are left for a manual decision. |
 | Interface language | Traditional Chinese, English, and Japanese. |
@@ -74,15 +82,15 @@ It is an orchestration layer over existing tools: ffmpeg for media handling, fas
 <table>
 <tr>
 <td width="50%"><img src="docs/screenshot-task-light.png" alt="Task detail" /><br /><sub>Task detail: inline player, studio entries, pipeline switches, and stage progress.</sub></td>
-<td width="50%"><img src="docs/screenshot-outputs-light.png" alt="Outputs" /><br /><sub>Outputs grouped by kind; audio plays inline, subtitles preview in place.</sub></td>
+<td width="50%"><img src="docs/screenshot-assistant-dark.png" alt="Assistant" /><br /><sub>The assistant files config changes as approvable diffs; nothing applies before approval.</sub></td>
 </tr>
 <tr>
+<td><img src="docs/screenshot-outputs-light.png" alt="Outputs" /><br /><sub>Outputs grouped by kind; audio plays inline, subtitles preview in place.</sub></td>
 <td><img src="docs/screenshot-editor-light.png" alt="Subtitle editor" /><br /><sub>Subtitle editor; both the translation and the proofread note are editable.</sub></td>
-<td><img src="docs/screenshot-style-light.png" alt="ASS style editor" /><br /><sub>ASS style editor with a live preview.</sub></td>
 </tr>
 <tr>
+<td><img src="docs/screenshot-style-light.png" alt="ASS style editor" /><br /><sub>ASS style editor with a live preview.</sub></td>
 <td><img src="docs/screenshot-dub-light.png" alt="Dubbing studio" /><br /><sub>Dubbing studio: engine and parameters, speakers with reference audio, per-segment preview.</sub></td>
-<td><img src="docs/screenshot-assistant-dark.png" alt="Assistant" /><br /><sub>The built-in assistant proposes config changes as approvable diffs.</sub></td>
 </tr>
 <tr>
 <td><img src="docs/screenshot-settings-dark.png" alt="Settings" /><br /><sub>Settings: appearance, interface language, and LLM providers.</sub></td>
@@ -207,6 +215,7 @@ To use a real LLM, add a provider in the desktop app under Settings → General 
 | Speech recognition | faster-whisper, OpenAI cloud transcription, macOS native (SpeechAnalyzer) |
 | Speech synthesis | VoxCPM2 (local voice cloning and design), macOS say (fast preview) |
 | Translation and proofreading | Any OpenAI-compatible endpoint, Anthropic, Gemini |
+| Agent extensions | MCP servers, plain-text Skills |
 | Storage | Human-readable plain-text files, SQLite as an index only |
 
 ## Development
