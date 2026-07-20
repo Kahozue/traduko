@@ -178,7 +178,7 @@ test("resynthesize from diarize triggers the diarize redub path", async () => {
   const client = api();
   render(client);
   await screen.findByText("配音工作室");
-  await userEvent.click(screen.getByRole("button", { name: /從說話人分離重來/ }));
+  await userEvent.click(await screen.findByRole("button", { name: /從說話人分離重來/ }));
   await waitFor(() => expect(client.dubRedub).toHaveBeenCalledWith("default", "t1", "diarize"));
 });
 
@@ -309,4 +309,47 @@ test("voxcpm2 advanced parameters post only what was filled in", async () => {
   // Blank fields follow the global defaults rather than pinning a value.
   expect(body.cfg).toBeUndefined();
   expect(body.timesteps).toBeUndefined();
+});
+
+test("a task without a diarize stage drops the separation controls", async () => {
+  // Speaker separation is optional: the synthesis stage falls back to one
+  // voice, so nothing here should read as a missing prerequisite.
+  const noDiarize = {
+    ...TASK,
+    stages: TASK.stages.filter((stage) => stage.type !== "diarize"),
+  };
+  render(
+    api({
+      showTask: vi.fn().mockResolvedValue(noDiarize),
+      listArtifacts: vi
+        .fn()
+        .mockResolvedValue(ARTIFACTS.filter((item) => item.name !== "speakers.json")),
+    }),
+  );
+  await screen.findByText("配音工作室");
+  expect(await screen.findByText("未做說話人分離，將以單一聲音配音")).toBeInTheDocument();
+  await waitFor(() =>
+    expect(screen.queryByRole("button", { name: /從說話人分離重來/ })).toBeNull(),
+  );
+  expect(screen.queryByRole("button", { name: /立即分離/ })).toBeNull();
+  expect(screen.queryByText("尚未分離說話人")).toBeNull();
+});
+
+test("a skipped diarize stage still offers to separate now", async () => {
+  const skipped = {
+    ...TASK,
+    stages: TASK.stages.map((stage) =>
+      stage.type === "diarize" ? { ...stage, status: "skipped" as const } : stage,
+    ),
+  };
+  render(
+    api({
+      showTask: vi.fn().mockResolvedValue(skipped),
+      listArtifacts: vi
+        .fn()
+        .mockResolvedValue(ARTIFACTS.filter((item) => item.name !== "speakers.json")),
+    }),
+  );
+  expect(await screen.findByText("未做說話人分離，將以單一聲音配音")).toBeInTheDocument();
+  expect(await screen.findByRole("button", { name: /立即分離/ })).toBeEnabled();
 });

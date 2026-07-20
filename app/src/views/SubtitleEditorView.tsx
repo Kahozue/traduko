@@ -36,6 +36,9 @@ export function SubtitleEditorView({
     queryKey: ["artifact", project, taskId, "translation.json"],
     queryFn: () => api.readArtifact<TranslationArtifact>(project, taskId, "translation.json"),
   });
+  // The report carries agent bookkeeping (rounds, edits, summary) besides the
+  // flags; saving edited notes has to preserve all of it, so the whole
+  // document is kept rather than just the flag list.
   const { data: report } = useQuery({
     queryKey: ["artifact", project, taskId, "proofread-report.json"],
     queryFn: () =>
@@ -45,6 +48,10 @@ export function SubtitleEditorView({
   });
 
   const [segments, setSegments] = useState<TranslationSegment[]>([]);
+  // Notes are editable like the translation: the proofread pass seeds them,
+  // and a human can correct one or write one where the agent flagged nothing.
+  const [notes, setNotes] = useState<Record<number, string>>({});
+  const [notesDirty, setNotesDirty] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [saved, setSaved] = useState(false);
   const [activeId, setActiveId] = useState<number | null>(null);
@@ -81,11 +88,23 @@ export function SubtitleEditorView({
     if (data) setSegments(data.segments);
   }, [data]);
 
+  useEffect(() => {
+    if (!report) return;
+    const next: Record<number, string> = {};
+    for (const flag of report.flags ?? []) next[flag.id] = flag.note;
+    setNotes(next);
+    setNotesDirty(false);
+  }, [report]);
+
+  // Derived from the edited notes, not the fetched report, so the flagged-only
+  // filter and the flag jumps follow what is on screen.
   const flagById = useMemo(() => {
     const map = new Map<number, string>();
-    for (const flag of report?.flags ?? []) map.set(flag.id, flag.note);
+    for (const [id, note] of Object.entries(notes)) {
+      if (note.trim() !== "") map.set(Number(id), note);
+    }
     return map;
-  }, [report]);
+  }, [notes]);
 
   const visible = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -99,13 +118,31 @@ export function SubtitleEditorView({
   }, [segments, query, flaggedOnly, flagById]);
 
   const save = useMutation({
-    mutationFn: () =>
-      api.saveArtifact(project, taskId, "translation.json", {
+    mutationFn: async () => {
+      await api.saveArtifact(project, taskId, "translation.json", {
         ...data,
         segments,
-      }),
+      });
+      if (!notesDirty) return;
+      // Keep each flag's original round; a note typed by hand has none, and
+      // round 0 is what the report's own pre-agent entries carry.
+      const rounds = new Map((report?.flags ?? []).map((flag) => [flag.id, flag.round]));
+      const flags = Object.entries(notes)
+        .filter(([, note]) => note.trim() !== "")
+        .map(([id, note]) => ({
+          id: Number(id),
+          note: note.trim(),
+          round: rounds.get(Number(id)) ?? 0,
+        }))
+        .sort((a, b) => a.id - b.id);
+      await api.saveArtifact(project, taskId, "proofread-report.json", {
+        ...report,
+        flags,
+      });
+    },
     onSuccess: () => {
       setDirty(false);
+      setNotesDirty(false);
       setSaved(true);
     },
   });
@@ -122,6 +159,13 @@ export function SubtitleEditorView({
 
   function editTarget(id: number, value: string) {
     setSegments((prev) => prev.map((s) => (s.id === id ? { ...s, target: value } : s)));
+    setDirty(true);
+    setSaved(false);
+  }
+
+  function editNote(id: number, value: string) {
+    setNotes((prev) => ({ ...prev, [id]: value }));
+    setNotesDirty(true);
     setDirty(true);
     setSaved(false);
   }
@@ -374,12 +418,27 @@ export function SubtitleEditorView({
                 )}
               </span>
               <span role="cell" className={styles.flag}>
-                {flag && (
-                  <span className={styles.flagBadge} title={flag}>
-                    {t("editor.flag.badge")}
-                  </span>
+                {active ? (
+                  <textarea
+                    className={styles.note}
+                    aria-label={t("editor.col.flag")}
+                    placeholder={t("editor.flag.placeholder")}
+                    value={notes[seg.id] ?? ""}
+                    onChange={(e) => editNote(seg.id, e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Escape") setActiveId(null);
+                    }}
+                  />
+                ) : (
+                  <>
+                    {flag && (
+                      <span className={styles.flagBadge} title={flag}>
+                        {t("editor.flag.badge")}
+                      </span>
+                    )}
+                    {flag}
+                  </>
                 )}
-                {flag}
               </span>
             </div>
           );

@@ -85,7 +85,7 @@ export const zhTW = {
   "task.rerunConfirm.body": "重新執行會重跑全部階段，編輯器手改的譯文與字幕會被覆蓋。",
   "task.rerunConfirm.confirm": "重新執行",
   "task.rerunConfirm.cancel": "取消",
-  "task.cancel": "取消任務",
+  "task.cancel": "取消",
   "task.pause": "暫停",
   "task.stages": "階段",
   "task.switches.label": "管線開關",
@@ -855,4 +855,51 @@ export const zhTW = {
   "assistant.activity.write": "準備變更",
   "assistant.activity.execute": "執行中",
   "assistant.context.label": "上下文用量（估算）",
+
+  // Studio row tooltips
+  "task.subtitleEditor.entryTitle": "逐句校對譯文，可搜尋取代並跳到校對標註",
+  "task.textEditor.entryTitle": "逐段校對譯文，可搜尋取代並跳到品質標註",
+  "task.speakerReview.entryTitle": "檢查說話人指派，可改名或合併",
+  "task.dub.studio.entryTitle": "挑選配音引擎與聲音，試聽片段並重新合成",
+  "task.export.studio.entryTitle": "設定容器、畫質與字幕，估算空間後匯出成品",
+  "task.glossary.entryTitle": "指定此任務生效的名詞表與 ASR 偏置模式",
+  "task.translation.entryTitle": "設定目標語言、翻譯風格與 prompt 覆寫",
+
+  // Parameter tooltips
+  "task.dub.studio.cfg.hint": "越高越貼近參考音與聲音描述，過高會顯得僵硬；常用 1.5 至 2.5",
+  "task.dub.studio.timesteps.hint": "取樣步數，越多越穩定也越慢；常用 10 至 32",
+  "task.dub.studio.seed.hint": "固定種子可重現同一次合成結果，留空為每次隨機",
+  "task.dub.studio.denoise.hint": "克隆前先對參考音降噪，原始錄音底噪大時調高",
+  "task.export.studio.crf.hint": "數字越小畫質越好、檔案越大；18 接近無損，28 壓縮明顯",
+
+  // Glossary ASR mode
+  "task.glossary.asrMode.hint":
+    "自動：引擎支援偏置就直接送入名詞表，不支援才在轉錄後校對；強制校對：不論引擎能力，一律在轉錄後跑一次名詞表校對；僅翻譯注入：不改動轉錄結果，名詞表只在翻譯階段生效。",
+
+  // Speaker separation is optional
+  "task.dub.studio.speakers.single": "未做說話人分離，將以單一聲音配音",
+  "task.dub.studio.speakers.optional": "說話人分離為選用；不分離也能配音。",
+
+  // Outputs grouping and preview
+  "task.outputs.group.video": "影片",
+  "task.outputs.group.audio": "音訊",
+  "task.outputs.group.image": "圖片",
+  "task.outputs.group.document": "文件",
+  "task.outputs.close": "收合",
+  "task.outputs.previewLoading": "讀取中",
+  "task.outputs.previewFailed": "無法讀取這個檔案",
+  "task.outputs.fontSize": "字級",
+  "task.outputs.fontSmaller": "縮小字級",
+  "task.outputs.fontLarger": "放大字級",
+
+  // Inline audio player
+  "player.play": "播放",
+  "player.pause": "暫停",
+  "player.seek": "播放進度",
+  "player.speed": "倍速",
+
+  // Editable annotations
+  "editor.flag.placeholder": "新增校對標註",
+  "editor.qc.placeholder": "新增品質標註",
+  "editor.qc.manual": "人工標註",
 } as const;

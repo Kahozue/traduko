@@ -90,7 +90,7 @@ export const en: Record<MessageKey, string> = {
     "Rerunning restarts every stage; edits you made to translations and subtitles in the editor will be overwritten.",
   "task.rerunConfirm.confirm": "Rerun",
   "task.rerunConfirm.cancel": "Cancel",
-  "task.cancel": "Cancel task",
+  "task.cancel": "Cancel",
   "task.pause": "Pause",
   "task.stages": "Stages",
   "task.switches.label": "Pipeline switches",
@@ -842,4 +842,62 @@ export const en: Record<MessageKey, string> = {
   "assistant.activity.write": "Preparing change",
   "assistant.activity.execute": "Working",
   "assistant.context.label": "Context usage (estimate)",
+
+  // Studio row tooltips
+  "task.subtitleEditor.entryTitle":
+    "Proofread the translation line by line; search, replace and jump between flags",
+  "task.textEditor.entryTitle":
+    "Proofread the translation block by block; search, replace and jump between flags",
+  "task.speakerReview.entryTitle": "Check speaker assignment; rename or merge speakers",
+  "task.dub.studio.entryTitle":
+    "Pick the dubbing engine and voice, audition segments and resynthesize",
+  "task.export.studio.entryTitle":
+    "Set container, quality and subtitles, then estimate space and export",
+  "task.glossary.entryTitle": "Choose the glossaries and ASR biasing mode for this task",
+  "task.translation.entryTitle": "Set target language, style and prompt override",
+
+  // Parameter tooltips
+  "task.dub.studio.cfg.hint":
+    "Higher sticks closer to the reference voice and description; too high sounds stiff. 1.5 to 2.5 is typical",
+  "task.dub.studio.timesteps.hint":
+    "Sampling steps: more is steadier but slower. 10 to 32 is typical",
+  "task.dub.studio.seed.hint":
+    "A fixed seed reproduces the same synthesis; leave blank for a random one each run",
+  "task.dub.studio.denoise.hint":
+    "Denoise the reference audio before cloning; raise it when the source recording is noisy",
+  "task.export.studio.crf.hint":
+    "Lower means better quality and a larger file; 18 is near-lossless, 28 is visibly compressed",
+
+  // Glossary ASR mode
+  "task.glossary.asrMode.hint":
+    "Auto: feed the glossary to engines that support biasing, and proofread after transcription only when they do not. Force proofread: always run a glossary proofread pass after transcription, whatever the engine can do. Translation only: leave the transcript untouched and apply the glossary at translation time.",
+
+  // Speaker separation is optional
+  "task.dub.studio.speakers.single":
+    "No speaker separation; the dub will use a single voice",
+  "task.dub.studio.speakers.optional":
+    "Speaker separation is optional; dubbing works without it.",
+
+  // Outputs grouping and preview
+  "task.outputs.group.video": "Video",
+  "task.outputs.group.audio": "Audio",
+  "task.outputs.group.image": "Images",
+  "task.outputs.group.document": "Documents",
+  "task.outputs.close": "Collapse",
+  "task.outputs.previewLoading": "Loading",
+  "task.outputs.previewFailed": "This file could not be read",
+  "task.outputs.fontSize": "Text size",
+  "task.outputs.fontSmaller": "Smaller text",
+  "task.outputs.fontLarger": "Larger text",
+
+  // Inline audio player
+  "player.play": "Play",
+  "player.pause": "Pause",
+  "player.seek": "Playback position",
+  "player.speed": "Speed",
+
+  // Editable annotations
+  "editor.flag.placeholder": "Add a proofread note",
+  "editor.qc.placeholder": "Add a quality note",
+  "editor.qc.manual": "Manual",
 };

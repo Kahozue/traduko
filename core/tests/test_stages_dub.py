@@ -245,6 +245,30 @@ def test_tts_synthesize_writes_clips_and_manifest(
     assert progress[-1] == (3, 3)
 
 
+def test_tts_synthesize_without_speakers_falls_back_to_one_voice(
+    tmp_path: Path, fake_client, monkeypatch
+) -> None:
+    # Speaker separation is optional: with no diarize stage there is no
+    # speakers.json, and synthesis writes a single-speaker one so
+    # align_duration and mix_audio still find what they read.
+    install_engine(tmp_path)
+    write_dub_config(tmp_path)
+    ctx, progress = make_ctx(tmp_path, tmp_path / "in.mp4", stage_index=7)
+    write_translation(ctx)
+    monkeypatch.setattr(dub, "run_media", lambda cmd: None)
+    monkeypatch.setattr(dub, "ffmpeg_available", lambda: True)
+
+    result = registry.create("tts_synthesize").run(ctx)
+
+    assert "08-speakers.json" in result.artifacts
+    speakers = ctx.artifacts.read_latest_json("speakers.json")
+    assert [s["id"] for s in speakers["speakers"]] == ["S1"]
+    assert {a["speaker"] for a in speakers["segments"]} == {"S1"}
+    manifest = ctx.artifacts.read_latest_json("dub-manifest.json")
+    assert [s["status"] for s in manifest["segments"]] == ["synthesized"] * 3
+    assert progress[-1] == (3, 3)
+
+
 def test_tts_synthesize_resumes_from_manifest(
     tmp_path: Path, fake_client, monkeypatch
 ) -> None:

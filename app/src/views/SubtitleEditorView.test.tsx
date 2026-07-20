@@ -194,4 +194,32 @@ describe("SubtitleEditorView", () => {
     await userEvent.click(screen.getByText("返回任務"));
     expect(onBack).toHaveBeenCalledTimes(1);
   });
+  test("editing a proofread note saves it back to the report", async () => {
+    const client = api();
+    render(() => {}, client);
+    await activateRow("你好");
+    const note = screen.getByRole("textbox", { name: "校對標註" });
+    await userEvent.type(note, "語氣太生硬");
+    await userEvent.click(screen.getByText("存回"));
+    await waitFor(() => expect(client.saveArtifact).toHaveBeenCalledTimes(2));
+    const [, , name, body] = client.saveArtifact.mock.calls[1] as unknown as [
+      string, string, string, { flags: { id: number; note: string; round: number }[] },
+    ];
+    expect(name).toBe("proofread-report.json");
+    // The agent's own flag survives alongside the hand-written one.
+    expect(body.flags).toEqual([
+      { id: 1, note: "語氣太生硬", round: 0 },
+      { id: 2, note: "確認術語", round: 1 },
+    ]);
+  });
+
+  test("a note-free save skips the report write", async () => {
+    const client = api();
+    render(() => {}, client);
+    const box = await activateRow("你好");
+    await userEvent.type(box, "！");
+    await userEvent.click(screen.getByText("存回"));
+    await waitFor(() => expect(client.saveArtifact).toHaveBeenCalled());
+    expect(client.saveArtifact).toHaveBeenCalledTimes(1);
+  });
 });

@@ -129,7 +129,14 @@ class PipelineExecutor:
         self._emit(record, "task_completed", {"stage_total": stage_total})
         return record
 
+# Human-facing annotations, not pipeline inputs: no deliverable is derived
+# from them, so editing one must not send a finished task back to pending.
+ANNOTATION_ARTIFACTS = frozenset({"proofread-report.json", "qc.json"})
+
+
 def reset_stages_after_artifact(record: TaskRecord, artifact_name: str) -> int:
+    if artifact_name in ANNOTATION_ARTIFACTS:
+        return 0
     producer = -1
     for i, stage in enumerate(record.stages):
         if any(a.endswith(f"-{artifact_name}") for a in stage.artifacts):

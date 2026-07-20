@@ -320,6 +320,7 @@ export function TaskGlossaryView({
       {/* ASR mode */}
       <section className={styles.section}>
         <h2 className={styles.sectionTitle}>{t("task.glossary.asrMode")}</h2>
+        <p className={styles.sectionHint}>{t("task.glossary.asrMode.hint")}</p>
         <div className={styles.radioGroup}>
           {(["auto", "force", "off"] as AsrMode[]).map((mode) => (
             <label key={mode} className={styles.radioLabel}>

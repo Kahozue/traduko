@@ -24,7 +24,11 @@ const QC_LABEL: Record<QcFlagType, MessageKey> = {
   echo: "editor.qc.echo",
   glossary: "editor.qc.glossary",
   failed: "editor.qc.failed",
+  manual: "editor.qc.manual",
 };
+
+// A note typed on a block the checker never flagged.
+const MANUAL: QcFlagType = "manual";
 
 export function DocumentEditorView({
   project,
@@ -58,6 +62,12 @@ export function DocumentEditorView({
   });
 
   const [targets, setTargets] = useState<Record<string, string>>({});
+  // Notes are editable like the translation: the qc pass seeds them, and a
+  // human can correct one or write one where the checker flagged nothing.
+  const [notes, setNotes] = useState<Record<string, { type: QcFlagType; evidence: string }>>(
+    {},
+  );
+  const [notesDirty, setNotesDirty] = useState(false);
   const [loadedFrom, setLoadedFrom] = useState<DocTranslationArtifact | null>(null);
   const [dirty, setDirty] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -114,21 +124,36 @@ export function DocumentEditorView({
     [rows],
   );
 
-  const flagById = useMemo(() => {
-    const map = new Map<string, { badge: string; text: string }>();
+  // A chunk-level flag has no block of its own, so it lands on the chunk's
+  // first block; that is also the block it is written back from.
+  useEffect(() => {
+    if (!qc || rows.length === 0) return;
     const firstBlockOfChunk = new Map<string, string>();
     for (const row of rows) {
       if (!firstBlockOfChunk.has(row.chunkId)) {
         firstBlockOfChunk.set(row.chunkId, row.blockId);
       }
     }
-    for (const flag of qc?.flags ?? []) {
+    const next: Record<string, { type: QcFlagType; evidence: string }> = {};
+    for (const flag of qc.flags ?? []) {
       const blockId = flag.block_id || firstBlockOfChunk.get(flag.chunk_id);
-      if (!blockId || map.has(blockId)) continue;
-      map.set(blockId, { badge: t(QC_LABEL[flag.type]), text: flag.evidence });
+      if (!blockId || blockId in next) continue;
+      next[blockId] = { type: flag.type, evidence: flag.evidence };
+    }
+    setNotes(next);
+    setNotesDirty(false);
+  }, [qc, rows]);
+
+  // Derived from the edited notes, not the fetched report, so the flagged-only
+  // filter and the flag jumps follow what is on screen.
+  const flagById = useMemo(() => {
+    const map = new Map<string, { badge: string; text: string }>();
+    for (const [blockId, entry] of Object.entries(notes)) {
+      if (entry.evidence.trim() === "") continue;
+      map.set(blockId, { badge: t(QC_LABEL[entry.type]), text: entry.evidence });
     }
     return map;
-  }, [rows, qc]);
+  }, [notes]);
 
   const visible = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -144,7 +169,7 @@ export function DocumentEditorView({
   }, [rows, query, flaggedOnly, flagById, targets]);
 
   const save = useMutation({
-    mutationFn: () => {
+    mutationFn: async () => {
       const prior = new Map<string, DocTranslatedChunk>();
       for (const chunk of translation?.chunks ?? []) prior.set(chunk.id, chunk);
       const rebuilt = (chunks?.chunks ?? []).map((chunk) => {
@@ -155,13 +180,28 @@ export function DocumentEditorView({
           : (prior.get(chunk.id)?.status ?? "pending");
         return { id: chunk.id, status, blocks };
       });
-      return api.saveArtifact(project, taskId, "translation.json", {
+      await api.saveArtifact(project, taskId, "translation.json", {
         schema_version: translation?.schema_version ?? 1,
         chunks: rebuilt,
+      });
+      if (!notesDirty) return;
+      const chunkOfBlock = new Map(rows.map((row) => [row.blockId, row.chunkId]));
+      const flags = Object.entries(notes)
+        .filter(([, entry]) => entry.evidence.trim() !== "")
+        .map(([blockId, entry]) => ({
+          chunk_id: chunkOfBlock.get(blockId) ?? "",
+          block_id: blockId,
+          type: entry.type,
+          evidence: entry.evidence.trim(),
+        }));
+      await api.saveArtifact(project, taskId, "qc.json", {
+        schema_version: qc?.schema_version ?? 1,
+        flags,
       });
     },
     onSuccess: () => {
       setDirty(false);
+      setNotesDirty(false);
       setSaved(true);
     },
   });
@@ -171,6 +211,16 @@ export function DocumentEditorView({
 
   function editTarget(blockId: string, value: string) {
     setTargets((prev) => ({ ...prev, [blockId]: value }));
+    setDirty(true);
+    setSaved(false);
+  }
+
+  function editNote(blockId: string, value: string) {
+    setNotes((prev) => ({
+      ...prev,
+      [blockId]: { type: prev[blockId]?.type ?? MANUAL, evidence: value },
+    }));
+    setNotesDirty(true);
     setDirty(true);
     setSaved(false);
   }
@@ -389,12 +439,27 @@ export function DocumentEditorView({
                   )}
                 </span>
                 <span role="cell" className={styles.flag}>
-                  {flag && (
-                    <span className={styles.flagBadge} title={flag.text}>
-                      {flag.badge}
-                    </span>
+                  {active ? (
+                    <textarea
+                      className={styles.note}
+                      aria-label={t("editor.col.qc")}
+                      placeholder={t("editor.qc.placeholder")}
+                      value={notes[row.blockId]?.evidence ?? ""}
+                      onChange={(e) => editNote(row.blockId, e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Escape") setActiveId(null);
+                      }}
+                    />
+                  ) : (
+                    <>
+                      {flag && (
+                        <span className={styles.flagBadge} title={flag.text}>
+                          {flag.badge}
+                        </span>
+                      )}
+                      {flag?.text}
+                    </>
                   )}
-                  {flag?.text}
                 </span>
               </div>
             </Fragment>

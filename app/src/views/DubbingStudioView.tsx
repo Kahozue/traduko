@@ -237,6 +237,16 @@ export function DubbingStudioView({
   const running = task?.status === "running";
   const busy = running || patchParams.isPending || redub.isPending;
 
+  // Speaker separation is optional (spec 4-(3)): without it the synthesis
+  // stage voices everything as one speaker. Redubbing from diarize is only
+  // offered when there is such a stage to reset from — the core 422s
+  // otherwise — and a task whose diarize is switched off gets a statement of
+  // what will happen rather than a "not separated yet" nag.
+  const hasDiarizeStage = (task?.stages ?? []).some((stage) => stage.type === "diarize");
+  const diarizeOn = (task?.stages ?? []).some(
+    (stage) => stage.type === "diarize" && stage.status !== "skipped",
+  );
+
   return (
     <div className={styles.wrap}>
       <button type="button" className={styles.back} onClick={onBack}>
@@ -352,7 +362,7 @@ export function DubbingStudioView({
             <summary className={styles.summary}>{t("task.dub.studio.advanced")}</summary>
             <p className={styles.hintNote}>{t("task.dub.studio.advancedHint")}</p>
             <div className={styles.paramRow}>
-              <label className={styles.fieldNarrow}>
+              <label className={styles.fieldNarrow} title={t("task.dub.studio.cfg.hint")}>
                 {t("task.dub.studio.cfg")}
                 <input
                   className={styles.input}
@@ -364,7 +374,10 @@ export function DubbingStudioView({
                   }
                 />
               </label>
-              <label className={styles.fieldNarrow}>
+              <label
+                className={styles.fieldNarrow}
+                title={t("task.dub.studio.timesteps.hint")}
+              >
                 {t("task.dub.studio.timesteps")}
                 <input
                   className={styles.input}
@@ -375,7 +388,7 @@ export function DubbingStudioView({
                   }
                 />
               </label>
-              <label className={styles.fieldNarrow}>
+              <label className={styles.fieldNarrow} title={t("task.dub.studio.seed.hint")}>
                 {t("task.dub.studio.seed")}
                 <input
                   className={styles.input}
@@ -386,7 +399,10 @@ export function DubbingStudioView({
                   }
                 />
               </label>
-              <label className={styles.fieldNarrow}>
+              <label
+                className={styles.fieldNarrow}
+                title={t("task.dub.studio.denoise.hint")}
+              >
                 {t("task.dub.studio.denoise")}
                 <input
                   className={styles.input}
@@ -436,18 +452,27 @@ export function DubbingStudioView({
             })
           ) : (
             <div className={styles.emptyRow}>
-              <p className={styles.hint}>{t("task.dub.studio.speakers.empty")}</p>
-              <button
-                type="button"
-                className={styles.secondary}
-                disabled={busy}
-                onClick={() => setConfirmingSeparate(true)}
-              >
-                {t("task.dub.studio.speakers.separateNow")}
-              </button>
+              <p className={styles.hint}>
+                {diarizeOn
+                  ? t("task.dub.studio.speakers.empty")
+                  : t("task.dub.studio.speakers.single")}
+              </p>
+              {hasDiarizeStage && (
+                <button
+                  type="button"
+                  className={styles.secondary}
+                  disabled={busy}
+                  onClick={() => setConfirmingSeparate(true)}
+                >
+                  {t("task.dub.studio.speakers.separateNow")}
+                </button>
+              )}
             </div>
           )}
         </div>
+        {!hasSpeakers && (
+          <p className={styles.hintNote}>{t("task.dub.studio.speakers.optional")}</p>
+        )}
       </section>
 
       <section className={styles.block}>
@@ -497,14 +522,16 @@ export function DubbingStudioView({
       </section>
 
       <div className={styles.actions}>
-        <button
-          type="button"
-          className={styles.secondary}
-          disabled={busy}
-          onClick={() => redub.mutate("diarize")}
-        >
-          {t("task.dub.studio.redubFromDiarize")}
-        </button>
+        {hasDiarizeStage && (
+          <button
+            type="button"
+            className={styles.secondary}
+            disabled={busy}
+            onClick={() => redub.mutate("diarize")}
+          >
+            {t("task.dub.studio.redubFromDiarize")}
+          </button>
+        )}
         <button
           type="button"
           className={styles.primary}

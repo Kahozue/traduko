@@ -90,6 +90,14 @@
   font-weight: 600;
 }
 
+.sectionHint {
+  max-width: 720px;
+  margin: -4px 0 12px;
+  color: var(--text-secondary);
+  font-size: var(--fs-note);
+  line-height: 1.6;
+}
+
 .search {
   width: 100%;
   margin-bottom: 12px;

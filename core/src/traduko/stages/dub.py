@@ -323,7 +323,16 @@ class TtsSynthesizeStage:
                 raise StageError(str(error)) from error
         text_doc = _read_dub_text(ctx)
         dub_text = _dub_text_mode(ctx.params)
-        (speakers_doc,) = _read_dub_inputs(ctx, "speakers.json")
+        # Speaker separation is optional (spec 4-(3)): a task whose diarize
+        # stage is switched off or absent has no speakers.json, and one voice
+        # covers every line. The fallback is written out below so
+        # align_duration and mix_audio read it like any other.
+        try:
+            (speakers_doc,) = _read_dub_inputs(ctx, "speakers.json")
+            fallback: SpeakersDoc | None = None
+        except StageError:
+            fallback = build_speakers_doc(text_doc["segments"], [])
+            speakers_doc = fallback.model_dump()
         mode = _voice_mode(ctx.params)
         if mode == "preview":
             if not preview.say_available():
@@ -343,6 +352,12 @@ class TtsSynthesizeStage:
         out_index = ctx.stage_index + 1
         dub_dir = ctx.artifacts.path_for(out_index, "dub")
         dub_dir.mkdir(parents=True, exist_ok=True)
+
+        extra_names: list[str] = []
+        if fallback is not None:
+            extra_names.append(
+                ctx.artifacts.write_json(out_index, "speakers.json", speakers_doc).name
+            )
 
         refs: dict[str, Path] = {}
         ref_names: list[str] = []
@@ -466,7 +481,7 @@ class TtsSynthesizeStage:
                 "no segments could be synthesized"
                 + (f": {last_error}" if last_error else "")
             )
-        return StageResult(artifacts=[manifest_path.name, *ref_names])
+        return StageResult(artifacts=[manifest_path.name, *ref_names, *extra_names])
 
 
 def _timeline_mode(segments: list[dict]) -> tuple[str, str]:

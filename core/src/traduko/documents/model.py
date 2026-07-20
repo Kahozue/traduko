@@ -12,7 +12,9 @@ from pydantic import BaseModel, Field
 
 BlockKind = Literal["heading", "paragraph", "code", "blank", "other"]
 ChunkStatus = Literal["translated", "failed", "pending"]
-QcFlagType = Literal["untranslated", "echo", "glossary", "failed"]
+# "manual" is the editor's own: a note a human wrote on a block the checker
+# had nothing to say about. The qc stage never emits it.
+QcFlagType = Literal["untranslated", "echo", "glossary", "failed", "manual"]
 
 DocumentFormat = Literal["markdown", "txt", "html", "epub"]
 

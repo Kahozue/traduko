@@ -42,6 +42,34 @@ export function exportKindOf(task: {
   return mediaKindOf(task.input_path) ?? producedMediaKindOf(task.stages);
 }
 
+// Output listing groups. Everything the whitelist admits falls into one of
+// these; "document" is the catch-all so a new deliverable extension lands
+// somewhere sane rather than vanishing from the list.
+export type OutputGroup = "video" | "audio" | "image" | "document";
+
+const IMAGE_EXTENSIONS = ["png", "jpg", "jpeg", "webp", "gif"];
+
+// Text the app can render inline. pdf/docx/epub carry no plain text we can
+// show, so their rows keep the external open instead.
+const TEXT_EXTENSIONS = ["txt", "md", "srt", "vtt", "ass", "html", "json", "csv"];
+
+function extensionOf(path: string): string {
+  const dot = path.lastIndexOf(".");
+  return dot < 0 ? "" : path.slice(dot + 1).toLowerCase();
+}
+
+export function outputGroupOf(path: string): OutputGroup {
+  const ext = extensionOf(path);
+  if (VIDEO_EXTENSIONS.includes(ext)) return "video";
+  if (AUDIO_EXTENSIONS.includes(ext)) return "audio";
+  if (IMAGE_EXTENSIONS.includes(ext)) return "image";
+  return "document";
+}
+
+export function isTextPreviewable(path: string): boolean {
+  return TEXT_EXTENSIONS.includes(extensionOf(path));
+}
+
 export function mediaKindOf(path: string): "video" | "audio" | null {
   const dot = path.lastIndexOf(".");
   if (dot < 0) return null;

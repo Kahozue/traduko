@@ -90,7 +90,7 @@ export const ja: Record<MessageKey, string> = {
     "再実行するとすべてのステージが再度実行され、エディターで手動修正した訳文や字幕は上書きされます。",
   "task.rerunConfirm.confirm": "再実行",
   "task.rerunConfirm.cancel": "キャンセル",
-  "task.cancel": "タスクをキャンセル",
+  "task.cancel": "キャンセル",
   "task.pause": "一時停止",
   "task.stages": "ステージ",
   "task.switches.label": "パイプラインスイッチ",
@@ -842,4 +842,56 @@ export const ja: Record<MessageKey, string> = {
   "assistant.activity.write": "変更を準備中",
   "assistant.activity.execute": "実行中",
   "assistant.context.label": "コンテキスト使用量（推定）",
+
+  // Studio row tooltips
+  "task.subtitleEditor.entryTitle":
+    "訳文を一行ずつ校正。検索置換とフラグ間のジャンプができます",
+  "task.textEditor.entryTitle":
+    "訳文を段落ごとに校正。検索置換とフラグ間のジャンプができます",
+  "task.speakerReview.entryTitle": "話者の割り当てを確認し、改名や統合ができます",
+  "task.dub.studio.entryTitle": "吹き替えエンジンと声を選び、試聴して再合成します",
+  "task.export.studio.entryTitle":
+    "コンテナ・画質・字幕を設定し、容量を見積もって書き出します",
+  "task.glossary.entryTitle": "このタスクで有効な用語集と ASR バイアスモードを指定します",
+  "task.translation.entryTitle": "訳文の言語・文体・prompt の上書きを設定します",
+
+  // Parameter tooltips
+  "task.dub.studio.cfg.hint":
+    "高いほど参照音声と声の指示に忠実になりますが、上げすぎると硬くなります。1.5〜2.5 が目安",
+  "task.dub.studio.timesteps.hint": "サンプリング回数。多いほど安定しますが遅くなります。10〜32 が目安",
+  "task.dub.studio.seed.hint": "シードを固定すると同じ合成結果を再現できます。空欄なら毎回ランダム",
+  "task.dub.studio.denoise.hint": "クローン前に参照音声をノイズ除去します。原音のノイズが大きいときに上げます",
+  "task.export.studio.crf.hint":
+    "小さいほど高画質で大きなファイルになります。18 はほぼ無劣化、28 は圧縮が目立ちます",
+
+  // Glossary ASR mode
+  "task.glossary.asrMode.hint":
+    "自動：バイアスに対応したエンジンには用語集をそのまま渡し、非対応のときだけ文字起こし後に校正します。強制校正：エンジンの対応可否にかかわらず、文字起こし後に必ず用語集校正を実行します。翻訳のみ：文字起こし結果は変更せず、用語集は翻訳段階だけで効きます。",
+
+  // Speaker separation is optional
+  "task.dub.studio.speakers.single": "話者分離なし。単一の声で吹き替えます",
+  "task.dub.studio.speakers.optional": "話者分離は任意です。分離しなくても吹き替えできます。",
+
+  // Outputs grouping and preview
+  "task.outputs.group.video": "動画",
+  "task.outputs.group.audio": "音声",
+  "task.outputs.group.image": "画像",
+  "task.outputs.group.document": "文書",
+  "task.outputs.close": "閉じる",
+  "task.outputs.previewLoading": "読み込み中",
+  "task.outputs.previewFailed": "このファイルを読み込めません",
+  "task.outputs.fontSize": "文字サイズ",
+  "task.outputs.fontSmaller": "文字を小さく",
+  "task.outputs.fontLarger": "文字を大きく",
+
+  // Inline audio player
+  "player.play": "再生",
+  "player.pause": "一時停止",
+  "player.seek": "再生位置",
+  "player.speed": "再生速度",
+
+  // Editable annotations
+  "editor.flag.placeholder": "校正メモを追加",
+  "editor.qc.placeholder": "品質メモを追加",
+  "editor.qc.manual": "手動",
 };

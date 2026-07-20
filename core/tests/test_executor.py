@@ -204,6 +204,15 @@ def test_reset_after_translation_resets_downstream_only():
     assert record.stages[2].status == StageStatus.PENDING
 
 
+def test_reset_after_annotation_artifact_changes_nothing():
+    # Editing a proofread note is not an edit to the pipeline's input, so a
+    # finished export must not be sent back to pending over it.
+    record = _record_with_stages()
+    count = reset_stages_after_artifact(record, "proofread-report.json")
+    assert count == 0
+    assert [s.status for s in record.stages] == [StageStatus.COMPLETED] * 3
+
+
 def test_reset_after_unknown_artifact_changes_nothing():
     record = _record_with_stages()
     count = reset_stages_after_artifact(record, "nonexistent.json")

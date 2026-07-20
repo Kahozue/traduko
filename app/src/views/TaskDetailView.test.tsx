@@ -285,8 +285,8 @@ test("cancel button cancels the task", async () => {
     />, {
     api,
   });
-  await waitFor(() => expect(screen.getByText("取消任務")).toBeEnabled());
-  await userEvent.click(screen.getByText("取消任務"));
+  await waitFor(() => expect(screen.getByText("取消")).toBeEnabled());
+  await userEvent.click(screen.getByText("取消"));
   await waitFor(() => expect(cancelTask).toHaveBeenCalledWith("default", "t1"));
 });
 
@@ -1094,7 +1094,7 @@ test("studio entries sit in their own row, out of the header run controls", asyn
   }
   expect(within(header).getByRole("button", { name: "執行" })).toBeInTheDocument();
   expect(within(header).getByRole("button", { name: "暫停" })).toBeInTheDocument();
-  expect(within(header).getByRole("button", { name: "取消任務" })).toBeInTheDocument();
+  expect(within(header).getByRole("button", { name: "取消" })).toBeInTheDocument();
 });
 
 test("the export studio entry appears for a compose task", async () => {
@@ -1136,4 +1136,42 @@ test("the export studio entry appears for a compose task", async () => {
     { api },
   );
   expect(await screen.findByRole("button", { name: /匯出工作室/ })).toBeInTheDocument();
+});
+
+test("outputs are grouped by kind, with audio playing in place", async () => {
+  const api: Partial<ApiClient> = {
+    showTask: vi.fn().mockResolvedValue({ ...task, status: "completed" as const }),
+    listArtifacts: vi.fn().mockResolvedValue([
+      { file: "07-output.srt", index: 7, name: "output.srt", schema_version: null, size: 4096, mtime: 1 },
+      { file: "08-dub-mix.wav", index: 8, name: "dub-mix.wav", schema_version: null, size: 9000, mtime: 2 },
+    ]),
+  };
+  renderWithConnection(
+    <TaskDetailView project="default" taskId="t1" onBack={() => {}} onOpenEditor={() => {}} />,
+    { api },
+  );
+  await waitFor(() => expect(screen.getByText("07-output.srt")).toBeInTheDocument());
+  expect(screen.getByRole("heading", { name: "音訊" })).toBeInTheDocument();
+  expect(screen.getByRole("heading", { name: "文件" })).toBeInTheDocument();
+  // The audio row plays inline, so it offers a transport instead of "open".
+  expect(screen.getByRole("button", { name: "播放" })).toBeInTheDocument();
+  expect(screen.getByRole("slider", { name: "播放進度" })).toBeInTheDocument();
+  expect(screen.getAllByRole("button", { name: "開啟" })).toHaveLength(1);
+});
+
+test("opening a text output toggles the inline preview", async () => {
+  const api: Partial<ApiClient> = {
+    showTask: vi.fn().mockResolvedValue({ ...task, status: "completed" as const }),
+    listArtifacts: vi.fn().mockResolvedValue([
+      { file: "07-output.srt", index: 7, name: "output.srt", schema_version: null, size: 4096, mtime: 1 },
+    ]),
+  };
+  renderWithConnection(
+    <TaskDetailView project="default" taskId="t1" onBack={() => {}} onOpenEditor={() => {}} />,
+    { api },
+  );
+  await userEvent.click(await screen.findByRole("button", { name: "開啟" }));
+  expect(screen.getByRole("button", { name: "放大字級" })).toBeInTheDocument();
+  await userEvent.click(screen.getByRole("button", { name: "收合" }));
+  expect(screen.queryByRole("button", { name: "放大字級" })).toBeNull();
 });

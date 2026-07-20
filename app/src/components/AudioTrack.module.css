@@ -1,0 +1,65 @@
+.track {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  min-width: 0;
+  gap: 10px;
+}
+
+.toggle {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  background: var(--bg-surface);
+  color: var(--accent);
+  cursor: pointer;
+  transition: background var(--transition), border-color var(--transition);
+}
+
+.toggle:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.seek {
+  flex: 1;
+  min-width: 80px;
+  accent-color: var(--accent);
+}
+
+.seek:disabled {
+  opacity: 0.5;
+}
+
+.time {
+  flex: none;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: var(--fs-meta);
+  font-variant-numeric: tabular-nums;
+}
+
+.speed {
+  flex: none;
+  height: 28px;
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-s);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: var(--fs-meta);
+  cursor: pointer;
+}
+
+.failed {
+  flex: 1;
+  color: var(--text-secondary);
+  font-size: var(--fs-note);
+}

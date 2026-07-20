@@ -286,7 +286,7 @@ export function ExportStudioView({
                   </label>
                 </>
               )}
-              <label className={styles.field}>
+              <label className={styles.field} title={t("task.export.studio.crf.hint")}>
                 <span>{t("task.export.studio.crf")}</span>
                 <input
                   className={styles.range}

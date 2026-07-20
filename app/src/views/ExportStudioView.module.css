@@ -60,9 +60,14 @@
   width: 110px;
 }
 
+/* One box for both: WebKit gives select and input different intrinsic
+   heights, so a bitrate field next to a codec picker would not line up
+   without an explicit height. Matches the settings page's field metrics. */
 .input,
 .select {
-  padding: 6px 10px;
+  width: 100%;
+  height: 34px;
+  padding: 0 10px;
   border: 1px solid var(--border);
   border-radius: var(--radius-s);
   background: var(--bg-surface);

@@ -201,7 +201,13 @@ export interface DocTranslationArtifact {
   chunks: DocTranslatedChunk[];
 }
 
-export type QcFlagType = "untranslated" | "echo" | "glossary" | "failed";
+export type QcFlagType =
+  | "untranslated"
+  | "echo"
+  | "glossary"
+  | "failed"
+  // Written by the document editor, never by the qc stage.
+  | "manual";
 
 export interface QcFlag {
   chunk_id: string;

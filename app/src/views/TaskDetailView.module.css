@@ -196,6 +196,21 @@
   cursor: default;
 }
 
+.outputGroup {
+  margin-bottom: 18px;
+}
+
+.outputGroup:last-child {
+  margin-bottom: 0;
+}
+
+.outputGroupTitle {
+  margin: 0 0 4px;
+  color: var(--text-secondary);
+  font-size: var(--fs-note);
+  font-weight: 500;
+}
+
 .outputs {
   margin: 0;
   padding: 0;
@@ -203,9 +218,6 @@
 }
 
 .output {
-  display: flex;
-  align-items: center;
-  gap: 10px;
   padding: 8px 0;
   border-top: 1px solid var(--border);
 }
@@ -214,9 +226,18 @@
   border-top: none;
 }
 
+.outputRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* Capped rather than flex:1 so an inline audio player, which shares the row,
+   still gets usable width on a long filename. */
 .outputName {
-  flex: 1;
+  flex: 1 1 auto;
   min-width: 0;
+  max-width: 320px;
   font-family: var(--font-mono);
   font-size: var(--fs-note);
   overflow: hidden;
@@ -224,13 +245,17 @@
   white-space: nowrap;
 }
 
+/* Auto margin right-aligns the actions on rows without an audio player; on
+   rows with one the player's flex:1 leaves nothing for it to absorb. */
 .outputSize {
+  margin-right: auto;
   color: var(--text-secondary);
   font-size: var(--fs-meta);
   font-variant-numeric: tabular-nums;
 }
 
 .outputButton {
+  flex: none;
   padding: 5px 11px;
   border: 1px solid var(--border);
   border-radius: var(--radius-s);

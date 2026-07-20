@@ -1,8 +1,10 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { AudioTrack } from "../components/AudioTrack";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { Icon } from "../components/icons";
 import { MediaPlayer } from "../components/MediaPlayer";
+import { TextPreview } from "../components/TextPreview";
 import { ProgressBar } from "../components/ProgressBar";
 import { StatusBadge } from "../components/StatusBadge";
 import { t } from "../i18n";
@@ -11,7 +13,13 @@ import type { PreflightCheck } from "../lib/api/types";
 import { useApi, useConnection } from "../lib/connection";
 import { openArtifact, revealArtifact } from "../lib/shell";
 import { humanizeError, matchError } from "../lib/errors";
-import { exportKindOf, mediaKindOf } from "../lib/media";
+import {
+  exportKindOf,
+  isTextPreviewable,
+  mediaKindOf,
+  outputGroupOf,
+  type OutputGroup,
+} from "../lib/media";
 import { formatDateTime } from "../lib/time";
 import { useTaskLive } from "../lib/events/store";
 import { eventTypeLabel, stageListLabels, stageStatusLabel, stageTypeLabel } from "../lib/labels";
@@ -76,6 +84,16 @@ const OUTPUT_EXTENSIONS = new Set([
   ".txt", ".md", ".pdf", ".docx", ".epub", ".html",
   ".png", ".jpg", ".jpeg", ".webp",
 ]);
+
+// Outputs are listed per kind rather than as one mixed column; a task that
+// produces none of a kind simply omits that group.
+const OUTPUT_GROUP_ORDER: OutputGroup[] = ["video", "audio", "image", "document"];
+const OUTPUT_GROUP_LABELS: Record<OutputGroup, Parameters<typeof t>[0]> = {
+  video: "task.outputs.group.video",
+  audio: "task.outputs.group.audio",
+  image: "task.outputs.group.image",
+  document: "task.outputs.group.document",
+};
 
 // One-line human summary for an event's payload; the raw JSON stays in the
 // row's tooltip instead of being dumped into the timeline.
@@ -240,6 +258,9 @@ export function TaskDetailView({
       queryClient.invalidateQueries({ queryKey: ["task", project, taskId] });
     },
   });
+  // Only one text preview stays open at a time: the list is a directory, not
+  // a reading surface.
+  const [previewFile, setPreviewFile] = useState<string | null>(null);
   const [showSkipped, setShowSkipped] = useState(false);
   const [switchError, setSwitchError] = useState<string | null>(null);
   const setSwitch = useMutation({
@@ -844,7 +865,15 @@ export function TaskDetailView({
               type="button"
               className={styles.secondary}
               disabled={!hasTranslation}
-              title={hasTranslation ? undefined : t("task.editorDisabledHint")}
+              title={
+                hasTranslation
+                  ? t(
+                      isDocumentTask
+                        ? "task.textEditor.entryTitle"
+                        : "task.subtitleEditor.entryTitle",
+                    )
+                  : t("task.editorDisabledHint")
+              }
               onClick={() => onOpenEditor(editorKind)}
             >
               {editorLabel}
@@ -855,6 +884,7 @@ export function TaskDetailView({
               type="button"
               className={styles.secondary}
               disabled={!hasSpeakers}
+              title={t("task.speakerReview.entryTitle")}
               onClick={() => onOpenEditor("speakers")}
             >
               {t("task.speakerReview")}
@@ -865,7 +895,11 @@ export function TaskDetailView({
               type="button"
               className={styles.secondary}
               disabled={!transcriptReady}
-              title={transcriptReady ? undefined : t("task.dub.studio.disabledHint")}
+              title={
+                transcriptReady
+                  ? t("task.dub.studio.entryTitle")
+                  : t("task.dub.studio.disabledHint")
+              }
               onClick={onOpenDub}
             >
               {t("task.dub.studio.entry")}
@@ -875,6 +909,7 @@ export function TaskDetailView({
             <button
               type="button"
               className={styles.secondary}
+              title={t("task.export.studio.entryTitle")}
               onClick={onOpenExport}
             >
               {t("task.export.studio.entry")}
@@ -884,6 +919,7 @@ export function TaskDetailView({
             <button
               type="button"
               className={styles.secondary}
+              title={t("task.glossary.entryTitle")}
               onClick={onOpenGlossary}
             >
               {t("task.glossary")}
@@ -893,6 +929,7 @@ export function TaskDetailView({
             <button
               type="button"
               className={styles.secondary}
+              title={t("task.translation.entryTitle")}
               onClick={onOpenTranslation}
             >
               {t("task.translation")}
@@ -1081,28 +1118,55 @@ export function TaskDetailView({
       {outputs.length > 0 && (
         <section className={styles.section}>
           <h2 className={styles.sectionTitle}>{t("task.outputs")}</h2>
-          <ul className={styles.outputs}>
-            {outputs.map((item) => (
-              <li key={item.file} className={styles.output}>
-                <span className={styles.outputName}>{item.file}</span>
-                <span className={styles.outputSize}>{formatSize(item.size)}</span>
-                <button
-                  type="button"
-                  className={styles.outputButton}
-                  onClick={() => void openArtifact(artifactPath(item.file))}
-                >
-                  {t("task.outputs.open")}
-                </button>
-                <button
-                  type="button"
-                  className={styles.outputButton}
-                  onClick={() => void revealArtifact(artifactPath(item.file))}
-                >
-                  {t("task.outputs.reveal")}
-                </button>
-              </li>
-            ))}
-          </ul>
+          {OUTPUT_GROUP_ORDER.map((group) => {
+            const items = outputs.filter((item) => outputGroupOf(item.file) === group);
+            if (items.length === 0) return null;
+            return (
+              <div key={group} className={styles.outputGroup}>
+                <h3 className={styles.outputGroupTitle}>
+                  {t(OUTPUT_GROUP_LABELS[group])}
+                </h3>
+                <ul className={styles.outputs}>
+                  {items.map((item) => {
+                    const previewable = isTextPreviewable(item.file);
+                    const open = previewFile === item.file;
+                    return (
+                      <li key={item.file} className={styles.output}>
+                        <div className={styles.outputRow}>
+                          <span className={styles.outputName}>{item.file}</span>
+                          <span className={styles.outputSize}>{formatSize(item.size)}</span>
+                          {/* Audio plays in place, so it has nothing to "open". */}
+                          {group === "audio" ? (
+                            <AudioTrack path={artifactPath(item.file)} />
+                          ) : (
+                            <button
+                              type="button"
+                              className={styles.outputButton}
+                              onClick={() =>
+                                previewable
+                                  ? setPreviewFile(open ? null : item.file)
+                                  : void openArtifact(artifactPath(item.file))
+                              }
+                            >
+                              {open ? t("task.outputs.close") : t("task.outputs.open")}
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            className={styles.outputButton}
+                            onClick={() => void revealArtifact(artifactPath(item.file))}
+                          >
+                            {t("task.outputs.reveal")}
+                          </button>
+                        </div>
+                        {open && <TextPreview path={artifactPath(item.file)} />}
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            );
+          })}
         </section>
       )}
 

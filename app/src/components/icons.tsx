@@ -22,6 +22,8 @@ export type IconName =
   | "chevron-down"
   | "paperclip"
   | "expand"
+  | "play"
+  | "pause"
   | "search";
 
 const GLYPHS: Record<IconName, ReactNode> = {
@@ -127,6 +129,9 @@ const GLYPHS: Record<IconName, ReactNode> = {
       <path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z" />
     </>
   ),
+  // Filled: at 14px a stroked triangle reads as a smudge.
+  play: <path d="M7 4.5v15l12-7.5z" fill="currentColor" />,
+  pause: <path d="M8.5 4.5v15M15.5 4.5v15" strokeWidth={2.6} />,
 };
 
 export function Icon({ name, size = 16 }: { name: IconName; size?: number }) {

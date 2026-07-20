@@ -226,6 +226,26 @@
   color: var(--text-secondary);
 }
 
+/* Same box as the translation editor, one size down: a note is an aside,
+   not the row's content. */
+.note {
+  width: 100%;
+  min-height: 40px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-s);
+  background: var(--bg-app);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: var(--fs-note);
+  resize: vertical;
+}
+
+.note:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
 .flagBadge {
   display: inline-block;
   background: var(--warn-soft);
