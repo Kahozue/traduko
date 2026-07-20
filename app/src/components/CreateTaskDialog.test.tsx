@@ -82,8 +82,8 @@ test("choosing the document type switches to its single profile", async () => {
   };
   renderWithConnection(<CreateTaskDialog onClose={() => {}} onCreated={() => {}} />, { api });
 
-  await waitFor(() => expect(screen.getByRole("button", { name: /文檔/ })).toBeInTheDocument());
-  await userEvent.click(screen.getByRole("button", { name: /文檔/ }));
+  await waitFor(() => expect(screen.getByRole("button", { name: /文件/ })).toBeInTheDocument());
+  await userEvent.click(screen.getByRole("button", { name: /文件/ }));
   await userEvent.click(screen.getByText("選擇檔案"));
   await waitFor(() => expect(screen.getByDisplayValue("/tmp/novel.md")).toBeInTheDocument());
   await userEvent.click(screen.getByText("建立"));
@@ -120,7 +120,7 @@ test("file picker filter name follows the task type", async () => {
     ),
   );
 
-  await userEvent.click(screen.getByRole("button", { name: /文檔/ }));
+  await userEvent.click(screen.getByRole("button", { name: /文件/ }));
   await userEvent.click(screen.getByText("選擇檔案"));
   await waitFor(() =>
     expect(openMock).toHaveBeenLastCalledWith(

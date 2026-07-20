@@ -22,7 +22,7 @@ from ..fsutil import atomic_write_text
 from ..glossary import GlossaryEntry, format_for_prompt, relevant_entries
 from ..llm import ChatMessage, ChatRequest, LLMProvider
 from ..prompts import render
-from ..translate import TranslationError, TranslationPaused
+from ..translate import TranslationCanceled, TranslationError, TranslationPaused
 from .model import Block, ChunksDoc, DocTranslationDoc, DocumentDoc, TranslatedBlock, TranslatedChunk
 
 _ARRAY_RE = re.compile(r"\[.*\]", re.DOTALL)
@@ -234,6 +234,7 @@ def translate_document_chunks(
     summary_path: Path,
     emit_progress: Callable[[int, int], None],
     should_pause: Callable[[], bool] | None = None,
+    should_cancel: Callable[[], bool] | None = None,
     retry_ids: set[str] | None = None,
     prior: DocTranslationDoc | None = None,
 ) -> DocTranslationDoc:
@@ -275,6 +276,9 @@ def translate_document_chunks(
             completed += 1
             emit_progress(completed, total)
             continue
+        # Cancel wins over pause: a user who hit both wants it stopped.
+        if should_cancel is not None and should_cancel():
+            raise TranslationCanceled("manual cancel requested")
         if should_pause is not None and should_pause():
             raise TranslationPaused("manual pause requested")
 

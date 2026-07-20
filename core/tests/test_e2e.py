@@ -39,6 +39,11 @@ def test_subtitle_pipeline_end_to_end(tmp_path: Path) -> None:
     assert created.exit_code == 0, created.output
     task_id = created.output.strip().splitlines()[-1]
 
+    # Video-domain translation is opt-in, so a pipeline exercising the
+    # translate stages has to ask for them.
+    switched = runner.invoke(app, ["task", "switches", task_id, "--translate"], env=env)
+    assert switched.exit_code == 0, switched.output
+
     ran = runner.invoke(app, ["task", "run", task_id], env=env)
     assert ran.exit_code == 0, ran.output
     assert "completed" in ran.output
@@ -113,6 +118,9 @@ def test_av_pipeline_with_hardburn(tmp_path: Path) -> None:
     assert created.exit_code == 0, created.output
     task_id = created.output.strip().splitlines()[-1]
 
+    switched = runner.invoke(app, ["task", "switches", task_id, "--translate"], env=env)
+    assert switched.exit_code == 0, switched.output
+
     ran = runner.invoke(app, ["task", "run", task_id], env=env)
     assert ran.exit_code == 0, ran.output
     assert "completed" in ran.output
@@ -182,6 +190,9 @@ def test_subtitle_pipeline_with_agent_proofread(tmp_path: Path) -> None:
     )
     assert created.exit_code == 0, created.output
     task_id = created.output.strip().splitlines()[-1]
+
+    switched = runner.invoke(app, ["task", "switches", task_id, "--translate"], env=env)
+    assert switched.exit_code == 0, switched.output
 
     ran = runner.invoke(app, ["task", "run", task_id], env=env)
     assert ran.exit_code == 0, ran.output

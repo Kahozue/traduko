@@ -135,8 +135,15 @@ def apply_voice_mode_override(
 # Pipeline switches: which stage types each switch governs. The dub set names
 # both domain tails (mux for video, export_audio for audio); a task only ever
 # contains one of them, so matching by type needs no domain split.
+#
+# export_subtitles deliberately sits outside the translate switch. It exports
+# whatever transcript the pipeline holds, translated or not, so leaving it in
+# would make "translation off" mean "no output at all" -- an av-default task
+# would run ASR and then throw the result away. Outside the switch, the same
+# task still lands a source-language subtitle file. export_transcript is out
+# for the same reason.
 SWITCH_STAGE_TYPES: dict[str, frozenset[str]] = {
-    "translate": frozenset({"translate", "proofread", "export_subtitles"}),
+    "translate": frozenset({"translate", "proofread", "translate_chunks", "qc_scan"}),
     "diarize": frozenset({"diarize"}),
     "dub": frozenset(
         {"tts_synthesize", "align_duration", "mix_audio", "mux", "export_audio"}
@@ -144,12 +151,20 @@ SWITCH_STAGE_TYPES: dict[str, frozenset[str]] = {
 }
 
 _AUDIO_DOMAIN_STAGES = frozenset({"export_transcript", "export_audio"})
+_DOCUMENT_DOMAIN_STAGES = frozenset(
+    {"ingest_document", "chunk", "translate_chunks", "export_document"}
+)
 
 
 def task_domain(record: TaskRecord) -> str:
     """Best-effort domain from the stage list, mirroring profile_kind: the
-    record does not persist a kind, and switches only need audio vs video."""
+    record does not persist a kind, so the switch code infers it. A dubbed
+    document grows an export_audio tail, so the document markers are checked
+    first -- otherwise turning dubbing on would reclassify the task as audio
+    and the next switch change would build the wrong dub group."""
     types = {stage.type for stage in record.stages}
+    if types & _DOCUMENT_DOMAIN_STAGES:
+        return "document"
     return "audio" if types & _AUDIO_DOMAIN_STAGES else "video"
 
 
@@ -195,24 +210,36 @@ def initial_switches_for_new_task(
     with nothing switchable keeps switches=None."""
     domain = task_domain(record)
     types = {stage.type for stage in record.stages}
+    defaults = {
+        "audio": (
+            config.audio.translate_enabled,
+            config.audio.diarize_enabled,
+            config.audio.dub_enabled,
+        ),
+        "video": (
+            config.dubbing.translate_enabled,
+            config.dubbing.diarize_enabled,
+            config.dubbing.dub_enabled,
+        ),
+        "document": (
+            config.document.translate_enabled,
+            None,
+            config.document.dub_enabled,
+        ),
+    }.get(domain)
+    if defaults is None:
+        return None
+    translate_default, diarize_default, dub_default = defaults
     switches = TaskSwitches()
-    if domain == "audio":
-        if types & SWITCH_STAGE_TYPES["translate"]:
-            switches.translate = config.audio.translate_enabled
-        if types & SWITCH_STAGE_TYPES["diarize"]:
-            switches.diarize = config.audio.diarize_enabled
-        if types & SWITCH_STAGE_TYPES["dub"]:
-            # A compose task is nothing but its dub group, so the audio
-            # domain's "dubbing off by default" would skip away the whole
-            # point of it. The switch stays visible, just on.
-            switches.dub = (
-                True
-                if "ingest_transcript" in types
-                else config.audio.dub_enabled
-            )
-    elif domain == "video":
-        if types & SWITCH_STAGE_TYPES["diarize"]:
-            switches.diarize = config.dubbing.diarize_enabled
+    if types & SWITCH_STAGE_TYPES["translate"]:
+        switches.translate = translate_default
+    if diarize_default is not None and types & SWITCH_STAGE_TYPES["diarize"]:
+        switches.diarize = diarize_default
+    if types & SWITCH_STAGE_TYPES["dub"]:
+        # A compose task is nothing but its dub group, so "dubbing off by
+        # default" would skip away the whole point of it. The switch stays
+        # visible, just on.
+        switches.dub = True if "ingest_transcript" in types else dub_default
     if switches == TaskSwitches():
         return None
     return switches
@@ -247,8 +274,10 @@ def apply_translation_defaults(
             stage.params["target_language"] = defaults.target_language
 
 
-# Tail stage closing the appended dub group, per domain.
-DUB_GROUP_TAIL = {"video": "mux", "audio": "export_audio"}
+# Tail stage closing the appended dub group, per domain. A dubbed document
+# has no video to mux into and no recording to mix under, so it ends the same
+# way an audio task does: a rendered audio file.
+DUB_GROUP_TAIL = {"video": "mux", "audio": "export_audio", "document": "export_audio"}
 
 # Every stage type that belongs to a dub group (diarize through the domain
 # tail). Used by the dub-studio params API and the redub reset range.
@@ -289,14 +318,27 @@ def dub_group_tail_for(record: TaskRecord, domain: str) -> str:
 
 def append_dub_stages(record: TaskRecord, domain: str) -> list[StageRecord]:
     """Append the full dub group to a task that has none, mirroring the
-    seeded dub profiles (diarize pauses for speaker review)."""
-    added = [
-        StageRecord(type="diarize", pause_after=True),
-        StageRecord(type="tts_synthesize"),
-        StageRecord(type="align_duration"),
-        StageRecord(type="mix_audio"),
-        StageRecord(type=dub_group_tail_for(record, domain)),
-    ]
+    seeded dub profiles (diarize pauses for speaker review).
+
+    A document has no recording behind it: there are no voices to separate
+    and no bed to mix the dub under, so its group is synthesis, layout and
+    render. align_duration finds no timecodes on document segments and lays
+    the clips end to end, which is what reading a document aloud means.
+    """
+    if domain == "document":
+        added = [
+            StageRecord(type="tts_synthesize", params={"voice_mode": "design"}),
+            StageRecord(type="align_duration", params={"voice_mode": "design"}),
+            StageRecord(type="export_audio"),
+        ]
+    else:
+        added = [
+            StageRecord(type="diarize", pause_after=True),
+            StageRecord(type="tts_synthesize"),
+            StageRecord(type="align_duration"),
+            StageRecord(type="mix_audio"),
+            StageRecord(type=dub_group_tail_for(record, domain)),
+        ]
     record.stages.extend(added)
     return added
 
@@ -368,6 +410,12 @@ def dub_enable_error(ws: "Workspace", record: TaskRecord) -> str | None:
     from .artifacts import ArtifactStore
     from .asr.engines import engine_timestamps, resolve_engine
 
+    # The condition exists so synthesis has original timings to fit the dub
+    # to. A document never had any, and its group lays the clips end to end
+    # instead of fitting them, so the requirement does not apply.
+    if task_domain(record) == "document":
+        return None
+
     artifacts = ArtifactStore(ws.store.task_dir(record.project, record.id))
     for name in ("segments.json", "translation.json"):
         try:
@@ -410,8 +458,10 @@ def validate_switches_change(
     applied = {name: value for name, value in changed.items() if value is not None}
     if not applied:
         raise TaskActionError("translate, diarize or dub required")
-    if "translate" in applied and task_domain(record) != "audio":
-        raise TaskActionError("translate switch is audio-domain only")
+    if "translate" in applied and not any(
+        stage.type in SWITCH_STAGE_TYPES["translate"] for stage in record.stages
+    ):
+        raise TaskActionError("task has no translate stage to switch")
     return applied
 
 
@@ -974,10 +1024,17 @@ class TaskStore:
         Only a COMPLETED task can be rerun; a completed run is finished, so
         this is not a resume. Every stage goes back to PENDING with its error
         cleared and the task returns to PENDING. Products stay on disk: the
-        executor overwrites each artifact as its stage re-completes."""
+        executor overwrites each artifact as its stage re-completes.
+
+        A SKIPPED stage stays skipped. Rerunning means running the pipeline
+        the user configured, and a stage is only skipped because a switch
+        turned it off; resetting it to PENDING would quietly re-enable
+        dubbing or speaker separation on the next run."""
         if record.status != TaskStatus.COMPLETED:
             raise ValueError(f"cannot rerun task in status {record.status.value}")
         for stage in record.stages:
+            if stage.status == StageStatus.SKIPPED:
+                continue
             stage.status = StageStatus.PENDING
             stage.error = None
         record.status = TaskStatus.PENDING

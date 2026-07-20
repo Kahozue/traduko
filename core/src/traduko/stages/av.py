@@ -38,14 +38,26 @@ from ..subtitles import (
     serialize_vtt,
 )
 from ..translate import (
+    TranslationCanceled,
     TranslationError,
     TranslationPaused,
     TranslationSettings,
     translate_segments,
 )
 from . import registry
-from .base import PauseRequested, StageContext, StageError, StageResult
-from .common import resolve_llm, translate_template_for, translation_prompt_error
+from .base import (
+    CancelRequested,
+    PauseRequested,
+    StageContext,
+    StageError,
+    StageResult,
+)
+from .common import (
+    read_transcript_chain,
+    resolve_llm,
+    translate_template_for,
+    translation_prompt_error,
+)
 
 
 @registry.register
@@ -270,12 +282,16 @@ class AsrStage:
                         break
                 if glossary_terms:
                     transcribe_options["glossary_terms"] = glossary_terms
+            # Transcribing a long recording is one opaque call, so the
+            # progress callback is the only place a stop can land.
+            def on_progress(current: float, total: float) -> None:
+                ctx.emit_progress(round(current), round(total))
+                ctx.checkpoint()
+
             result = provider.transcribe(
                 audio_path,
                 language=language,
-                on_progress=lambda current, total: ctx.emit_progress(
-                    round(current), round(total)
-                ),
+                on_progress=on_progress,
                 **transcribe_options,
             )
         except AsrError as error:
@@ -382,9 +398,12 @@ class TranslateStage:
                 partial_path=partial_path,
                 emit_progress=ctx.emit_progress,
                 should_pause=ctx.should_pause,
+                should_cancel=ctx.should_cancel,
             )
         except BudgetExceededError as error:
             raise PauseRequested(str(error)) from error
+        except TranslationCanceled as error:
+            raise CancelRequested(str(error)) from error
         except TranslationPaused as error:
             raise PauseRequested(str(error)) from error
         except PromptError as error:
@@ -422,11 +441,15 @@ def _style_from(ctx: StageContext) -> SubtitleStyle:
 def _cues_from_translation(data: dict, bilingual: bool) -> list[Cue]:
     cues: list[Cue] = []
     for seg in data["segments"]:
-        text = (
-            compose_bilingual(seg["target"], seg["source"])
-            if bilingual
-            else seg["target"]
-        )
+        source = seg.get("source", "")
+        target = seg.get("target")
+        # No target means translation is switched off and this is a
+        # source-language export: bilingual has nothing to pair, so both
+        # modes emit the source line.
+        if target is None:
+            text = source
+        else:
+            text = compose_bilingual(target, source) if bilingual else target
         cues.append(Cue(id=seg["id"], start=seg["start"], end=seg["end"], text=text))
     return cues
 
@@ -444,10 +467,16 @@ class ExportSubtitlesStage:
     type = "export_subtitles"
 
     def run(self, ctx: StageContext) -> StageResult:
-        try:
-            data = ctx.artifacts.read_latest_json("translation.json")
-        except FileNotFoundError as error:
-            raise StageError("export stage requires a translation artifact") from error
+        # Exporting is not part of the translate switch: with translation off
+        # the task still owes the user a subtitle file, in the source
+        # language. The chain mirrors the dub stages' _read_dub_text.
+        data = read_transcript_chain(
+            ctx, ["translation.json", "segments.json", "asr.json"]
+        )
+        if data is None:
+            raise StageError(
+                "export stage requires a translation, segments or asr artifact"
+            )
         formats = ctx.params.get("formats", ["srt"])
         cues = _cues_from_translation(data, ctx.params.get("bilingual", False))
         names: list[str] = []

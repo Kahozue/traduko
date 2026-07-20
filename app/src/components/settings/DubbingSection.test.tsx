@@ -15,7 +15,7 @@ const notInstalled = {
   installed_mb: 0,
 };
 
-const dubbing = { hf_token: "", python: "", inference_timesteps: null, cfg_value: null, seed: null, denoise: false, diarize_enabled: true };
+const dubbing = { hf_token: "", python: "", inference_timesteps: null, cfg_value: null, seed: null, denoise: false, diarize_enabled: false, dub_enabled: false, translate_enabled: false };
 
 test("shows python and engine status, install enabled when missing", async () => {
   const api: Partial<ApiClient> = {

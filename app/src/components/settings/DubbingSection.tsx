@@ -12,17 +12,15 @@ function numberOrNull(raw: string): number | null {
   return Number.isFinite(value) ? value : null;
 }
 
+// The dubbing engine is shared by the video and audio tabs, which both
+// render this section. Nothing in it is domain-specific any more: the
+// per-domain pipeline defaults moved to PipelineDefaultsSection.
 export function DubbingSection({
   dubbing,
   onChange,
-  domain = "video",
 }: {
   dubbing: DubbingConfigDoc;
   onChange: (value: DubbingConfigDoc) => void;
-  // The diarize pipeline default is a video-domain setting; the audio tab
-  // reuses this section for the shared engine assets but carries its own
-  // default in the pipeline defaults block.
-  domain?: "video" | "audio";
 }) {
   const api = useApi();
   const [reveal, setReveal] = useState(false);
@@ -218,21 +216,11 @@ export function DubbingSection({
         <summary className={styles.disclosureSummary}>
           {t("settings.dubbing.diarizeSection")}
         </summary>
-        {domain === "video" && (
-          <SettingRow
-            label={t("settings.dubbing.diarizeDefault")}
-            description={t("settings.dubbing.diarizeDefault.desc")}
-          >
-            <input
-              type="checkbox"
-              aria-label={t("settings.dubbing.diarizeDefault")}
-              checked={dubbing.diarize_enabled}
-              onChange={(event) =>
-                onChange({ ...dubbing, diarize_enabled: event.target.checked })
-              }
-            />
-          </SettingRow>
-        )}
+        {/* The "run diarization by default" switch used to live here, which
+           put one domain's pipeline default inside a shared engine section.
+           It is a pipeline default like the others, so it sits with them in
+           PipelineDefaultsSection; what stays here is the engine's own
+           setup (the token that unlocks the model). */}
         <SettingRow
           label={t("settings.dubbing.hfToken")}
           htmlFor="dubbing-hf-token"

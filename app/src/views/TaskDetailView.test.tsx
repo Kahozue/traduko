@@ -55,7 +55,10 @@ test("renders stages and metadata", async () => {
   });
   await waitFor(() => expect(screen.getAllByText("t1").length).toBeGreaterThan(0));
   expect(screen.getByText("讀入字幕")).toBeInTheDocument();
-  expect(screen.getByText("翻譯")).toBeInTheDocument();
+  // "翻譯" now names both a stage and the switch chip governing it, so the
+  // stage assertion has to say which one it means.
+  const stageList = screen.getByRole("list", { name: "階段" });
+  expect(within(stageList).getByText("翻譯")).toBeInTheDocument();
   expect(screen.queryByText("/tmp/in.srt")).not.toBeInTheDocument();
   await userEvent.click(screen.getByRole("button", { name: "詳細資訊" }));
   expect(screen.getByText("/tmp/in.srt")).toBeInTheDocument();
@@ -741,6 +744,58 @@ test("audio task renders its applicable pipeline switches", async () => {
   expect(within(group).getByRole("button", { name: /說話人分離/ })).toBeInTheDocument();
 });
 
+test("a video task renders the translate and dub switches too", async () => {
+  // The switches used to be audio-only, so a video task could not turn
+  // translation off and dubbing had no switch at all.
+  renderTask({
+    ...task,
+    profile: "av-default",
+    input_path: "/tmp/in.mp4",
+    stages: [
+      stageOf("extract_audio"),
+      stageOf("asr"),
+      stageOf("segment"),
+      stageOf("translate"),
+      stageOf("proofread"),
+      stageOf("export_subtitles"),
+    ],
+    switches: { translate: false, diarize: false, dub: false },
+  });
+  const group = await screen.findByRole("group", { name: "管線開關" });
+  for (const name of ["翻譯", "說話人分離", "配音"]) {
+    expect(
+      within(group).getByRole("button", { name: new RegExp(name) }),
+    ).toHaveAttribute("aria-pressed", "false");
+  }
+});
+
+test("a document task renders translate and dub switches", async () => {
+  renderTask({
+    ...task,
+    profile: "novel-translate",
+    input_path: "/tmp/book.md",
+    stages: [
+      stageOf("ingest_document"),
+      stageOf("chunk"),
+      stageOf("translate_chunks"),
+      stageOf("qc_scan"),
+      stageOf("export_document"),
+    ],
+    switches: { translate: true, diarize: null, dub: null },
+  });
+  const group = await screen.findByRole("group", { name: "管線開關" });
+  expect(within(group).getByRole("button", { name: /翻譯/ })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  expect(within(group).getByRole("button", { name: /配音/ })).toHaveAttribute(
+    "aria-pressed",
+    "false",
+  );
+  // A document has no recording, so no speakers to separate.
+  expect(within(group).queryByRole("button", { name: /說話人分離/ })).toBeNull();
+});
+
 test("an stt-only task can turn on speaker separation", async () => {
   const sttTask: TaskRecord = {
     ...task,
@@ -889,6 +944,85 @@ test("dub button enables and opens the studio once asr artifact exists", async (
   await waitFor(() => expect(btn).toBeEnabled());
   await userEvent.click(btn);
   expect(onOpenDub).toHaveBeenCalled();
+});
+
+test("a document task offers translation settings and the dubbing studio", async () => {
+  // The dubbing studio entry keyed off a diarize stage, which a dubbed
+  // document does not have; the translation settings entry never appeared
+  // because the stale seeded profile had no translate_chunks stage.
+  const documentTask: TaskRecord = {
+    ...task,
+    profile: "novel-translate",
+    input_path: "/tmp/book.md",
+    stages: [
+      stageOf("ingest_document", "completed"),
+      stageOf("chunk", "completed"),
+      stageOf("translate_chunks", "completed"),
+      stageOf("qc_scan", "completed"),
+      stageOf("export_document", "completed"),
+      stageOf("tts_synthesize"),
+      stageOf("align_duration"),
+      stageOf("export_audio"),
+    ],
+    switches: { translate: true, diarize: null, dub: true },
+  };
+  const onOpenDub = vi.fn();
+  const onOpenTranslation = vi.fn();
+  const api: Partial<ApiClient> = {
+    showTask: vi.fn().mockResolvedValue(documentTask),
+    listArtifacts: vi.fn().mockResolvedValue([
+      { file: "03-translation.json", index: 3, name: "translation.json", schema_version: 1, size: 1024, mtime: 1 },
+    ]),
+  };
+  renderWithConnection(
+    <TaskDetailView
+      project="default"
+      taskId="t1"
+      onBack={() => {}}
+      onOpenEditor={() => {}}
+      onOpenDub={onOpenDub}
+      onOpenTranslation={onOpenTranslation}
+    />,
+    { api },
+  );
+
+  const dub = await screen.findByRole("button", { name: /配音工作室/ });
+  await waitFor(() => expect(dub).toBeEnabled());
+  await userEvent.click(dub);
+  expect(onOpenDub).toHaveBeenCalled();
+
+  await userEvent.click(screen.getByRole("button", { name: /翻譯設定/ }));
+  expect(onOpenTranslation).toHaveBeenCalled();
+});
+
+test("the text editor explains itself when translation is switched off", async () => {
+  const offTask: TaskRecord = {
+    ...task,
+    profile: "novel-translate",
+    input_path: "/tmp/book.md",
+    stages: [
+      stageOf("ingest_document", "completed"),
+      stageOf("chunk", "completed"),
+      stageOf("translate_chunks", "skipped"),
+      stageOf("qc_scan", "skipped"),
+      stageOf("export_document", "completed"),
+    ],
+    switches: { translate: false, diarize: null, dub: null },
+  };
+  const api: Partial<ApiClient> = {
+    showTask: vi.fn().mockResolvedValue(offTask),
+    listArtifacts: vi.fn().mockResolvedValue([]),
+  };
+  renderWithConnection(
+    <TaskDetailView project="default" taskId="t1" onBack={() => {}} onOpenEditor={() => {}} />,
+    { api },
+  );
+
+  const editor = await screen.findByRole("button", { name: /文本編輯器/ });
+  expect(editor).toBeDisabled();
+  // "run the task first" would be wrong advice: no run produces a
+  // translation while the switch is off.
+  expect(editor.getAttribute("title")).toMatch(/翻譯開關已關閉/);
 });
 
 test("the export studio entry appears for media tasks and opens the studio", async () => {

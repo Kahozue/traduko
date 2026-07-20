@@ -324,18 +324,27 @@ def test_asr_config_defaults_and_roundtrip(tmp_path):
 
 def test_pipeline_default_switches_defaults_and_roundtrip(tmp_path: Path) -> None:
     config = load_config(tmp_path)
-    assert config.dubbing.diarize_enabled is True
-    assert config.audio.diarize_enabled is True
+    # Speaker separation and dubbing are opt-in in every domain; translation
+    # is on where it is the point of the pipeline (audio, document) and off
+    # for video, whose export stage lands source subtitles regardless.
+    assert config.dubbing.diarize_enabled is False
+    assert config.dubbing.dub_enabled is False
+    assert config.dubbing.translate_enabled is False
+    assert config.audio.diarize_enabled is False
     assert config.audio.dub_enabled is False
     assert config.audio.translate_enabled is True
+    assert config.document.dub_enabled is False
+    assert config.document.translate_enabled is True
     config.audio.dub_enabled = True
     config.audio.translate_enabled = False
-    config.dubbing.diarize_enabled = False
+    config.dubbing.diarize_enabled = True
+    config.document.dub_enabled = True
     save_config(tmp_path, config)
     loaded = load_config(tmp_path)
     assert loaded.audio.dub_enabled is True
     assert loaded.audio.translate_enabled is False
-    assert loaded.dubbing.diarize_enabled is False
+    assert loaded.dubbing.diarize_enabled is True
+    assert loaded.document.dub_enabled is True
 
 
 def test_translation_defaults_four_domains_and_roundtrip(tmp_path: Path) -> None:

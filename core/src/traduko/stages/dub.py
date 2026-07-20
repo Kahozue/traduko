@@ -39,6 +39,7 @@ from ..media import run as run_media
 from ..tasks import VOICE_MODES
 from . import registry
 from .base import StageContext, StageError, StageResult
+from .common import read_transcript_chain
 
 
 def _make_client(data_root: Path, config: CoreConfig) -> DubbingEngineClient:
@@ -96,29 +97,6 @@ def _dub_text_mode(params: dict) -> str:
     return mode
 
 
-def _normalize_segments_doc(data: dict) -> dict:
-    """Common shape for translation/segments/asr docs: the text of an
-    untranslated doc lands in source, a translation adds target."""
-    segments = []
-    for seg in data["segments"]:
-        norm = {
-            "id": seg["id"],
-            "start": seg.get("start", 0.0),
-            "end": seg.get("end", 0.0),
-            "source": seg.get("source", seg.get("text", "")),
-        }
-        if "target" in seg:
-            norm["target"] = seg["target"]
-        if "speaker" in seg:
-            norm["speaker"] = seg["speaker"]
-        segments.append(norm)
-    return {
-        "language": data.get("language") or data.get("source_language"),
-        "target_language": data.get("target_language"),
-        "segments": segments,
-    }
-
-
 def _read_dub_text(ctx: StageContext) -> dict:
     """Segments a dub stage works on, resolved through the fallback chain
     translation.json -> segments.json -> asr.json as dub_text allows."""
@@ -128,11 +106,9 @@ def _read_dub_text(ctx: StageContext) -> dict:
         names = ["translation.json"]
     elif mode == "auto":
         names = ["translation.json", *names]
-    for name in names:
-        try:
-            return _normalize_segments_doc(ctx.artifacts.read_latest_json(name))
-        except FileNotFoundError:
-            continue
+    doc = read_transcript_chain(ctx, names)
+    if doc is not None:
+        return doc
     if mode == "translation":
         raise StageError("dub_text=translation requires a translation artifact")
     raise StageError("dub stages require a translation, segments or asr artifact")
@@ -419,6 +395,11 @@ class TtsSynthesizeStage:
         last_error = ""
         try:
             for n, seg in enumerate(segments):
+                # Between segments the manifest on disk is complete and the
+                # resume scan above picks the run back up here, so this is
+                # the safe place to stop. Synthesis is the longest stage in
+                # the product; without this a cancel waits it out.
+                ctx.checkpoint()
                 previous = done.get(seg["id"])
                 if previous is not None:
                     entries.append(DubSegment.model_validate(previous))
@@ -554,6 +535,11 @@ class AlignDurationStage:
         total = len(manifest["segments"])
         try:
             for n, entry in enumerate(manifest["segments"]):
+                # Fitting re-synthesizes the clips that overrun their window,
+                # so this loop is as slow as synthesis itself. The timeline is
+                # only written once the loop finishes, so stopping here leaves
+                # no partial artifact and the stage simply reruns.
+                ctx.checkpoint()
                 seg = seg_by_id.get(entry["id"])
                 if sequential:
                     # No window to fit into: each clip keeps its natural

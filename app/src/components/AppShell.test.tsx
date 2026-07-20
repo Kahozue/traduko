@@ -27,7 +27,7 @@ test("task-kind sub-items select a kind and navigate to tasks", async () => {
     </AppShell>,
     { api: {} },
   );
-  await userEvent.click(screen.getByRole("button", { name: /文檔/ }));
+  await userEvent.click(screen.getByRole("button", { name: /文件/ }));
   expect(onSelectKind).toHaveBeenCalledWith("document");
   expect(onNavigate).toHaveBeenCalledWith("tasks");
 });

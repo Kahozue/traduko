@@ -1,10 +1,45 @@
-"""Helpers shared by LLM-driven stages."""
+"""Helpers shared by LLM-driven stages, plus the transcript fallback the
+export and dub stages both read through."""
 from __future__ import annotations
 
 from ..config import CoreConfig, resolve_provider_name
 from ..llm import LLMError, LLMProvider, create_llm
 from ..prompts import PromptError, load_template
-from .base import StageError
+from .base import StageContext, StageError
+
+
+def normalize_segments_doc(data: dict) -> dict:
+    """Common shape for translation/segments/asr docs: the text of an
+    untranslated doc lands in source, a translation adds target."""
+    segments = []
+    for seg in data["segments"]:
+        norm = {
+            "id": seg["id"],
+            "start": seg.get("start", 0.0),
+            "end": seg.get("end", 0.0),
+            "source": seg.get("source", seg.get("text", "")),
+        }
+        if "target" in seg:
+            norm["target"] = seg["target"]
+        if "speaker" in seg:
+            norm["speaker"] = seg["speaker"]
+        segments.append(norm)
+    return {
+        "language": data.get("language") or data.get("source_language"),
+        "target_language": data.get("target_language"),
+        "segments": segments,
+    }
+
+
+def read_transcript_chain(ctx: StageContext, names: list[str]) -> dict | None:
+    """First readable artifact in `names`, normalized. None when the task has
+    produced none of them yet."""
+    for name in names:
+        try:
+            return normalize_segments_doc(ctx.artifacts.read_latest_json(name))
+        except FileNotFoundError:
+            continue
+    return None
 
 
 def resolve_llm(params: dict, config: CoreConfig) -> tuple[LLMProvider, str]:

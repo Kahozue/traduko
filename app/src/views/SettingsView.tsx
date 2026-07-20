@@ -102,6 +102,9 @@ function normalize(config: CoreConfigDoc): CoreConfigDoc {
     if (server.confirmed === undefined) server.confirmed = server.enabled;
   }
   if (!next.skills) next.skills = {};
+  // Pipeline-switch defaults mirror the core's config models: speaker
+  // separation and dubbing are opt-in everywhere, and so is video
+  // translation (its export stage lands source subtitles regardless).
   if (!next.dubbing) {
     next.dubbing = {
       hf_token: "",
@@ -110,7 +113,9 @@ function normalize(config: CoreConfigDoc): CoreConfigDoc {
       cfg_value: null,
       seed: null,
       denoise: false,
-      diarize_enabled: true,
+      diarize_enabled: false,
+      dub_enabled: false,
+      translate_enabled: false,
     };
   }
   if (next.dubbing.inference_timesteps === undefined)
@@ -118,9 +123,20 @@ function normalize(config: CoreConfigDoc): CoreConfigDoc {
   if (next.dubbing.cfg_value === undefined) next.dubbing.cfg_value = null;
   if (next.dubbing.seed === undefined) next.dubbing.seed = null;
   if (next.dubbing.denoise === undefined) next.dubbing.denoise = false;
-  if (next.dubbing.diarize_enabled === undefined) next.dubbing.diarize_enabled = true;
+  if (next.dubbing.diarize_enabled === undefined) next.dubbing.diarize_enabled = false;
+  if (next.dubbing.dub_enabled === undefined) next.dubbing.dub_enabled = false;
+  if (next.dubbing.translate_enabled === undefined)
+    next.dubbing.translate_enabled = false;
   if (!next.audio) {
-    next.audio = { diarize_enabled: true, dub_enabled: false, translate_enabled: true };
+    next.audio = {
+      diarize_enabled: false,
+      dub_enabled: false,
+      translate_enabled: true,
+    };
+  }
+  if (next.audio.diarize_enabled === undefined) next.audio.diarize_enabled = false;
+  if (!next.document) {
+    next.document = { translate_enabled: true, dub_enabled: false };
   }
   if (!next.pdf) next.pdf = { python: "" };
   if (!next.translation_defaults) {
@@ -415,6 +431,13 @@ export function SettingsView({
       >
         {draft && (
           <>
+            <PipelineDefaultsSection
+              value={draft.dubbing}
+              switches={["translate", "diarize", "dub"]}
+              onChange={(value) =>
+                setDraft((prev) => (prev ? { ...prev, dubbing: value } : prev))
+              }
+            />
             <AsrSection
               asr={draft.asr}
               onChange={(value) =>
@@ -446,7 +469,8 @@ export function SettingsView({
         {draft && (
           <>
             <PipelineDefaultsSection
-              audio={draft.audio}
+              value={draft.audio}
+              switches={["translate", "diarize", "dub"]}
               onChange={(value) =>
                 setDraft((prev) => (prev ? { ...prev, audio: value } : prev))
               }
@@ -459,7 +483,6 @@ export function SettingsView({
               }
             />
             <DubbingSection
-              domain="audio"
               dubbing={draft.dubbing}
               onChange={(value) =>
                 setDraft((prev) => (prev ? { ...prev, dubbing: value } : prev))
@@ -480,6 +503,13 @@ export function SettingsView({
       >
         {draft && (
           <>
+            <PipelineDefaultsSection
+              value={draft.document}
+              switches={["translate", "dub"]}
+              onChange={(value) =>
+                setDraft((prev) => (prev ? { ...prev, document: value } : prev))
+              }
+            />
             <PdfEngineSection
               pdf={draft.pdf}
               onChange={(value) =>

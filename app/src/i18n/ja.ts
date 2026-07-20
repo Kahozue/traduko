@@ -1,5 +1,6 @@
-// GENERATED from zh-TW key order by scripts/gen-i18n.py; edit the
-// translation tables there, not this file directly.
+// Kept in step with zh-TW.ts by hand; i18n/index.test.ts fails if the
+// three locales drift. (scripts/gen-i18n.py was the original
+// generator and has been out of date since v2; do not trust it.)
 import type { MessageKey } from "./index";
 
 export const ja: Record<MessageKey, string> = {
@@ -199,17 +200,15 @@ export const ja: Record<MessageKey, string> = {
   "settings.dubbing.denoise.desc": "有効にすると初回使用時にノイズ除去モデルを追加ダウンロードします",
   "settings.dubbing.deviceMps": "MPS アクセラレーション",
   "settings.dubbing.deviceCpu": "CPU",
+  "settings.pipeline.title": "パイプライン既定",
+  "settings.pipeline.hint": "新規タスクの初期スイッチ。既存タスクには影響しません",
+  "settings.pipeline.translate": "翻訳",
+  "settings.pipeline.diarize": "話者分離",
+  "settings.pipeline.dub": "吹き替え",
   "settings.dubbing.diarizeSection": "話者分離",
   "settings.dubbing.hfToken": "Hugging Face トークン",
   "settings.dubbing.hfToken.desc": "話者分離（複数話者のクローン）のみ必要です。モデルページで利用規約への同意が必要です",
   "settings.dubbing.reveal": "表示",
-  "settings.dubbing.diarizeDefault": "新規タスクで既定で有効",
-  "settings.dubbing.diarizeDefault.desc": "新規動画タスクの初期スイッチにのみ影響します",
-  "settings.audio.pipeline.title": "パイプライン既定",
-  "settings.audio.pipeline.hint": "新規音声タスクの初期スイッチ。既存タスクには影響しません",
-  "settings.audio.pipeline.translate": "翻訳",
-  "settings.audio.pipeline.diarize": "話者分離",
-  "settings.audio.pipeline.dub": "吹き替え",
   "settings.translation.title": "翻訳",
   "settings.translation.targetLanguage": "目標言語",
   "settings.translation.style": "スタイル",
@@ -613,6 +612,7 @@ export const ja: Record<MessageKey, string> = {
   "task.openTextEditor": "テキストエディタを開く",
   "task.textEditor": "テキストエディタ",
   "task.editorDisabledHint": "訳文がまだありません。翻訳ステージ完了後に開けます",
+  "task.editorDisabledTranslateOff": "翻訳スイッチがオフです。オンにして再実行すると訳文が生成されます",
   "task.checkpoint.hint.document": "テキストエディタで訳文を修正できます。保存後に実行を押すと品質チェックから再開します。",
   "task.checkpoint.hint.speakers": "話者の割り当てを確認し、名前の変更や統合ができます。保存後に実行を押すと音声合成を開始します。",
   "task.speakerReview": "話者確認",

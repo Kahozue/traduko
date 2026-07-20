@@ -146,7 +146,9 @@ test("config endpoints round trip", async () => {
       cfg_value: null,
       seed: null,
       denoise: false,
-      diarize_enabled: true,
+      diarize_enabled: false,
+      dub_enabled: false,
+      translate_enabled: false,
     },
     pdf: { python: "" },
     translation_defaults: {
@@ -155,7 +157,8 @@ test("config endpoints round trip", async () => {
       document: { target_language: "zh-TW", style: "", prompt_override: "" },
       comic: { target_language: "zh-TW", style: "", prompt_override: "" },
     },
-    audio: { diarize_enabled: true, dub_enabled: false, translate_enabled: true },
+    audio: { diarize_enabled: false, dub_enabled: false, translate_enabled: true },
+    document: { translate_enabled: true, dub_enabled: false },
     asr: {
       engine: "faster_whisper",
       audio_engine: "",

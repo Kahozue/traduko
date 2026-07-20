@@ -397,6 +397,7 @@ export interface CoreConfigDoc {
   pdf: PdfEngineConfigDoc;
   asr: AsrConfigDoc;
   audio: AudioConfigDoc;
+  document: DocumentConfigDoc;
   translation_defaults: TranslationDefaultsDoc;
   [key: string]: unknown;
 }
@@ -528,8 +529,10 @@ export interface DubbingConfigDoc {
   cfg_value: number | null;
   seed: number | null;
   denoise: boolean;
-  // Video-domain pipeline default: whether new tasks run diarization.
+  // Video-domain pipeline defaults: initial switch values for new video tasks.
   diarize_enabled: boolean;
+  dub_enabled: boolean;
+  translate_enabled: boolean;
   [key: string]: unknown;
 }
 
@@ -561,6 +564,14 @@ export interface AudioConfigDoc {
   diarize_enabled: boolean;
   dub_enabled: boolean;
   translate_enabled: boolean;
+  [key: string]: unknown;
+}
+
+// Document-domain pipeline defaults. A document has no recording, so there
+// is no speaker separation to default either way.
+export interface DocumentConfigDoc {
+  translate_enabled: boolean;
+  dub_enabled: boolean;
   [key: string]: unknown;
 }
 

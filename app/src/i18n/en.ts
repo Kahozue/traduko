@@ -1,5 +1,6 @@
-// GENERATED from zh-TW key order by scripts/gen-i18n.py; edit the
-// translation tables there, not this file directly.
+// Kept in step with zh-TW.ts by hand; i18n/index.test.ts fails if the
+// three locales drift. (scripts/gen-i18n.py was the original
+// generator and has been out of date since v2; do not trust it.)
 import type { MessageKey } from "./index";
 
 export const en: Record<MessageKey, string> = {
@@ -199,17 +200,15 @@ export const en: Record<MessageKey, string> = {
   "settings.dubbing.denoise.desc": "First use downloads an extra denoiser model",
   "settings.dubbing.deviceMps": "MPS acceleration",
   "settings.dubbing.deviceCpu": "CPU",
+  "settings.pipeline.title": "Pipeline defaults",
+  "settings.pipeline.hint": "Initial pipeline switches for new tasks; existing tasks are unaffected",
+  "settings.pipeline.translate": "Translate",
+  "settings.pipeline.diarize": "Speaker diarization",
+  "settings.pipeline.dub": "Dubbing",
   "settings.dubbing.diarizeSection": "Speaker diarization",
   "settings.dubbing.hfToken": "Hugging Face token",
   "settings.dubbing.hfToken.desc": "Only needed for speaker diarization (multi-speaker cloning); accept the model terms first",
   "settings.dubbing.reveal": "Show",
-  "settings.dubbing.diarizeDefault": "Enabled for new tasks",
-  "settings.dubbing.diarizeDefault.desc": "Only sets the initial switch on new video tasks",
-  "settings.audio.pipeline.title": "Pipeline defaults",
-  "settings.audio.pipeline.hint": "Initial pipeline switches for new audio tasks; existing tasks are unaffected",
-  "settings.audio.pipeline.translate": "Translate",
-  "settings.audio.pipeline.diarize": "Speaker diarization",
-  "settings.audio.pipeline.dub": "Dubbing",
   "settings.translation.title": "Translation",
   "settings.translation.targetLanguage": "Target language",
   "settings.translation.style": "Style",
@@ -613,6 +612,7 @@ export const en: Record<MessageKey, string> = {
   "task.openTextEditor": "Open text editor",
   "task.textEditor": "Text editor",
   "task.editorDisabledHint": "No translation yet; opens after the translation stage completes",
+  "task.editorDisabledTranslateOff": "Translation is switched off; turn it on and run again to produce one",
   "task.checkpoint.hint.document": "Open the text editor to revise the translation; save back and press Run to resume from the quality scan.",
   "task.checkpoint.hint.speakers": "Review speaker assignments, rename or merge; save back and press Run to start synthesis.",
   "task.speakerReview": "Speaker review",

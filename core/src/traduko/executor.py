@@ -91,12 +91,20 @@ class PipelineExecutor:
             try:
                 stage = registry.create(stage_record.type)
                 result = stage.run(ctx)
-            except base.PauseRequested as pause:
+            except base.CancelRequested:
+                # Stopped part way through: the stage goes back to PENDING so
+                # a later run redoes it rather than trusting half its output.
+                stage_record.status = StageStatus.PENDING
+                transition(record, TaskStatus.CANCELED)
+                self.store.save(record)
+                self._emit(record, "task_canceled", {"stage_index": i})
+                return record
+            except base.PauseRequested as paused:
                 stage_record.status = StageStatus.PENDING
                 transition(record, TaskStatus.PAUSED)
                 self.store.save(record)
                 self._emit(
-                    record, "task_paused", {"stage_index": i, "reason": pause.reason}
+                    record, "task_paused", {"stage_index": i, "reason": paused.reason}
                 )
                 return record
             except base.StageError as error:

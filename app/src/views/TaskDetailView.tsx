@@ -53,7 +53,10 @@ const ASR_ENGINE_IDS = Object.keys(ASR_ENGINE_LABELS);
 // mapping and its stage-marker domain inference.
 type SwitchName = "translate" | "diarize" | "dub";
 const SWITCH_STAGE_TYPES: Record<SwitchName, string[]> = {
-  translate: ["translate", "proofread", "export_subtitles"],
+  // The export stages are deliberately outside the translate switch: they
+  // land a source-language file when translation is off, so turning it off
+  // never leaves a task with nothing to show for itself.
+  translate: ["translate", "proofread", "translate_chunks", "qc_scan"],
   diarize: ["diarize"],
   dub: ["tts_synthesize", "align_duration", "mix_audio", "mux", "export_audio"],
 };
@@ -339,11 +342,11 @@ export function TaskDetailView({
         ? "document"
         : "video";
   const switchNames: SwitchName[] = [];
-  if (domain === "audio" || domain === "video") {
-    if (
-      domain === "audio" &&
-      SWITCH_STAGE_TYPES.translate.some((type) => stageTypes.has(type))
-    ) {
+  if (domain === "audio" || domain === "video" || domain === "document") {
+    // The translate switch follows the stages, not the domain: any pipeline
+    // with something to translate can turn it off (the core validates the
+    // same way). translate_pdf is one opaque stage with nothing to switch.
+    if (SWITCH_STAGE_TYPES.translate.some((type) => stageTypes.has(type))) {
       switchNames.push("translate");
     }
     // Diarize renders once the task has something to diarize: turning it on
@@ -355,7 +358,11 @@ export function TaskDetailView({
     ) {
       switchNames.push("diarize");
     }
-    switchNames.push("dub");
+    // A document has no recording, so no speakers to separate, but it can
+    // still be read aloud: the dub switch appends a synthesis group.
+    if (domain !== "document" || !stageTypes.has("translate_pdf")) {
+      switchNames.push("dub");
+    }
   }
   const switchValue = (name: SwitchName): boolean => {
     const explicit = task.switches?.[name];
@@ -393,7 +400,12 @@ export function TaskDetailView({
     (stage) => stage.type === "ingest_document",
   );
   const hasSpeakers = (artifacts ?? []).some((item) => item.name === "speakers.json");
+  // Speaker review needs the diarize stage; the dubbing studio only needs a
+  // dub group, which a document task has without any diarize in it.
   const isDubTask = (task?.stages ?? []).some((stage) => stage.type === "diarize");
+  const hasDubGroup = (task?.stages ?? []).some(
+    (stage) => stage.type === "tts_synthesize",
+  );
   // The dubbing studio needs a transcript to voice; asr/segments/translation
   // all qualify. Until one exists the button stays disabled with a hint.
   const transcriptReady = (artifacts ?? []).some(
@@ -402,6 +414,8 @@ export function TaskDetailView({
       item.name === "segments.json" ||
       item.name === "translation.json",
   );
+  // A document's dub reads its translation, so that artifact is its
+  // transcript; the chain above already covers it.
   // Only pipelines that produce a translation artifact get an editor entry;
   // translate_pdf outputs finished PDFs with nothing to edit in-app.
   const supportsEditor = task.stages.some((stage) =>
@@ -852,6 +866,7 @@ export function TaskDetailView({
           controls (run/pause/cancel). */}
       {(supportsEditor ||
         isDubTask ||
+        hasDubGroup ||
         (exportKind !== null && onOpenExport) ||
         onOpenGlossary ||
         (hasTranslateStage && onOpenTranslation)) && (
@@ -872,7 +887,14 @@ export function TaskDetailView({
                         ? "task.textEditor.entryTitle"
                         : "task.subtitleEditor.entryTitle",
                     )
-                  : t("task.editorDisabledHint")
+                  : // "run the task first" is wrong advice when translation
+                    // is switched off: no run will ever produce a translation
+                    // to edit until the switch goes back on.
+                    t(
+                      task.switches?.translate === false
+                        ? "task.editorDisabledTranslateOff"
+                        : "task.editorDisabledHint",
+                    )
               }
               onClick={() => onOpenEditor(editorKind)}
             >
@@ -890,7 +912,7 @@ export function TaskDetailView({
               {t("task.speakerReview")}
             </button>
           )}
-          {isDubTask && onOpenDub && (
+          {(isDubTask || hasDubGroup) && onOpenDub && (
             <button
               type="button"
               className={styles.secondary}

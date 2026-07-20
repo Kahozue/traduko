@@ -170,6 +170,24 @@ class ServiceGateStage:
         return StageResult()
 
 
+@registry.register
+class ServiceLongStage:
+    """A stage that works in units and honours a stop between them, standing
+    in for the real slow ones (synthesis, fitting, translation)."""
+
+    type = "svc-long"
+    started = threading.Event()
+    finished = threading.Event()
+
+    def run(self, ctx: StageContext) -> StageResult:
+        for _ in range(500):
+            ctx.checkpoint()
+            type(self).started.set()
+            time.sleep(0.01)
+        type(self).finished.set()
+        return StageResult()
+
+
 def create_profile(tmp_path: Path, name: str, stages: list[str]) -> None:
     (tmp_path / "profiles").mkdir(exist_ok=True)
     stage_lines = "".join(f"  - type: {s}\n" for s in stages)
@@ -590,6 +608,52 @@ def wait_completed(
             return shown
         time.sleep(0.01)
     raise AssertionError(f"timed out, last status {shown['status']}")
+
+
+def test_cancel_stops_a_running_stage_instead_of_waiting_it_out(
+    tmp_path: Path,
+) -> None:
+    ServiceLongStage.started = threading.Event()
+    ServiceLongStage.finished = threading.Event()
+    with service(tmp_path) as (client, headers, token):
+        create_profile(tmp_path, "long", ["svc-long", "noop"])
+        task_id = create_task(client, headers, tmp_path, profile="long")
+        url = f"/tasks/default/{task_id}"
+        assert client.post(f"{url}/run", headers=headers).status_code == 202
+        assert ServiceLongStage.started.wait(timeout=5)
+
+        assert client.post(f"{url}/cancel", headers=headers).status_code == 202
+
+        shown = wait_completed(client, headers, "default", task_id)
+        assert shown["status"] == "canceled"
+        # The stage stopped between units; it never ran out its work.
+        assert not ServiceLongStage.finished.is_set()
+
+
+def test_pause_stops_a_running_stage_instead_of_waiting_it_out(
+    tmp_path: Path,
+) -> None:
+    ServiceLongStage.started = threading.Event()
+    ServiceLongStage.finished = threading.Event()
+    with service(tmp_path) as (client, headers, token):
+        create_profile(tmp_path, "long", ["svc-long", "noop"])
+        task_id = create_task(client, headers, tmp_path, profile="long")
+        url = f"/tasks/default/{task_id}"
+        assert client.post(f"{url}/run", headers=headers).status_code == 202
+        assert ServiceLongStage.started.wait(timeout=5)
+
+        assert client.post(f"{url}/pause", headers=headers).status_code == 202
+
+        deadline = time.monotonic() + 5
+        shown = client.get(url, headers=headers).json()
+        while time.monotonic() < deadline and shown["status"] != "paused":
+            time.sleep(0.01)
+            shown = client.get(url, headers=headers).json()
+        assert shown["status"] == "paused", shown["status"]
+        assert not ServiceLongStage.finished.is_set()
+        # Stopped part way, so the stage is queued to redo, not marked done.
+        by_type = {stage["type"]: stage for stage in shown["stages"]}
+        assert by_type["svc-long"]["status"] == "pending"
 
 
 def test_run_executes_task(tmp_path: Path) -> None:
@@ -2427,10 +2491,12 @@ def test_patch_switches_translate_off_skips_group_and_leaves_rest(
         by_type = {stage["type"]: stage for stage in body["stages"]}
         assert by_type["translate"]["status"] == "skipped"
         assert by_type["proofread"]["status"] == "skipped"
-        assert by_type["export_subtitles"]["status"] == "skipped"
         assert by_type["extract_audio"]["status"] == "pending"
         assert by_type["asr"]["status"] == "pending"
         assert by_type["export_transcript"]["status"] == "pending"
+        # Export sits outside the translate switch: with translation off the
+        # task still owes a subtitle file, in the source language.
+        assert by_type["export_subtitles"]["status"] == "pending"
         shown = client.get(url, headers=headers).json()
         assert shown["switches"]["translate"] is False
         assert shown["switches"]["dub"] is None
@@ -2452,7 +2518,6 @@ def test_patch_switches_reenable_marks_skipped_back_pending(tmp_path: Path) -> N
         by_type = {stage["type"]: stage for stage in body["stages"]}
         assert by_type["translate"]["status"] == "pending"
         assert by_type["proofread"]["status"] == "pending"
-        assert by_type["export_subtitles"]["status"] == "pending"
 
 
 def test_patch_switches_off_keeps_completed_then_reenable_reruns(
@@ -2480,6 +2545,71 @@ def test_patch_switches_off_keeps_completed_then_reenable_reruns(
         assert on["status"] == "pending"
 
 
+def test_rerun_a_completed_task_keeps_switched_off_stages_skipped(
+    tmp_path: Path,
+) -> None:
+    """The reported bug: a task with dubbing switched off went back to
+    running the dub group the moment it was rerun, because the reset put
+    every stage back to PENDING regardless of why it was skipped."""
+    with service(tmp_path) as (client, headers, token):
+        task_id = create_task(client, headers, tmp_path, profile="audio-dub")
+        url = f"/tasks/default/{task_id}"
+        assert client.patch(
+            f"{url}/switches", json={"dub": False, "diarize": False}, headers=headers
+        ).status_code == 200
+        mark_task_completed(client, "default", task_id)
+        # mark_task_completed completes every stage, so re-apply the intent
+        # the switch recorded and check the rerun honours it.
+        assert client.patch(
+            f"{url}/switches", json={"dub": False}, headers=headers
+        ).status_code == 200
+
+        assert client.post(f"{url}/rerun", headers=headers).status_code == 202
+
+        after = client.get(url, headers=headers).json()
+        by_type = {stage["type"]: stage for stage in after["stages"]}
+        for stage_type in ("tts_synthesize", "align_duration", "mix_audio", "export_audio"):
+            assert by_type[stage_type]["status"] == "skipped", stage_type
+        for stage_type in ("extract_audio", "asr", "segment"):
+            assert by_type[stage_type]["status"] == "pending", stage_type
+        assert after["switches"]["dub"] is False
+
+
+def test_switch_changes_apply_across_every_task_status(tmp_path: Path) -> None:
+    """The switch has to mean the same thing whatever state the task is in:
+    a fresh task, one that failed, one paused mid-run, and one already
+    completed. Only a queued or running task is refused."""
+    from traduko.models import TaskStatus
+
+    def set_status(task_id: str, status: TaskStatus) -> None:
+        store = client.app.state.workspace.store
+        record = store.load("default", task_id)
+        record.status = status
+        store.save(record)
+
+    with service(tmp_path) as (client, headers, token):
+        for status in (
+            TaskStatus.PENDING,
+            TaskStatus.FAILED,
+            TaskStatus.PAUSED,
+            TaskStatus.WAITING_REVIEW,
+            TaskStatus.COMPLETED,
+        ):
+            task_id = create_task(client, headers, tmp_path, profile="audio-translate")
+            set_status(task_id, status)
+            url = f"/tasks/default/{task_id}/switches"
+
+            off = client.patch(url, json={"translate": False}, headers=headers)
+            assert off.status_code == 200, (status, off.text)
+            by_type = {stage["type"]: stage for stage in off.json()["stages"]}
+            assert by_type["translate"]["status"] == "skipped", status
+
+            on = client.patch(url, json={"translate": True}, headers=headers)
+            assert on.status_code == 200, (status, on.text)
+            by_type = {stage["type"]: stage for stage in on.json()["stages"]}
+            assert by_type["translate"]["status"] == "pending", status
+
+
 def test_patch_switches_rejects_active_task_and_empty_body(
     tmp_path: Path, monkeypatch
 ) -> None:
@@ -2494,24 +2624,39 @@ def test_patch_switches_rejects_active_task_and_empty_body(
         assert blocked.status_code == 409
 
 
-def test_patch_switches_translate_is_audio_only(tmp_path: Path) -> None:
+def test_patch_switches_translate_needs_a_translate_stage(tmp_path: Path) -> None:
     with service(tmp_path) as (client, headers, token):
+        # A video task translates too: the switch follows the stages, not
+        # the domain.
         task_id = create_task(client, headers, tmp_path, profile="av-default")
         url = f"/tasks/default/{task_id}/switches"
 
-        rejected = client.patch(url, json={"translate": False}, headers=headers)
+        accepted = client.patch(url, json={"translate": True}, headers=headers)
 
-        assert rejected.status_code == 422
-        # diarize stays available on video tasks (av-dub has the stage).
-        dub_id = create_task(client, headers, tmp_path, profile="av-dub")
-        ok = client.patch(
-            f"/tasks/default/{dub_id}/switches",
-            json={"diarize": False},
+        assert accepted.status_code == 200, accepted.text
+        by_type = {stage["type"]: stage for stage in accepted.json()["stages"]}
+        assert by_type["translate"]["status"] == "pending"
+
+        # A pipeline with nothing to translate turns the request away.
+        bare_id = create_task(client, headers, tmp_path, profile="audio-transcribe")
+        rejected = client.patch(
+            f"/tasks/default/{bare_id}/switches",
+            json={"translate": False},
             headers=headers,
         )
+        assert rejected.status_code == 422
+
+        # diarize stays available on video tasks (av-dub has the stage).
+        dub_id = create_task(client, headers, tmp_path, profile="av-dub")
+        dub_url = f"/tasks/default/{dub_id}/switches"
+        assert client.patch(
+            dub_url, json={"translate": True}, headers=headers
+        ).status_code == 200
+        ok = client.patch(dub_url, json={"diarize": False}, headers=headers)
         assert ok.status_code == 200, ok.text
         by_type = {stage["type"]: stage for stage in ok.json()["stages"]}
         assert by_type["diarize"]["status"] == "skipped"
+        # Flipping one switch leaves the others' stages alone.
         assert by_type["translate"]["status"] == "pending"
 
 
@@ -2838,27 +2983,131 @@ def test_create_audio_task_translate_disabled_skips_translate_group(
         assert body["switches"]["translate"] is False
         assert by_type["translate"]["status"] == "skipped"
         assert by_type["proofread"]["status"] == "skipped"
-        assert by_type["export_subtitles"]["status"] == "skipped"
+        assert by_type["export_subtitles"]["status"] == "pending"
         assert by_type["export_transcript"]["status"] == "pending"
 
 
-def test_create_video_task_diarize_default_applies(tmp_path: Path) -> None:
+def test_create_video_task_pipeline_defaults_apply(tmp_path: Path) -> None:
     with service(tmp_path) as (client, headers, token):
-        set_config(client, headers, dubbing={"diarize_enabled": False})
+        # Shipped defaults: every optional group off.
         task_id = create_task(client, headers, tmp_path, profile="av-dub")
         body = client.get(f"/tasks/default/{task_id}", headers=headers).json()
         by_type = {stage["type"]: stage for stage in body["stages"]}
-        assert body["switches"]["diarize"] is False
-        assert by_type["diarize"]["status"] == "skipped"
-        assert by_type["tts_synthesize"]["status"] == "pending"
+        assert body["switches"] == {
+            "translate": False,
+            "diarize": False,
+            "dub": False,
+        }
+        for stage_type in ("translate", "proofread", "diarize", "tts_synthesize", "mux"):
+            assert by_type[stage_type]["status"] == "skipped", stage_type
+        for stage_type in ("extract_audio", "asr", "segment", "export_subtitles"):
+            assert by_type[stage_type]["status"] == "pending", stage_type
+
+        # Each default is independently configurable.
+        set_config(
+            client,
+            headers,
+            dubbing={
+                "diarize_enabled": True,
+                "dub_enabled": True,
+                "translate_enabled": True,
+            },
+        )
+        other_id = create_task(client, headers, tmp_path, profile="av-dub")
+        other = client.get(f"/tasks/default/{other_id}", headers=headers).json()
+        assert other["switches"] == {"translate": True, "diarize": True, "dub": True}
+        assert all(stage["status"] == "pending" for stage in other["stages"])
+
+
+def test_create_document_task_gets_translate_on_and_dub_off(tmp_path: Path) -> None:
+    with service(tmp_path) as (client, headers, token):
+        response = client.post(
+            "/tasks",
+            json={"input_path": str(make_input(tmp_path)), "profile": "novel-translate"},
+            headers=headers,
+        )
+        assert response.status_code == 201, response.text
+        body = response.json()
+        # Translating is the point of a document task; reading it aloud is
+        # opt-in, and there is no dub group to switch until it is.
+        assert body["switches"] == {"translate": True, "diarize": None, "dub": None}
+        assert all(stage["status"] == "pending" for stage in body["stages"])
+
+
+def test_document_dub_switch_appends_a_synthesis_group(tmp_path: Path) -> None:
+    with service(tmp_path) as (client, headers, token):
+        created = client.post(
+            "/tasks",
+            json={"input_path": str(make_input(tmp_path)), "profile": "novel-translate"},
+            headers=headers,
+        )
+        task_id = created.json()["id"]
+        url = f"/tasks/default/{task_id}/switches"
+
+        response = client.patch(url, json={"dub": True}, headers=headers)
+
+        assert response.status_code == 200, response.text
+        body = response.json()
+        assert body["switches"]["dub"] is True
+        types = [stage["type"] for stage in body["stages"]]
+        # No recording behind a document: nothing to separate speakers from
+        # and no bed to mix under, so the group is synthesis, layout, render.
+        assert types[-3:] == ["tts_synthesize", "align_duration", "export_audio"]
+        assert "diarize" not in types
+        assert "mix_audio" not in types
+        assert all(stage["status"] == "pending" for stage in body["stages"])
+
+        # Turning it back off skips the group rather than deleting it.
+        off = client.patch(url, json={"dub": False}, headers=headers)
+        assert off.status_code == 200, off.text
+        by_type = {stage["type"]: stage for stage in off.json()["stages"]}
+        for stage_type in ("tts_synthesize", "align_duration", "export_audio"):
+            assert by_type[stage_type]["status"] == "skipped", stage_type
+        assert by_type["translate_chunks"]["status"] == "pending"
+
+
+def test_document_translate_switch_off_still_exports_the_document(
+    tmp_path: Path,
+) -> None:
+    with service(tmp_path) as (client, headers, token):
+        created = client.post(
+            "/tasks",
+            json={"input_path": str(make_input(tmp_path)), "profile": "novel-translate"},
+            headers=headers,
+        )
+        task_id = created.json()["id"]
+
+        response = client.patch(
+            f"/tasks/default/{task_id}/switches",
+            json={"translate": False},
+            headers=headers,
+        )
+
+        assert response.status_code == 200, response.text
+        by_type = {stage["type"]: stage for stage in response.json()["stages"]}
+        assert by_type["translate_chunks"]["status"] == "skipped"
+        assert by_type["qc_scan"]["status"] == "skipped"
+        assert by_type["ingest_document"]["status"] == "pending"
+        assert by_type["chunk"]["status"] == "pending"
+        assert by_type["export_document"]["status"] == "pending"
 
 
 def test_create_task_without_switchable_stages_leaves_switches_none(
     tmp_path: Path,
 ) -> None:
     with service(tmp_path) as (client, headers, token):
-        task_id = create_task(client, headers, tmp_path, profile="subtitle-translate")
-        body = client.get(f"/tasks/default/{task_id}", headers=headers).json()
+        # translate_pdf is a single opaque stage: no group any switch governs.
+        pdf = tmp_path / "in.pdf"
+        pdf.write_bytes(b"%PDF-1.4\n")
+        response = client.post(
+            "/tasks",
+            json={"input_path": str(pdf), "profile": "translate-pdf"},
+            headers=headers,
+        )
+        assert response.status_code == 201, response.text
+        body = client.get(
+            f"/tasks/default/{response.json()['id']}", headers=headers
+        ).json()
         assert body["switches"] is None
 
 
@@ -3741,8 +3990,12 @@ def test_create_audio_compose_task_from_a_transcript(tmp_path: Path) -> None:
             "kind": "file", "path": str(transcript)
         }
         assert by_type["diarize"]["params"]["voice_mode"] == "design"
+        # Dubbing stays on for a compose task -- it is the whole task -- but
+        # speaker separation is opt-in like everywhere else.
+        assert task["switches"] == {"translate": None, "diarize": False, "dub": True}
         for stage in task["stages"]:
-            assert stage["status"] == "pending", stage["type"]
+            expected = "skipped" if stage["type"] == "diarize" else "pending"
+            assert stage["status"] == expected, stage["type"]
 
 
 def test_create_compose_task_from_another_tasks_artifact(tmp_path: Path) -> None:

@@ -28,9 +28,15 @@ from ..documents.translate import (
 from ..glossary import resolve_effective_glossary
 from ..llm import LLMError
 from ..prompts import PromptError, load_template
-from ..translate import TranslationError, TranslationPaused
+from ..translate import TranslationCanceled, TranslationError, TranslationPaused
 from . import registry
-from .base import PauseRequested, StageContext, StageError, StageResult
+from .base import (
+    CancelRequested,
+    PauseRequested,
+    StageContext,
+    StageError,
+    StageResult,
+)
 from .common import resolve_llm, translate_template_for, translation_prompt_error
 
 _EXTENSIONS = {
@@ -197,11 +203,14 @@ class TranslateChunksStage:
                 summary_path=summary_path,
                 emit_progress=ctx.emit_progress,
                 should_pause=ctx.should_pause,
+                should_cancel=ctx.should_cancel,
                 retry_ids=retry_ids,
                 prior=prior,
             )
         except BudgetExceededError as error:
             raise PauseRequested(str(error)) from error
+        except TranslationCanceled as error:
+            raise CancelRequested(str(error)) from error
         except TranslationPaused as error:
             raise PauseRequested(str(error)) from error
         except PromptError as error:

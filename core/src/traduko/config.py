@@ -119,8 +119,14 @@ class DubbingConfig(BaseModel):
     cfg_value: float | None = None
     seed: int | None = None
     denoise: bool = False
-    # Video-domain pipeline default: whether new tasks run diarization.
-    diarize_enabled: bool = True
+    # Video-domain pipeline defaults: the initial switch values a new video
+    # task starts with. Speaker separation and dubbing are opt-in, and so is
+    # translation -- with export_subtitles outside the translate switch, a
+    # video task with translation off still exports source-language
+    # subtitles. Existing tasks are never touched retroactively.
+    diarize_enabled: bool = False
+    dub_enabled: bool = False
+    translate_enabled: bool = False
 
 
 class PdfEngineConfig(BaseModel):
@@ -164,9 +170,20 @@ class AudioConfig(BaseModel):
 
     model_config = ConfigDict(extra="allow")
 
-    diarize_enabled: bool = True
+    diarize_enabled: bool = False
     dub_enabled: bool = False
     translate_enabled: bool = True
+
+
+class DocumentConfig(BaseModel):
+    """Document-domain pipeline defaults. Translating is what a document
+    task is for, so translation starts on; dubbing a document means reading
+    the translated text aloud, which is opt-in like everywhere else."""
+
+    model_config = ConfigDict(extra="allow")
+
+    translate_enabled: bool = True
+    dub_enabled: bool = False
 
 
 class TranslationDomainDefaults(BaseModel):
@@ -218,6 +235,7 @@ class CoreConfig(BaseModel):
     pdf: PdfEngineConfig = Field(default_factory=PdfEngineConfig)
     asr: AsrConfig = Field(default_factory=AsrConfig)
     audio: AudioConfig = Field(default_factory=AudioConfig)
+    document: DocumentConfig = Field(default_factory=DocumentConfig)
     translation_defaults: TranslationDefaultsConfig = Field(
         default_factory=TranslationDefaultsConfig
     )

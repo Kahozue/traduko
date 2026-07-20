@@ -208,7 +208,9 @@ def task_switches(
     task_id: str = typer.Argument(...),
     project: Optional[str] = typer.Option(None, "--project"),
     translate: Optional[bool] = typer.Option(
-        None, "--translate/--no-translate", help="Audio-domain translate switch."
+        None,
+        "--translate/--no-translate",
+        help="Translate switch (any task with a translate stage).",
     ),
     diarize: Optional[bool] = typer.Option(None, "--diarize/--no-diarize"),
     dub: Optional[bool] = typer.Option(None, "--dub/--no-dub"),

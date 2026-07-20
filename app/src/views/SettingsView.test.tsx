@@ -40,7 +40,9 @@ const DEFAULT_CONFIG: CoreConfigDoc = {
     cfg_value: null,
     seed: null,
     denoise: false,
-    diarize_enabled: true,
+    diarize_enabled: false,
+    dub_enabled: false,
+    translate_enabled: false,
   },
   pdf: { python: "" },
   translation_defaults: {
@@ -49,7 +51,8 @@ const DEFAULT_CONFIG: CoreConfigDoc = {
     document: { target_language: "zh-TW", style: "", prompt_override: "" },
     comic: { target_language: "zh-TW", style: "", prompt_override: "" },
   },
-  audio: { diarize_enabled: true, dub_enabled: false, translate_enabled: true },
+  audio: { diarize_enabled: false, dub_enabled: false, translate_enabled: true },
+    document: { translate_enabled: true, dub_enabled: false },
   asr: {
     engine: "faster_whisper",
     audio_engine: "",
@@ -409,9 +412,11 @@ test("the audio tab shows pipeline default toggles and saves them", async () => 
   const dub = within(audioPanel).getByRole("checkbox", { name: "配音" });
   expect(dub).not.toBeChecked();
   expect(within(audioPanel).getByRole("checkbox", { name: "翻譯" })).toBeChecked();
+  // Speaker separation is opt-in like dubbing; translating is what an audio
+  // task is for, so it stays on.
   expect(
     within(audioPanel).getByRole("checkbox", { name: "說話人分離" }),
-  ).toBeChecked();
+  ).not.toBeChecked();
   await userEvent.click(dub);
   await userEvent.click(screen.getByText("儲存"));
   await waitFor(() =>
@@ -423,20 +428,50 @@ test("the audio tab shows pipeline default toggles and saves them", async () => 
   );
 });
 
-test("the video dubbing section carries the diarize default toggle", async () => {
-  setup();
+test("the video tab carries its own pipeline defaults, all off", async () => {
+  const { saveConfig } = setup();
   await screen.findByLabelText("預設專案");
   await userEvent.click(screen.getByRole("tab", { name: "影片" }));
   const videoPanel = document.getElementById("settings-panel-video")!;
-  await userEvent.click(within(videoPanel).getByText("說話人分離"));
+
+  expect(within(videoPanel).getByText("管線預設")).toBeInTheDocument();
+  // Every optional group is opt-in for video: translation off still exports
+  // source-language subtitles, so nothing is lost by defaulting it off.
+  for (const name of ["翻譯", "說話人分離", "配音"]) {
+    expect(
+      within(videoPanel).getByRole("checkbox", { name }),
+    ).not.toBeChecked();
+  }
+
+  await userEvent.click(within(videoPanel).getByRole("checkbox", { name: "配音" }));
+  await userEvent.click(screen.getByText("儲存"));
+  await waitFor(() =>
+    expect(saveConfig).toHaveBeenCalledWith(
+      expect.objectContaining({
+        dubbing: expect.objectContaining({ dub_enabled: true }),
+      }),
+    ),
+  );
+});
+
+test("the document tab carries translate and dub defaults, and no diarize", async () => {
+  setup();
+  await screen.findByLabelText("預設專案");
+  await userEvent.click(screen.getByRole("tab", { name: "文件" }));
+  const documentPanel = document.getElementById("settings-panel-document")!;
+
   expect(
-    within(videoPanel).getByRole("checkbox", { name: "新任務預設啟用" }),
+    within(documentPanel).getByRole("checkbox", { name: "翻譯" }),
   ).toBeChecked();
-  // The audio tab's dubbing section must not repeat the video-domain default;
-  // the audio default lives in the pipeline defaults block instead.
-  const audioPanel = document.getElementById("settings-panel-audio")!;
   expect(
-    within(audioPanel).queryByRole("checkbox", { name: "新任務預設啟用", hidden: true }),
+    within(documentPanel).getByRole("checkbox", { name: "配音" }),
+  ).not.toBeChecked();
+  // A document has no recording, so there are no speakers to separate.
+  expect(
+    within(documentPanel).queryByRole("checkbox", {
+      name: "說話人分離",
+      hidden: true,
+    }),
   ).toBeNull();
 });
 

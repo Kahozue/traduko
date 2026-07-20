@@ -254,6 +254,97 @@ def test_pause_set_during_stage_takes_effect_at_boundary(tmp_path: Path) -> None
     assert result.stages[1].status == StageStatus.PENDING
 
 
+def test_checkpoint_cancels_mid_stage_without_finishing_the_work(
+    tmp_path: Path,
+) -> None:
+    """A long stage must not run to completion after a cancel: the whole
+    point of the checkpoint is that the user does not wait out the stage."""
+    cancel = CancelToken()
+    units: list[int] = []
+
+    @registry.register
+    class LongCancelStage:
+        type = "long_cancel"
+
+        def run(self, ctx: base.StageContext) -> base.StageResult:
+            for unit in range(10):
+                ctx.checkpoint()
+                units.append(unit)
+                if unit == 2:
+                    cancel.set()
+            return base.StageResult()
+
+    store, bus, events, record = build(
+        tmp_path, [ProfileStage(type="long_cancel"), ProfileStage(type="mark")]
+    )
+    result = PipelineExecutor(store, bus, tmp_path).run(record, cancel=cancel)
+
+    assert units == [0, 1, 2]
+    assert result.status == TaskStatus.CANCELED
+    # Stopped part way through, so the stage is redone rather than trusted.
+    assert result.stages[0].status == StageStatus.PENDING
+    assert result.stages[1].status == StageStatus.PENDING
+    assert events[-1].type == "task_canceled"
+    assert events[-1].data["stage_index"] == 0
+
+
+def test_checkpoint_pauses_mid_stage_and_resumes(tmp_path: Path) -> None:
+    pause = PauseToken()
+    runs: list[int] = []
+
+    @registry.register
+    class LongPauseStage:
+        type = "long_pause"
+
+        def run(self, ctx: base.StageContext) -> base.StageResult:
+            for unit in range(4):
+                ctx.checkpoint()
+                runs.append(unit)
+                # Asking to pause part way in: the next checkpoint stops the
+                # loop rather than letting it run out.
+                if unit == 1:
+                    pause.set()
+            return base.StageResult()
+
+    store, bus, events, record = build(tmp_path, [ProfileStage(type="long_pause")])
+    executor = PipelineExecutor(store, bus, tmp_path)
+    paused = executor.run(record, pause=pause)
+    assert runs == [0, 1]
+    assert paused.status == TaskStatus.PAUSED
+    assert paused.stages[0].status == StageStatus.PENDING
+
+    # Resuming with the signal cleared runs the stage through.
+    runs.clear()
+    resumed = executor.run(paused)
+    assert runs == [0, 1, 2, 3]
+    assert resumed.status == TaskStatus.COMPLETED
+
+
+def test_checkpoint_prefers_cancel_over_pause(tmp_path: Path) -> None:
+    cancel = CancelToken()
+    pause = PauseToken()
+    cancel.set()
+    pause.set()
+
+    @registry.register
+    class CheckpointOnlyStage:
+        type = "checkpoint_only"
+
+        def run(self, ctx: base.StageContext) -> base.StageResult:
+            ctx.checkpoint()
+            return base.StageResult()
+
+    store, bus, events, record = build(
+        tmp_path, [ProfileStage(type="checkpoint_only")]
+    )
+    # The executor's own pre-stage guard checks cancel first too, so the
+    # stage is never entered; either way the task ends up canceled.
+    result = PipelineExecutor(store, bus, tmp_path).run(
+        record, cancel=cancel, pause=pause
+    )
+    assert result.status == TaskStatus.CANCELED
+
+
 def test_skipped_stage_is_not_executed(tmp_path: Path) -> None:
     store, bus, events, record = build(
         tmp_path, [ProfileStage(type="mark"), ProfileStage(type="mark")]

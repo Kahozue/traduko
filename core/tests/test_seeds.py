@@ -54,6 +54,129 @@ def test_ensure_defaults_never_overwrites(tmp_path: Path) -> None:
     assert target.read_text(encoding="utf-8") == "my custom template ${segments_json}"
 
 
+# The v2-01 novel-translate profile: the parse/repack shell, before
+# translate_chunks slotted in. A data root seeded then kept producing
+# document tasks that never translated anything.
+_V2_01_NOVEL_TRANSLATE = """\
+# Novel/document pipeline: markdown, txt, epub, or html in, same format
+# out. v2-01 ships the parse/repack shell; the translate_chunks stage
+# (v2-02) will slot in between chunk and export_document.
+schema_version: 1
+name: novel-translate
+stages:
+  - type: ingest_document
+  - type: chunk
+    params:
+      base_blocks: 4
+      base_chars: 2600
+      max_blocks: 80
+      max_chars: 5200
+  - type: export_document
+"""
+
+
+def test_ensure_defaults_upgrades_an_untouched_older_profile(tmp_path: Path) -> None:
+    target = tmp_path / "profiles" / "novel-translate.yaml"
+    target.parent.mkdir(parents=True)
+    target.write_text(_V2_01_NOVEL_TRANSLATE, encoding="utf-8")
+
+    ensure_defaults(tmp_path)
+
+    upgraded = load_profile(tmp_path, "novel-translate")
+    assert [s.type for s in upgraded.stages] == [
+        "ingest_document", "chunk", "translate_chunks", "qc_scan",
+        "translate_chunks", "qc_scan", "export_document",
+    ]
+
+
+def test_ensure_defaults_leaves_an_edited_profile_alone(tmp_path: Path) -> None:
+    # One character off a shipped version is a user edit as far as we know.
+    target = tmp_path / "profiles" / "novel-translate.yaml"
+    target.parent.mkdir(parents=True)
+    edited = _V2_01_NOVEL_TRANSLATE.replace("base_chars: 2600", "base_chars: 1200")
+    target.write_text(edited, encoding="utf-8")
+
+    ensure_defaults(tmp_path)
+
+    assert target.read_text(encoding="utf-8") == edited
+
+
+def test_ensure_defaults_is_idempotent_after_an_upgrade(tmp_path: Path) -> None:
+    ensure_defaults(tmp_path)
+    before = (tmp_path / "profiles" / "novel-translate.yaml").read_text(
+        encoding="utf-8"
+    )
+    ensure_defaults(tmp_path)
+    assert (tmp_path / "profiles" / "novel-translate.yaml").read_text(
+        encoding="utf-8"
+    ) == before
+
+
+def test_every_shipped_seed_version_is_recorded() -> None:
+    """_SHIPPED_VERSIONS is what lets an old data root receive a fixed
+    pipeline, and it is only as good as its coverage. Rather than trusting
+    whoever edits a seed to remember, read the versions out of the history
+    and say which hash is missing."""
+    import ast
+    import subprocess
+
+    from traduko.seeds import _SHIPPED_VERSIONS, content_hash
+
+    rel_of = {
+        "_PROFILE_AV_DEFAULT": "profiles/av-default.yaml",
+        "_PROFILE_SUBTITLE_TRANSLATE": "profiles/subtitle-translate.yaml",
+        "_PROFILE_NOVEL_TRANSLATE": "profiles/novel-translate.yaml",
+        "_PROFILE_AV_DUB": "profiles/av-dub.yaml",
+        "_PROFILE_TRANSLATE_PDF": "profiles/translate-pdf.yaml",
+        "_PROFILE_AUDIO_TRANSCRIBE": "profiles/audio-transcribe.yaml",
+        "_PROFILE_AUDIO_TRANSLATE": "profiles/audio-translate.yaml",
+        "_PROFILE_AUDIO_DUB": "profiles/audio-dub.yaml",
+        "_PROFILE_VIDEO_COMPOSE": "profiles/video-compose.yaml",
+        "_PROFILE_AUDIO_COMPOSE": "profiles/audio-compose.yaml",
+        "_STYLES_DEFAULT": "config/styles.yaml",
+    }
+    source_path = "core/src/traduko/seeds.py"
+    repo = Path(__file__).resolve().parents[2]
+    try:
+        revisions = subprocess.run(
+            ["git", "log", "--format=%H", "--", source_path],
+            cwd=repo, capture_output=True, text=True, check=True, timeout=30,
+        ).stdout.split()
+    except (OSError, subprocess.SubprocessError):
+        import pytest
+
+        pytest.skip("not a git checkout")
+
+    missing: list[str] = []
+    for revision in revisions:
+        blob = subprocess.run(
+            ["git", "show", f"{revision}:{source_path}"],
+            cwd=repo, capture_output=True, text=True, timeout=30,
+        ).stdout
+        if not blob:
+            continue
+        for node in ast.parse(blob).body:
+            if not isinstance(node, ast.Assign):
+                continue
+            if not isinstance(node.value, ast.Constant):
+                continue
+            if not isinstance(node.value.value, str):
+                continue
+            for target in node.targets:
+                rel = rel_of.get(getattr(target, "id", ""))
+                if rel is None:
+                    continue
+                digest = content_hash(node.value.value)
+                if digest not in _SHIPPED_VERSIONS.get(rel, frozenset()):
+                    missing.append(f"{rel}: {digest} (shipped in {revision[:8]})")
+
+    assert not missing, (
+        "seeded files shipped in earlier commits are not recorded in "
+        "_SHIPPED_VERSIONS, so those data roots will never be upgraded:\n"
+        + "\n".join(sorted(set(missing)))
+    )
+
+
 def test_workspace_open_seeds_defaults(tmp_path: Path) -> None:
     Workspace.open(tmp_path)
     for rel in SEED_FILES:

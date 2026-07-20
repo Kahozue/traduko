@@ -60,8 +60,7 @@ class GlossaryProofreadStage:
         total = len(matching)
         ctx.emit_progress(0, total)
         for offset in range(0, total, batch_size):
-            if ctx.should_pause():
-                raise PauseRequested("manual pause requested")
+            ctx.checkpoint()
             batch = matching[offset : offset + batch_size]
             prompt = render(
                 template,
