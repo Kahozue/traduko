@@ -51,7 +51,8 @@ def resolve_effective_glossary(
             / "glossary.csv"
         )
         if task_path.exists():
-            for entry in parse_import(task_path.read_text(encoding="utf-8"), "csv"):
+            task_entries, _ = parse_import(task_path.read_text(encoding="utf-8"), "csv")
+            for entry in task_entries:
                 merged[entry.source] = entry
 
     return list(merged.values())

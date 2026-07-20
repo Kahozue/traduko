@@ -319,6 +319,29 @@ select.input {
   font-size: var(--fs-note);
 }
 
+/* Glossary import/mutation feedback: failures in danger tone, skipped-row
+   summaries in the neutral secondary tone since the import did succeed. */
+.glossaryError {
+  margin: 0 0 12px;
+  color: var(--danger);
+  font-size: var(--fs-note);
+  line-height: 1.5;
+}
+
+.glossaryNotice {
+  margin: 0 0 12px;
+  color: var(--text-secondary);
+  font-size: var(--fs-note);
+  line-height: 1.5;
+}
+
+.glossarySkippedList {
+  margin: 4px 0 0;
+  padding-left: 18px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-meta);
+}
+
 .hintNote {
   color: var(--text-secondary);
   font-size: var(--fs-note);

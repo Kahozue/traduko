@@ -324,6 +324,9 @@ export interface GlossaryTableMeta {
 // Row of GET /glossaries: table metadata plus the entry count.
 export interface GlossaryTable extends GlossaryTableMeta {
   entry_count: number;
+  // Only POST /glossaries/import fills this: one message per row the core
+  // dropped for a missing source or target.
+  skipped?: string[];
 }
 
 export interface GlossaryEntry {

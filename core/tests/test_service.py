@@ -2349,6 +2349,35 @@ def test_glossary_import_csv_and_bad_format(tmp_path: Path) -> None:
         )
 
 
+def test_glossary_import_reports_skipped_rows(tmp_path: Path) -> None:
+    with service(tmp_path) as (client, headers, token):
+        content = "source,target\r\nKirito,桐人\r\n,orphan\r\nNoTarget,\r\n"
+        imported = client.post(
+            "/glossaries/import",
+            json={"name": "Imp", "domain": "general", "content": content, "format": "csv"},
+            headers=headers,
+        )
+        assert imported.status_code == 201
+        body = imported.json()
+        assert body["entry_count"] == 1
+        assert body["skipped"] == ["row 3: missing source", "row 4: missing target"]
+
+
+def test_glossary_import_clean_file_reports_no_skips(tmp_path: Path) -> None:
+    with service(tmp_path) as (client, headers, token):
+        imported = client.post(
+            "/glossaries/import",
+            json={
+                "name": "Clean",
+                "domain": "general",
+                "content": "source,target\r\nKirito,桐人\r\n",
+                "format": "csv",
+            },
+            headers=headers,
+        )
+        assert imported.json()["skipped"] == []
+
+
 def test_glossary_export_csv_and_json(tmp_path: Path) -> None:
     with service(tmp_path) as (client, headers, token):
         gid = client.post(

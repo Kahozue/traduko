@@ -34,12 +34,23 @@ def _empty_manifest() -> dict:
     return {"schema_version": _SCHEMA_VERSION, "order": [], "glossaries": {}}
 
 
-def _parse_csv(text: str) -> list[GlossaryEntry]:
+def _missing_reason(source: str, target: str) -> str:
+    if not source and not target:
+        return "missing source and target"
+    return "missing source" if not source else "missing target"
+
+
+def _parse_csv(text: str) -> tuple[list[GlossaryEntry], list[str]]:
     entries: list[GlossaryEntry] = []
-    for row in csv.DictReader(io.StringIO(text)):
+    skipped: list[str] = []
+    reader = csv.DictReader(io.StringIO(text))
+    for row in reader:
         source = (row.get("source") or "").strip()
         target = (row.get("target") or "").strip()
         if not source or not target:
+            # Report the file line so the user can go fix the row, rather
+            # than discovering later that a term silently never applied.
+            skipped.append(f"row {reader.line_num}: {_missing_reason(source, target)}")
             continue
         entries.append(
             GlossaryEntry(
@@ -49,7 +60,7 @@ def _parse_csv(text: str) -> list[GlossaryEntry]:
                 category=(row.get("category") or "").strip(),
             )
         )
-    return entries
+    return entries, skipped
 
 
 def _render_csv(entries: list[GlossaryEntry]) -> str:
@@ -68,9 +79,11 @@ def _render_csv(entries: list[GlossaryEntry]) -> str:
     return out.getvalue()
 
 
-def parse_import(content: str, fmt: str) -> list[GlossaryEntry]:
-    """Parse imported glossary content. Rows missing source/target are skipped.
+def parse_import(content: str, fmt: str) -> tuple[list[GlossaryEntry], list[str]]:
+    """Parse imported glossary content.
 
+    Returns the parsed entries plus one message per skipped row, each naming
+    the CSV file line or JSON entry index and what it was missing.
     Raises ValueError on malformed JSON or an unsupported format.
     """
     if fmt == "csv":
@@ -84,12 +97,15 @@ def parse_import(content: str, fmt: str) -> list[GlossaryEntry]:
         else:
             rows = []
         entries: list[GlossaryEntry] = []
-        for row in rows:
+        skipped: list[str] = []
+        for index, row in enumerate(rows, start=1):
             if not isinstance(row, dict):
+                skipped.append(f"entry {index}: not an object")
                 continue
             source = str(row.get("source") or "").strip()
             target = str(row.get("target") or "").strip()
             if not source or not target:
+                skipped.append(f"entry {index}: {_missing_reason(source, target)}")
                 continue
             entries.append(
                 GlossaryEntry(
@@ -99,7 +115,7 @@ def parse_import(content: str, fmt: str) -> list[GlossaryEntry]:
                     category=str(row.get("category") or "").strip(),
                 )
             )
-        return entries
+        return entries, skipped
     raise ValueError(f"unsupported glossary format: {fmt}")
 
 
@@ -228,7 +244,9 @@ class GlossaryStore:
         path = self._csv_path(table_id)
         if not path.exists():
             return []
-        return _parse_csv(path.read_text(encoding="utf-8"))
+        # Skips in an already-stored table were reported at import time.
+        entries, _ = _parse_csv(path.read_text(encoding="utf-8"))
+        return entries
 
     def write_entries(
         self, table_id: str, entries: list[GlossaryEntry], *, now: str | None = None
@@ -243,11 +261,16 @@ class GlossaryStore:
 
     def import_table(
         self, name: str, domain: str, content: str, fmt: str
-    ) -> GlossaryTableMeta:
-        entries = parse_import(content, fmt)
+    ) -> tuple[GlossaryTableMeta, list[str]]:
+        """Create a table from imported content.
+
+        Returns the new table plus the per-row skip messages, so callers can
+        tell the user which rows did not make it in.
+        """
+        entries, skipped = parse_import(content, fmt)
         meta = self.create_table(name, domain)
         self.write_entries(meta.id, entries)
-        return self.get_table(meta.id)
+        return self.get_table(meta.id), skipped
 
     def export_table(self, table_id: str, fmt: str) -> str:
         meta = self.get_table(table_id)

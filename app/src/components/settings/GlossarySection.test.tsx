@@ -1,7 +1,7 @@
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test, vi } from "vitest";
-import type { ApiClient } from "../../lib/api/client";
+import { ApiError, type ApiClient } from "../../lib/api/client";
 import type { GlossaryTable } from "../../lib/api/types";
 import { renderWithConnection } from "../../test/helpers";
 import { GlossarySection } from "./GlossarySection";
@@ -118,4 +118,65 @@ test("exporting fetches the table content for download", async () => {
 test("empty state shows when there are no tables", async () => {
   setup({ tables: [] });
   expect(await screen.findByText("尚無名詞表")).toBeInTheDocument();
+});
+
+// --- error feedback and skipped rows (v3_5-11 M4) ---------------------------
+
+test("a failed import shows an error row instead of nothing happening", async () => {
+  setup({
+    api: {
+      importGlossary: vi
+        .fn()
+        .mockRejectedValue(new ApiError(422, "unsupported glossary format: xml")),
+    },
+  });
+  const file = new File(["{not json"], "terms.json", { type: "application/json" });
+  const input = (await screen.findByLabelText("匯入名詞表檔案")) as HTMLInputElement;
+  await userEvent.upload(input, file);
+  expect(await screen.findByRole("alert")).toHaveTextContent("匯入失敗");
+});
+
+test("a failed delete shows the humanized reason", async () => {
+  setup({
+    api: {
+      deleteGlossary: vi.fn().mockRejectedValue(new ApiError(500, "disk space exhausted")),
+    },
+  });
+  await userEvent.click(await screen.findByRole("button", { name: "移除" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent("磁碟空間不足");
+});
+
+test("an import with skipped rows reports how many and which", async () => {
+  setup({
+    api: {
+      importGlossary: vi.fn().mockResolvedValue({
+        ...TABLE,
+        id: "imp",
+        entry_count: 1,
+        skipped: ["row 3: missing source", "row 4: missing target"],
+      }),
+    },
+  });
+  const file = new File(["source,target\nA,B\n,C\nD,\n"], "terms.csv", {
+    type: "text/csv",
+  });
+  const input = (await screen.findByLabelText("匯入名詞表檔案")) as HTMLInputElement;
+  await userEvent.upload(input, file);
+  const notice = await screen.findByRole("status");
+  expect(notice).toHaveTextContent("已略過 2 列");
+  expect(notice).toHaveTextContent("row 3: missing source");
+});
+
+test("a clean import reports no skipped rows", async () => {
+  setup({
+    api: {
+      importGlossary: vi
+        .fn()
+        .mockResolvedValue({ ...TABLE, id: "imp", entry_count: 2, skipped: [] }),
+    },
+  });
+  const file = new File(["source,target\nA,B\n"], "terms.csv", { type: "text/csv" });
+  const input = (await screen.findByLabelText("匯入名詞表檔案")) as HTMLInputElement;
+  await userEvent.upload(input, file);
+  await waitFor(() => expect(screen.queryByRole("status")).toBeNull());
 });

@@ -13,7 +13,7 @@ from .migrate import migrate_legacy_glossaries
 from .models import GlossaryEntry, GlossaryTableMeta
 from .prompt import format_for_prompt, relevant_entries
 from .resolve import resolve_effective_glossary, task_glossary_for_new_task
-from .store import GlossaryStore
+from .store import GlossaryStore, parse_import
 
 
 def load_glossary(root: Path, project: str) -> list[GlossaryEntry]:
@@ -36,4 +36,5 @@ __all__ = [
     "task_glossary_for_new_task",
     "load_glossary",
     "migrate_legacy_glossaries",
+    "parse_import",
 ]

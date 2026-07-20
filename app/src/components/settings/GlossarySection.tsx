@@ -1,8 +1,10 @@
 import { useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { t } from "../../i18n";
+import { ApiError } from "../../lib/api/client";
 import type { GlossaryDomain } from "../../lib/api/types";
 import { useApi } from "../../lib/connection";
+import { humanizeError } from "../../lib/errors";
 import { Section } from "./Section";
 import styles from "./settings.module.css";
 
@@ -32,13 +34,30 @@ export function GlossarySection({
     void queryClient.invalidateQueries({ queryKey: ["glossaries"] });
   }
 
+  // A rejected mutation used to leave the screen unchanged, so a bad import
+  // read as "nothing happened". Every mutation now reports its reason here.
+  const [error, setError] = useState<string | null>(null);
+  const [skipped, setSkipped] = useState<string[]>([]);
+
+  function failWith(prefix: string) {
+    return (cause: unknown) => {
+      const raw =
+        cause instanceof ApiError && typeof cause.detail === "string"
+          ? cause.detail
+          : String(cause);
+      setError(`${prefix}：${humanizeError(raw).summary}`);
+    };
+  }
+
   const create = useMutation({
     mutationFn: (name: string) => api.createGlossary(name, domain),
     onSuccess: () => {
       setCreating(false);
       setNewName("");
+      setError(null);
       refresh();
     },
+    onError: failWith(t("settings.glossary.actionFailed")),
   });
 
   const importTable = useMutation({
@@ -51,18 +70,33 @@ export function GlossarySection({
       content: string;
       format: "csv" | "json";
     }) => api.importGlossary(name, domain, content, format),
-    onSuccess: refresh,
+    onSuccess: (table) => {
+      setError(null);
+      // The core reports every row it dropped; surfacing the count plus the
+      // lines is the difference between a lost term and a fixable one.
+      setSkipped(table.skipped ?? []);
+      refresh();
+    },
+    onError: failWith(t("settings.glossary.importFailed")),
   });
 
   const patch = useMutation({
     mutationFn: ({ id, enabled }: { id: string; enabled: boolean }) =>
       api.patchGlossary(id, { enabled }),
-    onSuccess: refresh,
+    onSuccess: () => {
+      setError(null);
+      refresh();
+    },
+    onError: failWith(t("settings.glossary.actionFailed")),
   });
 
   const remove = useMutation({
     mutationFn: (id: string) => api.deleteGlossary(id),
-    onSuccess: refresh,
+    onSuccess: () => {
+      setError(null);
+      refresh();
+    },
+    onError: failWith(t("settings.glossary.actionFailed")),
   });
 
   function submitNew(event: React.FormEvent) {
@@ -77,6 +111,7 @@ export function GlossarySection({
     // Reset the input so picking the same file twice still fires change.
     event.target.value = "";
     if (!file) return;
+    setSkipped([]);
     const content = await file.text();
     const format = file.name.toLowerCase().endsWith(".json") ? "json" : "csv";
     const name = file.name.replace(/\.[^.]+$/, "");
@@ -127,6 +162,23 @@ export function GlossarySection({
         </div>
       }
     >
+      {error && (
+        <p className={styles.glossaryError} role="alert">
+          {error}
+        </p>
+      )}
+      {skipped.length > 0 && (
+        <div className={styles.glossaryNotice} role="status">
+          {t("settings.glossary.skippedPrefix")}
+          {skipped.length}
+          {t("settings.glossary.skippedSuffix")}
+          <ul className={styles.glossarySkippedList}>
+            {skipped.map((line) => (
+              <li key={line}>{line}</li>
+            ))}
+          </ul>
+        </div>
+      )}
       {creating && (
         <form className={styles.skillCreate} onSubmit={submitNew}>
           <label className={styles.field}>

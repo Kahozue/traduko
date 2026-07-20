@@ -36,6 +36,29 @@ test("untranslated chunks map to a localized summary", () => {
   ).toBe("部分段落尚未翻譯");
 });
 
+test("dubbing engine missing maps to a localized summary pointing at settings", () => {
+  const human = humanizeError(
+    "dubbing engine is not installed; install it from the settings video tab",
+  );
+  expect(human.summary).toBe("配音引擎尚未安裝");
+  expect(human.hint).toContain("設定");
+});
+
+test("a placeholder engine selection maps to its own summary", () => {
+  const human = humanizeError("engine not available: cloud_placeholder");
+  expect(human.summary).toBe("所選引擎尚不可用");
+  expect(human.hint).toContain("引擎");
+});
+
+test("insufficient disk space maps to a localized summary", () => {
+  expect(humanizeError("insufficient disk space for export").summary).toBe(
+    "磁碟空間不足",
+  );
+  expect(humanizeError("not enough disk space: need 2.0 GB, 300 MB free").summary).toBe(
+    "磁碟空間不足",
+  );
+});
+
 test("matchError returns null for unknown text instead of a generic summary", () => {
   expect(matchError("SomethingWeirdError: xyzzy")).toBeNull();
   expect(matchError("ffmpeg not found on PATH")?.summary).toBe("ffmpeg 不可用");

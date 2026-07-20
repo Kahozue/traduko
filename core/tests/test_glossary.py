@@ -9,6 +9,7 @@ from traduko.glossary import (
     GlossaryTableMeta,
     format_for_prompt,
     load_glossary,
+    parse_import,
     relevant_entries,
 )
 
@@ -160,7 +161,7 @@ def test_enabled_merged_filters_by_domain(tmp_path: Path) -> None:
 def test_import_export_csv_round_trip(tmp_path: Path) -> None:
     store = GlossaryStore(tmp_path)
     content = "source,target,notes,category\r\nKirito,桐人,hero,人名\r\n"
-    meta = store.import_table("Imported", "general", content, "csv")
+    meta, _ = store.import_table("Imported", "general", content, "csv")
     assert [e.source for e in store.read_entries(meta.id)] == ["Kirito"]
     exported = store.export_table(meta.id, "csv")
     assert exported.startswith("source,target,notes,category")
@@ -172,7 +173,7 @@ def test_import_export_json_round_trip(tmp_path: Path) -> None:
     content = json.dumps(
         {"entries": [{"source": "Yui", "target": "結衣", "notes": "", "category": "人名"}]}
     )
-    meta = store.import_table("Imp", "general", content, "json")
+    meta, _ = store.import_table("Imp", "general", content, "json")
     assert store.read_entries(meta.id) == [
         GlossaryEntry(source="Yui", target="結衣", category="人名")
     ]
@@ -185,15 +186,48 @@ def test_import_export_json_round_trip(tmp_path: Path) -> None:
 def test_import_bare_json_array(tmp_path: Path) -> None:
     store = GlossaryStore(tmp_path)
     content = json.dumps([{"source": "Yui", "target": "結衣"}])
-    meta = store.import_table("Imp", "general", content, "json")
+    meta, _ = store.import_table("Imp", "general", content, "json")
     assert [e.source for e in store.read_entries(meta.id)] == ["Yui"]
 
 
 def test_import_skips_rows_missing_source_or_target(tmp_path: Path) -> None:
     store = GlossaryStore(tmp_path)
     content = "source,target,notes,category\r\nKirito,桐人,,\r\n,orphan,,\r\nNoTarget,,,\r\n"
-    meta = store.import_table("Imp", "general", content, "csv")
+    meta, skipped = store.import_table("Imp", "general", content, "csv")
     assert [e.source for e in store.read_entries(meta.id)] == ["Kirito"]
+    # A silently dropped row is a silently lost term: every skip is reported
+    # with the file line number the user can go and fix.
+    assert skipped == ["row 3: missing source", "row 4: missing target"]
+
+
+def test_parse_import_reports_skipped_csv_rows_by_line() -> None:
+    content = "source,target\r\nKirito,桐人\r\n,orphan\r\nNoTarget,\r\n,\r\n"
+    entries, skipped = parse_import(content, "csv")
+    assert [e.source for e in entries] == ["Kirito"]
+    assert skipped == [
+        "row 3: missing source",
+        "row 4: missing target",
+        "row 5: missing source and target",
+    ]
+
+
+def test_parse_import_reports_skipped_json_rows_by_index() -> None:
+    content = json.dumps(
+        [
+            {"source": "Yui", "target": "結衣"},
+            {"source": "", "target": "orphan"},
+            "not-an-object",
+        ]
+    )
+    entries, skipped = parse_import(content, "json")
+    assert [e.source for e in entries] == ["Yui"]
+    assert skipped == ["entry 2: missing source", "entry 3: not an object"]
+
+
+def test_parse_import_clean_content_reports_nothing() -> None:
+    entries, skipped = parse_import("source,target\r\nKirito,桐人\r\n", "csv")
+    assert len(entries) == 1
+    assert skipped == []
 
 
 # --- prompt helpers (behaviour unchanged from v1) ---------------------------

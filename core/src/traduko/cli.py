@@ -646,12 +646,14 @@ def glossary_import(
     fmt = "json" if file.suffix.lower() == ".json" else "csv"
     store = _glossary_store(ctx)
     try:
-        meta = store.import_table(
+        meta, skipped = store.import_table(
             name or file.stem, domain, file.read_text(encoding="utf-8"), fmt
         )
     except ValueError as error:
         typer.echo(f"import failed: {error}")
         raise typer.Exit(code=1) from None
+    for message in skipped:
+        typer.echo(f"skipped {message}")
     typer.echo(meta.id)
 
 

@@ -895,9 +895,10 @@ def get_task_glossary_entries(
     path = _task_glossary_csv_path(ws, project, task_id)
     if not path.exists():
         return {"entries": []}
+    parsed, _ = _parse_csv(path.read_text(encoding="utf-8"))
     entries = [
         {"source": e.source, "target": e.target, "notes": e.notes, "category": e.category}
-        for e in _parse_csv(path.read_text(encoding="utf-8"))
+        for e in parsed
     ]
     return {"entries": entries}
 
@@ -1497,11 +1498,12 @@ def import_glossary(request: Request, body: GlossaryImportRequest) -> dict:
         raise HTTPException(status_code=422, detail=f"invalid format: {body.format}")
     store = _glossary_store(request)
     try:
-        meta = store.import_table(name, domain, body.content, body.format)
+        meta, skipped = store.import_table(name, domain, body.content, body.format)
     except ValueError as error:
         raise HTTPException(status_code=422, detail=str(error)) from None
     row = _glossary_meta_dict(meta)
     row["entry_count"] = len(store.read_entries(meta.id))
+    row["skipped"] = skipped
     return row
 
 

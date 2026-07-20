@@ -26,6 +26,13 @@ const PATTERNS: { pattern: RegExp; summary: MessageKey; hint: MessageKey }[] = [
     hint: "error.model.hint",
   },
   {
+    // Ahead of the rate-limit rule, whose "insufficient" would otherwise
+    // claim "insufficient disk space" and send the user to check billing.
+    pattern: /disk space|insufficient disk/i,
+    summary: "error.disk.summary",
+    hint: "error.disk.hint",
+  },
+  {
     pattern: /429|rate.?limit|quota|insufficient|exceeded your current quota|billing/i,
     summary: "error.rateLimit.summary",
     hint: "error.rateLimit.hint",
@@ -49,6 +56,16 @@ const PATTERNS: { pattern: RegExp; summary: MessageKey; hint: MessageKey }[] = [
     pattern: /pdf ?engine is not installed/i,
     summary: "error.pdfEngine.summary",
     hint: "error.pdfEngine.hint",
+  },
+  {
+    pattern: /dubbing engine is not installed/i,
+    summary: "error.dubEngine.summary",
+    hint: "error.dubEngine.hint",
+  },
+  {
+    pattern: /engine not available/i,
+    summary: "error.engineUnavailable.summary",
+    hint: "error.engineUnavailable.hint",
   },
   {
     pattern: /chunks (are not translated|failed translation)/i,
