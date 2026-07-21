@@ -121,6 +121,11 @@ test("edit artifact: save new version reopens task and rerun completes", async (
     input_path: join(dataRoot, "in2.srt"),
     profile: "subtitle-simple",
   });
+  // A bare .srt carries no document or audio stage markers, so task_domain
+  // falls through to "video", where translation defaults to off. This test is
+  // about editing translation.json, so it asks for the stage explicitly rather
+  // than riding on whatever the global default happens to be.
+  await client.patchTaskSwitches(task.project, task.id, { translate: true });
   await client.runTask(task.project, task.id);
 
   const waitForTerminal = async (): Promise<string> => {
