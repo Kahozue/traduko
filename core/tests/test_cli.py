@@ -723,15 +723,18 @@ def test_task_export_warns_about_the_pending_stages_it_will_run_first(
     assert created.exit_code == 0, created.output
     task_id = created.output.strip().splitlines()[-1]
 
+    # Count before exporting: the run mutates stage statuses, and switches
+    # leave the off ones SKIPPED, which the warning does not count. The export
+    # stage is appended by the command, so it is absent here by construction.
+    pending = sum(
+        1 for s in _show_task(task_id, env)["stages"] if s["status"] == "pending"
+    )
+
     result = runner.invoke(
         app, ["task", "export", task_id, "--kind", "video"], env=env
     )
 
-    assert "will first run" in result.output
-    pending = sum(
-        1 for s in _show_task(task_id, env)["stages"] if s["type"] != "export_video"
-    )
-    assert str(pending) in result.output
+    assert f"will first run {pending} unfinished stage(s)" in result.output
 
 
 def test_task_export_of_a_finished_task_warns_about_nothing(tmp_path: Path) -> None:
