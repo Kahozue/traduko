@@ -808,6 +808,7 @@ export const ja: Record<MessageKey, string> = {
   "assistant.editCancel": "編集をキャンセル",
   "assistant.pause": "一時停止",
   "assistant.attach": "画像やファイルを添付",
+  "assistant.imageFilter": "画像",
   "assistant.attachRemove": "添付を削除",
   "assistant.attachFailed": "クリップボード画像の添付に失敗しました。もう一度お試しください",
   "assistant.expand": "入力を拡大",

@@ -6,6 +6,7 @@ import { t, type MessageKey } from "../i18n";
 import { ApiError } from "../lib/api/client";
 import type { ProfileInfo, TaskKind } from "../lib/api/types";
 import { useApi } from "../lib/connection";
+import { ASR_ENGINES } from "../lib/asr";
 import { trapTab } from "../lib/focus";
 import { AUDIO_EXTENSIONS, VIDEO_EXTENSIONS } from "../lib/media";
 import { Icon, type IconName } from "./icons";
@@ -38,18 +39,6 @@ const KIND_FILTER_LABELS: Record<TaskKind, MessageKey> = {
   document: "create.fileFilter.document",
   comic: "create.fileFilter.comic",
 };
-
-// Engine choices for the audio kind's per-task ASR override, mirroring the
-// settings menu; ids match core asr/engines.py.
-const ASR_ENGINE_OPTIONS: { id: string; label: MessageKey }[] = [
-  { id: "faster_whisper", label: "settings.asr.engine.fasterWhisper" },
-  { id: "macos_native", label: "settings.asr.engine.macos" },
-  { id: "openai_whisper", label: "settings.asr.engine.openaiWhisper" },
-  { id: "openai_gpt4o_diarize", label: "settings.asr.engine.gpt4oDiarize" },
-  { id: "openai_gpt4o", label: "settings.asr.engine.gpt4o" },
-  { id: "openai_gpt4o_mini", label: "settings.asr.engine.gpt4oMini" },
-  { id: "cloud_custom", label: "settings.asr.engine.custom" },
-];
 
 export function CreateTaskDialog({
   onClose,
@@ -302,9 +291,9 @@ export function CreateTaskDialog({
               onChange={(event) => setAsrEngine(event.target.value)}
             >
               <option value="">{t("create.asrEngine.auto")}</option>
-              {ASR_ENGINE_OPTIONS.map((option) => (
-                <option key={option.id} value={option.id}>
-                  {t(option.label)}
+              {ASR_ENGINES.map((engine) => (
+                <option key={engine.id} value={engine.id}>
+                  {t(engine.label)}
                 </option>
               ))}
             </select>

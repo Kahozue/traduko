@@ -294,7 +294,9 @@ export function AssistantPanel({ onClose }: { onClose: () => void }) {
     const { open } = await import("@tauri-apps/plugin-dialog");
     const chosen = await open({
       multiple: true,
-      filters: [{ name: "圖片", extensions: ["png", "jpg", "jpeg", "webp", "gif"] }],
+      filters: [
+        { name: t("assistant.imageFilter"), extensions: ["png", "jpg", "jpeg", "webp", "gif"] },
+      ],
     });
     if (!chosen) return;
     const paths = Array.isArray(chosen) ? chosen : [chosen];

@@ -8,6 +8,7 @@ import { TextPreview } from "../components/TextPreview";
 import { ProgressBar } from "../components/ProgressBar";
 import { StatusBadge } from "../components/StatusBadge";
 import { t } from "../i18n";
+import { ASR_ENGINES, ASR_ENGINE_LABEL } from "../lib/asr";
 import { ApiError } from "../lib/api/client";
 import type { PreflightCheck } from "../lib/api/types";
 import { useApi, useConnection } from "../lib/connection";
@@ -38,16 +39,6 @@ const LLM_STAGE_TYPES = new Set([
   "translate_pdf",
 ]);
 const REAL_PROVIDER_TYPES = new Set(["openai_compat", "anthropic", "gemini"]);
-const ASR_ENGINE_LABELS: Record<string, string> = {
-  faster_whisper: "faster-whisper",
-  macos_native: "macOS 原生",
-  openai_whisper: "whisper-1",
-  openai_gpt4o_diarize: "gpt-4o-transcribe-diarize",
-  openai_gpt4o: "gpt-4o-transcribe",
-  openai_gpt4o_mini: "gpt-4o-mini-transcribe",
-  cloud_custom: "自訂端點",
-};
-const ASR_ENGINE_IDS = Object.keys(ASR_ENGINE_LABELS);
 
 // Pipeline switches (v3_5-04), mirroring the core's tasks.SWITCH_STAGE_TYPES
 // mapping and its stage-marker domain inference.
@@ -486,9 +477,9 @@ export function TaskDetailView({
     asrEngineParam !== "auto" &&
     asrEngineParam !== "auto_audio";
   const asrChipLabel = asrExplicit
-    ? (ASR_ENGINE_LABELS[asrEngineParam] ?? asrEngineParam)
+    ? (ASR_ENGINE_LABEL[asrEngineParam] ? t(ASR_ENGINE_LABEL[asrEngineParam]) : asrEngineParam)
     : asrProviderParam && !asrEngineParam
-      ? (ASR_ENGINE_LABELS[asrProviderParam] ?? asrProviderParam)
+      ? (ASR_ENGINE_LABEL[asrProviderParam] ? t(ASR_ENGINE_LABEL[asrProviderParam]) : asrProviderParam)
       : t("task.asrEngine.auto");
   // The dubbing chip switches the task's voice mode in place; the PDF chip
   // stays informational until its engine grows choices.
@@ -717,9 +708,9 @@ export function TaskDetailView({
                     onChange={(event) => setDraftAsrEngine(event.target.value)}
                   >
                     <option value="">{t("create.asrEngine.auto")}</option>
-                    {ASR_ENGINE_IDS.map((id) => (
-                      <option key={id} value={id}>
-                        {ASR_ENGINE_LABELS[id]}
+                    {ASR_ENGINES.map((engine) => (
+                      <option key={engine.id} value={engine.id}>
+                        {t(engine.label)}
                       </option>
                     ))}
                   </select>

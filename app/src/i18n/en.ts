@@ -808,6 +808,7 @@ export const en: Record<MessageKey, string> = {
   "assistant.editCancel": "Cancel edit",
   "assistant.pause": "Pause",
   "assistant.attach": "Attach images or files",
+  "assistant.imageFilter": "Images",
   "assistant.attachRemove": "Remove attachment",
   "assistant.attachFailed": "Attaching the clipboard image failed; try again",
   "assistant.expand": "Expand input",

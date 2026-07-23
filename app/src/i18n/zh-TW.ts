@@ -816,6 +816,7 @@ export const zhTW = {
   "assistant.editCancel": "取消編輯",
   "assistant.pause": "暫停",
   "assistant.attach": "附加圖片或檔案",
+  "assistant.imageFilter": "圖片",
   "assistant.attachRemove": "移除附件",
   "assistant.attachFailed": "剪貼板圖片附加失敗，請再試一次",
   "assistant.expand": "放大輸入",

@@ -9,6 +9,7 @@ vi.mock("@tauri-apps/api/core", () => ({
 import type { ApiClient } from "../lib/api/client";
 import { ApiError } from "../lib/api/client";
 import type { TaskRecord } from "../lib/api/types";
+import { localeStore } from "../lib/locale";
 import { renderWithConnection } from "../test/helpers";
 import { TaskDetailView } from "./TaskDetailView";
 
@@ -599,6 +600,39 @@ test("model chip is locked while the task runs and engine chip shows", async () 
   expect(chip).toBeDisabled();
   const asrChip = screen.getByRole("button", { name: /ASR · faster-whisper/ });
   expect(asrChip).toBeDisabled();
+});
+
+test("the asr chip label is localized, not hardcoded chinese", async () => {
+  // ASR_ENGINE_LABELS hardcoded "macOS 原生"/"自訂端點", so English and
+  // Japanese leaked Chinese. The chip must read the shared i18n label.
+  const audioTask: TaskRecord = {
+    ...task,
+    stages: [
+      {
+        type: "asr",
+        status: "completed",
+        params: { engine: "macos_native" },
+        pause_after: false,
+        artifacts: [],
+        error: null,
+      },
+    ],
+  };
+  const api: Partial<ApiClient> = {
+    showTask: vi.fn().mockResolvedValue(audioTask),
+    getConfig: vi.fn().mockResolvedValue(CONFIG),
+  };
+  localeStore.setLocale("en");
+  try {
+    renderWithConnection(
+      <TaskDetailView project="default" taskId="t1" onBack={() => {}} onOpenEditor={() => {}} />,
+      { api },
+    );
+    const chip = await screen.findByRole("button", { name: /ASR · macOS native/ });
+    expect(chip.textContent).not.toMatch(/原生/);
+  } finally {
+    localeStore.setLocale("zh-TW");
+  }
 });
 
 test("asr chip switches the engine in place", async () => {
