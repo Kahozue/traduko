@@ -656,7 +656,7 @@ export const zhTW = {
   "task.export.studio.fps": "幀率",
   "task.export.studio.fps.source": "同來源",
   "task.export.studio.audioCodec": "音訊編碼",
-  "task.export.studio.sampleRate": "採樣率",
+  "task.export.studio.sampleRate": "取樣率",
   "task.export.studio.sampleRate.source": "同來源",
   "task.export.studio.channels": "聲道",
   "task.export.studio.channels.source": "同來源",
