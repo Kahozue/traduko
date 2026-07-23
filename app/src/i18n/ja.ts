@@ -730,6 +730,8 @@ export const ja: Record<MessageKey, string> = {
   "tasks.emptyTitle": "タスクはまだありません",
   "tasks.emptyStep1": "まず設定で LLM プロバイダと API キーを追加してください",
   "tasks.emptyStep2": "動画や字幕ファイルをウィンドウにドラッグするか、右上の「新規タスク」を押してください",
+  "tasks.emptyDrag.audio": "音声ファイルをウィンドウにドラッグするか、右上の「新規タスク」を押してください",
+  "tasks.emptyDrag.document": "文書ファイルをウィンドウにドラッグするか、右上の「新規タスク」を押してください",
   "tasks.emptyAction": "設定を開く",
   "task.paused.title": "タスクは一時停止中です",
   "task.paused.hint": "手動の一時停止と予算上限到達はここで止まり、進捗は保持されます。「実行」で中断点から再開します。予算上限の場合は先に設定で上限を引き上げてください。",

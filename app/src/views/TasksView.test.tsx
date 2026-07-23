@@ -187,6 +187,30 @@ test("shows first-run guide when there are no tasks", async () => {
   expect(onOpenSettings).toHaveBeenCalled();
 });
 
+test("the audio domain empty guide points at audio files, not video", async () => {
+  const api: Partial<ApiClient> = { listTasks: vi.fn().mockResolvedValue([]) };
+  renderWithConnection(<TasksView onOpenTask={() => {}} taskKind="audio" />, { api });
+  expect(await screen.findByText(/把音訊檔拖進視窗/)).toBeInTheDocument();
+  expect(screen.queryByText(/把影片或字幕檔拖進視窗/)).toBeNull();
+});
+
+test("the first-run guide drops the provider step once a provider exists", async () => {
+  const api: Partial<ApiClient> = {
+    listTasks: vi.fn().mockResolvedValue([]),
+    getConfig: vi.fn().mockResolvedValue({ llm_providers: { openai: { model: "gpt-4o" } } }),
+  };
+  const onOpenSettings = vi.fn();
+  renderWithConnection(
+    <TasksView onOpenTask={() => {}} onOpenSettings={onOpenSettings} />,
+    { api },
+  );
+  await screen.findByText("還沒有任務");
+  await waitFor(() =>
+    expect(screen.queryByText(/先到設定新增 LLM 供應商/)).toBeNull(),
+  );
+  expect(screen.queryByRole("button", { name: "前往設定" })).toBeNull();
+});
+
 test("comic domain shows a not-yet-available placeholder instead of the guide", async () => {
   const api: Partial<ApiClient> = { listTasks: vi.fn().mockResolvedValue([]) };
   renderWithConnection(<TasksView onOpenTask={() => {}} taskKind="comic" />, { api });

@@ -730,6 +730,8 @@ export const en: Record<MessageKey, string> = {
   "tasks.emptyTitle": "No tasks yet",
   "tasks.emptyStep1": "First add an LLM provider and API key in settings",
   "tasks.emptyStep2": "Drag a video or subtitle file into the window, or press “New task”",
+  "tasks.emptyDrag.audio": "Drag an audio file into the window, or press “New task”",
+  "tasks.emptyDrag.document": "Drag a document file into the window, or press “New task”",
   "tasks.emptyAction": "Open settings",
   "task.paused.title": "Task paused",
   "task.paused.hint": "Manual pauses and budget caps both stop here with progress kept. Press Run to resume from the breakpoint; if the budget capped, raise the limit in settings first.",

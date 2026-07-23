@@ -737,6 +737,8 @@ export const zhTW = {
   "tasks.emptyTitle": "還沒有任務",
   "tasks.emptyStep1": "先到設定新增 LLM 供應商並填入 API key",
   "tasks.emptyStep2": "把影片或字幕檔拖進視窗，或按右上角「新增任務」",
+  "tasks.emptyDrag.audio": "把音訊檔拖進視窗，或按右上角「新增任務」",
+  "tasks.emptyDrag.document": "把文件檔拖進視窗，或按右上角「新增任務」",
   "tasks.emptyAction": "前往設定",
   "task.paused.title": "任務已暫停",
   "task.paused.hint": "手動暫停與預算觸頂都會停在這裡，進度已保留。按「執行」從中斷點續跑；若因預算觸頂，先到設定提高上限。",

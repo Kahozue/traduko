@@ -48,8 +48,26 @@ function loadCollapsed(): Set<string> {
   }
 }
 
-// The empty state is the sanctioned home of the verda-stelo mark.
-function EmptyGuide({ onOpenSettings }: { onOpenSettings?: () => void }) {
+// The empty state is the sanctioned home of the verda-stelo mark. The drag
+// hint names this domain's own files (C4: an audio view must not tell the
+// user to drop a video), and the provider step drops away once a provider is
+// configured rather than nagging about a done step.
+const EMPTY_DRAG_KEYS: Partial<Record<TaskKind, MessageKey>> = {
+  audio: "tasks.emptyDrag.audio",
+  document: "tasks.emptyDrag.document",
+};
+
+function EmptyGuide({
+  onOpenSettings,
+  taskKind,
+  hasProvider,
+}: {
+  onOpenSettings?: () => void;
+  taskKind?: TaskKind | null;
+  hasProvider: boolean;
+}) {
+  const dragKey: MessageKey =
+    (taskKind && EMPTY_DRAG_KEYS[taskKind]) ?? "tasks.emptyStep2";
   return (
     <div className={styles.emptyGuide}>
       <svg
@@ -66,10 +84,10 @@ function EmptyGuide({ onOpenSettings }: { onOpenSettings?: () => void }) {
       </svg>
       <p className={styles.emptyTitle}>{t("tasks.emptyTitle")}</p>
       <ol className={styles.emptySteps}>
-        <li>{t("tasks.emptyStep1")}</li>
-        <li>{t("tasks.emptyStep2")}</li>
+        {!hasProvider && <li>{t("tasks.emptyStep1")}</li>}
+        <li>{t(dragKey)}</li>
       </ol>
-      {onOpenSettings && (
+      {!hasProvider && onOpenSettings && (
         <button type="button" className={styles.emptyAction} onClick={onOpenSettings}>
           {t("tasks.emptyAction")}
         </button>
@@ -132,6 +150,14 @@ export function TasksView({
     for (const info of profileInfo ?? []) map.set(info.name, info.kind);
     return map;
   }, [profileInfo]);
+  // Whether any LLM provider is configured, so the first-run guide can drop
+  // the "add a provider" step once it is done. Shares the ["config"] cache.
+  const { data: config } = useQuery({
+    queryKey: ["config"],
+    queryFn: () => api.getConfig(),
+  });
+  const hasProvider =
+    config !== undefined && Object.keys(config.llm_providers ?? {}).length > 0;
   const rows = useMemo(() => {
     if (!taskKind) return allRows;
     return (allRows ?? []).filter((row) => kindByProfile.get(row.profile) === taskKind);
@@ -416,7 +442,11 @@ export function TasksView({
         // generic drag-a-video onboarding guide.
         <div className={styles.empty}>{t("tasks.domainUnavailable")}</div>
       ) : rows && rows.length === 0 && statusFilter === "" ? (
-        <EmptyGuide onOpenSettings={onOpenSettings} />
+        <EmptyGuide
+          onOpenSettings={onOpenSettings}
+          taskKind={taskKind}
+          hasProvider={hasProvider}
+        />
       ) : rows && rows.length === 0 ? (
         <div className={styles.empty}>{t("tasks.empty")}</div>
       ) : (
