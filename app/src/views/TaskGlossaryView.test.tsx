@@ -186,6 +186,42 @@ test("a task with no reapply options renders no empty reapply box", async () => 
   expect(screen.queryByText("重新套用")).toBeNull();
 });
 
+test("the global-table search filters tables, not the entry table", async () => {
+  // The global search box and the task-local table shared one state, so
+  // typing here filtered the entries below and left the table list untouched.
+  render(
+    api({
+      showTask: vi.fn().mockResolvedValue(
+        task({ glossary: { global_ids: [], use_task: true, asr_mode: "auto" } }),
+      ),
+    }),
+  );
+  expect(await screen.findByText("動畫名詞")).toBeInTheDocument();
+  expect(screen.getByText("通用詞")).toBeInTheDocument();
+  expect(await screen.findByDisplayValue("Kirito")).toBeInTheDocument();
+
+  await userEvent.type(screen.getByRole("searchbox", { name: "搜尋名詞表" }), "通用");
+  expect(screen.queryByText("動畫名詞")).toBeNull();
+  expect(screen.getByText("通用詞")).toBeInTheDocument();
+  // The task-local entry table stays put — no remote side effect.
+  expect(screen.getByDisplayValue("Kirito")).toBeInTheDocument();
+});
+
+test("the entry search filters entries without hiding global tables", async () => {
+  render(
+    api({
+      showTask: vi.fn().mockResolvedValue(
+        task({ glossary: { global_ids: [], use_task: true, asr_mode: "auto" } }),
+      ),
+    }),
+  );
+  expect(await screen.findByDisplayValue("Kirito")).toBeInTheDocument();
+  await userEvent.type(screen.getByRole("searchbox", { name: "搜尋" }), "Kir");
+  expect(screen.queryByDisplayValue("Aincrad")).toBeNull();
+  expect(screen.getByDisplayValue("Kirito")).toBeInTheDocument();
+  expect(screen.getByText("動畫名詞")).toBeInTheDocument();
+});
+
 test("confirming a reapply posts the chosen mode", async () => {
   const client = render();
   await userEvent.click(await screen.findByRole("checkbox", { name: /通用詞/ }));

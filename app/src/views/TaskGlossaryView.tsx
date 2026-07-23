@@ -70,6 +70,7 @@ export function TaskGlossaryView({
   });
 
   const [globalIds, setGlobalIds] = useState<string[]>([]);
+  const [tableSearch, setTableSearch] = useState("");
   const [useTask, setUseTask] = useState(false);
   const [asrMode, setAsrMode] = useState<AsrMode>("auto");
   const [dirty, setDirty] = useState(false);
@@ -221,9 +222,11 @@ export function TaskGlossaryView({
   // general tables only (spec 3-(4)): a video task picking document tables
   // is noise, not choice.
   const taskDomain = domainOf(task);
+  const tableQuery = tableSearch.trim().toLowerCase();
   const glossariesByDomain = new Map<string, GlossaryTable[]>();
   for (const g of allGlossaries ?? []) {
     if (g.domain !== taskDomain && g.domain !== "general") continue;
+    if (tableQuery && !g.name.toLowerCase().includes(tableQuery)) continue;
     if (!glossariesByDomain.has(g.domain)) glossariesByDomain.set(g.domain, []);
     glossariesByDomain.get(g.domain)!.push(g);
   }
@@ -287,8 +290,8 @@ export function TaskGlossaryView({
           role="searchbox"
           aria-label={t("task.glossary.search")}
           placeholder={t("task.glossary.search")}
-          value={entrySearch}
-          onChange={(e) => setEntrySearch(e.target.value)}
+          value={tableSearch}
+          onChange={(e) => setTableSearch(e.target.value)}
         />
         {domainOrder.map((domain) => {
           const tables = glossariesByDomain.get(domain);
