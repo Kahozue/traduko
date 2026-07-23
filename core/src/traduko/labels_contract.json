@@ -1,0 +1,56 @@
+{
+  "_comment": "Machine-verified contract of the core enums the app must render. Do not hand-edit blindly: core/tests/test_labels_contract.py fails if this drifts from core's real enums (seed profiles, EVENT_TYPES, TaskStatus, StageStatus); app/src/lib/labels.contract.test.ts fails if the app lacks a label for any entry here. When core adds a stage/event/status, update this file to the value the core test prints, then add the matching app label + i18n. Two gates in series close the core->app boundary (guards the R3 M1 defect).",
+  "stage_types": [
+    "align_duration",
+    "asr",
+    "chunk",
+    "diarize",
+    "export_audio",
+    "export_document",
+    "export_subtitles",
+    "export_transcript",
+    "extract_audio",
+    "ingest_document",
+    "ingest_subtitle",
+    "ingest_transcript",
+    "mix_audio",
+    "mux",
+    "proofread",
+    "qc_scan",
+    "segment",
+    "translate",
+    "translate_chunks",
+    "translate_pdf",
+    "tts_synthesize"
+  ],
+  "event_types_ui": [
+    "agent_round",
+    "budget_exceeded",
+    "budget_warning",
+    "stage_completed",
+    "stage_progress",
+    "stage_started",
+    "task_canceled",
+    "task_completed",
+    "task_failed",
+    "task_paused",
+    "task_started",
+    "task_waiting_review"
+  ],
+  "task_statuses": [
+    "canceled",
+    "completed",
+    "failed",
+    "paused",
+    "pending",
+    "running",
+    "waiting_review"
+  ],
+  "stage_statuses": [
+    "completed",
+    "failed",
+    "pending",
+    "running",
+    "skipped"
+  ]
+}
