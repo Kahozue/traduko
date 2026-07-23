@@ -1,4 +1,10 @@
 # PyInstaller spec for the Tauri sidecar build of the core.
+# This is deliberately a one-folder build. A one-file build re-extracts the
+# whole payload into a fresh temp directory on every launch, so macOS has to
+# validate the signature of every bundled dylib again each time and the core
+# takes seven seconds or more to answer /health when it is spawned by the
+# desktop app. A one-folder build lives at a stable path, so that validation
+# is cached after the first run and startup drops to well under a second.
 # uvicorn and websockets import their implementations dynamically, so both
 # are collected wholesale. faster-whisper and its native dependencies
 # (ctranslate2, onnxruntime, av, tokenizers) are bundled so the packaged
@@ -49,10 +55,17 @@ pyz = PYZ(a.pure)
 exe = EXE(
     pyz,
     a.scripts,
-    a.binaries,
-    a.datas,
     [],
+    exclude_binaries=True,
     name="traduko-core",
     console=True,
     upx=False,
+)
+coll = COLLECT(
+    exe,
+    a.binaries,
+    a.datas,
+    strip=False,
+    upx=False,
+    name="traduko-core",
 )

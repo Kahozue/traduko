@@ -28,12 +28,16 @@ type ConnectionValue = ConnectionState & { retry: () => void };
 
 export const ConnectionContext = createContext<ConnectionValue | null>(null);
 
-// The bundled core is a PyInstaller one-file binary: its first cold start
-// unpacks into a cache and can take the better part of a minute before the
-// port is listening. The app spawns and owns that process, so it waits
-// generously rather than telling the user to start the core by hand.
-const HEALTH_ATTEMPTS = 120;
-const HEALTH_INTERVAL_MS = 500;
+// The bundled core answers /health under a second, so the first seconds are
+// polled tightly to avoid sitting on a ready core. The slow tail covers the
+// first run after an install, where macOS still has to validate every
+// freshly installed binary and the core takes several seconds. The app
+// spawns and owns that process, so it waits generously rather than telling
+// the user to start the core by hand.
+const HEALTH_FAST_INTERVAL_MS = 100;
+const HEALTH_FAST_WINDOW_MS = 3000;
+const HEALTH_SLOW_INTERVAL_MS = 500;
+const HEALTH_TIMEOUT_MS = 60000;
 
 async function healthOk(baseUrl: string): Promise<boolean> {
   try {
@@ -68,13 +72,15 @@ export function ConnectionProvider({ children }: { children: ReactNode }) {
       const info = await invoke<ConnectionInfo>("connection_info");
       const outcome = await invoke<string>("ensure_core_running");
       let healthy = false;
-      for (let i = 0; i < HEALTH_ATTEMPTS && !disposed; i += 1) {
+      const startedAt = Date.now();
+      while (!disposed && Date.now() - startedAt < HEALTH_TIMEOUT_MS) {
         if (await healthOk(info.baseUrl)) {
           healthy = true;
           break;
         }
         if (outcome === "unavailable") break;
-        await sleep(HEALTH_INTERVAL_MS);
+        const fast = Date.now() - startedAt < HEALTH_FAST_WINDOW_MS;
+        await sleep(fast ? HEALTH_FAST_INTERVAL_MS : HEALTH_SLOW_INTERVAL_MS);
       }
       if (disposed) return;
       const fresh = await invoke<ConnectionInfo>("connection_info");

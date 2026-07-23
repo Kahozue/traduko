@@ -107,6 +107,18 @@ pub fn run() {
             use tauri::menu::{Menu, MenuItem};
             use tauri::tray::TrayIconBuilder;
 
+            // Start the core here rather than waiting for the webview to
+            // boot and call ensure_core_running: the two then overlap
+            // instead of running back to back. Off the main thread because
+            // the port probe blocks for up to 300 ms. The frontend still
+            // makes its own call, which ensure_running answers without
+            // spawning a second core.
+            let handle = app.handle().clone();
+            std::thread::spawn(move || {
+                let state = handle.state::<core_process::CoreProcess>();
+                core_process::ensure_running(&handle, state.inner());
+            });
+
             // Tray menu copy is zh-TW by product decision; the TS i18n
             // dictionary is webview-only and cannot reach native menus.
             let show = MenuItem::with_id(app, "show", "顯示主視窗", true, None::<&str>)?;
