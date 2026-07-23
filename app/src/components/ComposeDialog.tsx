@@ -5,6 +5,7 @@ import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/rea
 import { t, type MessageKey } from "../i18n";
 import { ApiError } from "../lib/api/client";
 import { useApi } from "../lib/connection";
+import { trapTab } from "../lib/focus";
 import { AUDIO_EXTENSIONS, VIDEO_EXTENSIONS } from "../lib/media";
 import { formatDateTime } from "../lib/time";
 import styles from "./ComposeDialog.module.css";
@@ -111,7 +112,9 @@ export function ComposeDialog({
     if (event.key === "Escape") {
       event.stopPropagation();
       onClose();
+      return;
     }
+    trapTab(event, dialogRef.current);
   }
 
   async function pick(

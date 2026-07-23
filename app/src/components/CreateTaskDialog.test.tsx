@@ -18,6 +18,26 @@ const DETAILED: ProfileInfo[] = [
   { name: "novel-translate", kind: "document", stages: ["ingest_document", "translate_chunks"] },
 ];
 
+test("Tab is trapped inside the create-task dialog", async () => {
+  renderWithConnection(
+    <CreateTaskDialog initialKind="video" onClose={() => {}} onCreated={() => {}} />,
+    { api: { profilesDetailed: vi.fn().mockResolvedValue(DETAILED) } },
+  );
+  await screen.findByText("新增影片任務");
+  const dialog = screen.getByRole("dialog");
+  const nodes = dialog.querySelectorAll<HTMLElement>(
+    "button:not([disabled]), input:not([disabled]), select:not([disabled])",
+  );
+  const first = nodes[0];
+  const last = nodes[nodes.length - 1];
+  last.focus();
+  await userEvent.tab();
+  expect(document.activeElement).toBe(first);
+  first.focus();
+  await userEvent.tab({ shift: true });
+  expect(document.activeElement).toBe(last);
+});
+
 test("initialKind hides the type row and titles by domain", async () => {
   const api: Partial<ApiClient> = {
     profilesDetailed: vi.fn().mockResolvedValue([

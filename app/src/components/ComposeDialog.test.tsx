@@ -70,6 +70,26 @@ function makeApi(extra: Partial<ApiClient> = {}): Partial<ApiClient> {
   };
 }
 
+test("Tab is trapped inside the compose dialog", async () => {
+  renderWithConnection(
+    <ComposeDialog kind="audio" onClose={() => {}} onCreated={() => {}} />,
+    { api: makeApi() },
+  );
+  await screen.findByText("製作音頻");
+  const dialog = screen.getByRole("dialog");
+  const nodes = dialog.querySelectorAll<HTMLElement>(
+    "button:not([disabled]), input:not([disabled]), select:not([disabled])",
+  );
+  const first = nodes[0];
+  const last = nodes[nodes.length - 1];
+  last.focus();
+  await userEvent.tab();
+  expect(document.activeElement).toBe(first);
+  first.focus();
+  await userEvent.tab({ shift: true });
+  expect(document.activeElement).toBe(last);
+});
+
 test("audio compose sends the transcript file and the audio profile", async () => {
   openMock.mockResolvedValue("/tmp/lines.srt");
   const createTask = vi.fn().mockResolvedValue({ id: "c1", project: "default" });

@@ -6,6 +6,7 @@ import { t, type MessageKey } from "../i18n";
 import { ApiError } from "../lib/api/client";
 import type { ProfileInfo, TaskKind } from "../lib/api/types";
 import { useApi } from "../lib/connection";
+import { trapTab } from "../lib/focus";
 import { AUDIO_EXTENSIONS, VIDEO_EXTENSIONS } from "../lib/media";
 import { Icon, type IconName } from "./icons";
 import styles from "./CreateTaskDialog.module.css";
@@ -178,20 +179,7 @@ export function CreateTaskDialog({
       onClose();
       return;
     }
-    if (event.key !== "Tab") return;
-    const nodes = dialogRef.current?.querySelectorAll<HTMLElement>(
-      'button, input, select, [tabindex]:not([tabindex="-1"])',
-    );
-    if (!nodes || nodes.length === 0) return;
-    const first = nodes[0];
-    const last = nodes[nodes.length - 1];
-    if (event.shiftKey && document.activeElement === first) {
-      event.preventDefault();
-      last.focus();
-    } else if (!event.shiftKey && document.activeElement === last) {
-      event.preventDefault();
-      first.focus();
-    }
+    trapTab(event, dialogRef.current);
   }
 
   const create = useMutation({
