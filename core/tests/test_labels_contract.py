@@ -19,7 +19,11 @@ from traduko.models import StageStatus, TaskStatus
 from traduko.profiles import list_profiles_detailed
 from traduko.seeds import ensure_defaults
 
-CONTRACT = Path(__file__).resolve().parents[1] / "src" / "traduko" / "labels_contract.json"
+# The contract lives app-side (app/src/lib/labels.contract.json) so the app's
+# vitest can import it as a plain JSON module -- reading it via node fs would
+# make the production build's tsc reject the test. Python has no such
+# constraint, so this half reaches across the repo to read it.
+CONTRACT = Path(__file__).resolve().parents[2] / "app" / "src" / "lib" / "labels.contract.json"
 
 
 def _authoritative() -> dict[str, list[str]]:

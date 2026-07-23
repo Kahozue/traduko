@@ -3,7 +3,7 @@ import { t, type MessageKey } from "../i18n";
 // Engineering identifiers stay in core artifacts and profiles; the UI shows
 // human wording. Unknown types (third-party profile stages) fall back to the
 // raw identifier so nothing renders blank.
-const STAGE_TYPE_KEYS: Record<string, MessageKey> = {
+export const STAGE_TYPE_KEYS: Record<string, MessageKey> = {
   ingest_subtitle: "stage.ingest_subtitle",
   ingest_transcript: "stage.ingest_transcript",
   extract_audio: "stage.extract_audio",
@@ -32,7 +32,7 @@ const STAGE_TYPE_KEYS: Record<string, MessageKey> = {
   export_audio_custom: "stage.export_audio_custom",
 };
 
-const STAGE_STATUS_KEYS: Record<string, MessageKey> = {
+export const STAGE_STATUS_KEYS: Record<string, MessageKey> = {
   pending: "status.pending",
   running: "status.running",
   completed: "status.completed",
@@ -67,7 +67,7 @@ export function stageStatusLabel(status: string): string {
   return key ? t(key) : status;
 }
 
-const EVENT_TYPE_KEYS: Record<string, MessageKey> = {
+export const EVENT_TYPE_KEYS: Record<string, MessageKey> = {
   task_started: "event.task_started",
   stage_started: "event.stage_started",
   stage_progress: "event.stage_progress",
