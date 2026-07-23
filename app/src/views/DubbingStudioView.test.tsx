@@ -174,11 +174,16 @@ test("apply and resynthesize writes params and triggers redub", async () => {
   await waitFor(() => expect(client.dubRedub).toHaveBeenCalledWith("default", "t1", "synthesize"));
 });
 
-test("resynthesize from diarize triggers the diarize redub path", async () => {
+test("resynthesize from diarize confirms before triggering the redub", async () => {
+  // Both the footer button and the empty-state "separate now" run the same
+  // destructive redub("diarize"); both must route through one confirmation.
   const client = api();
   render(client);
   await screen.findByText("配音工作室");
   await userEvent.click(await screen.findByRole("button", { name: /從說話人分離重來/ }));
+  expect(client.dubRedub).not.toHaveBeenCalled();
+  const dialog = await screen.findByRole("dialog");
+  await userEvent.click(within(dialog).getByRole("button", { name: "立即分離" }));
   await waitFor(() => expect(client.dubRedub).toHaveBeenCalledWith("default", "t1", "diarize"));
 });
 

@@ -527,7 +527,7 @@ export function DubbingStudioView({
             type="button"
             className={styles.secondary}
             disabled={busy}
-            onClick={() => redub.mutate("diarize")}
+            onClick={() => setConfirmingSeparate(true)}
           >
             {t("task.dub.studio.redubFromDiarize")}
           </button>
