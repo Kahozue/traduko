@@ -719,3 +719,9 @@
   color: var(--danger);
   font-size: var(--fs-note);
 }
+
+@media (prefers-reduced-motion: reduce) {
+  .stage[data-status="running"] .stageDot {
+    animation: none;
+  }
+}

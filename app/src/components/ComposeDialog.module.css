@@ -152,3 +152,10 @@
     transform: translateY(8px);
   }
 }
+
+@media (prefers-reduced-motion: reduce) {
+  .overlay,
+  .dialog {
+    animation: none;
+  }
+}

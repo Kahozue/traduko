@@ -60,3 +60,9 @@
     opacity: 0.35;
   }
 }
+
+@media (prefers-reduced-motion: reduce) {
+  .pulse {
+    animation: none;
+  }
+}

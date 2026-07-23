@@ -177,3 +177,10 @@
   grid-template-columns: 1fr 1fr;
   gap: 12px;
 }
+
+@media (prefers-reduced-motion: reduce) {
+  .overlay,
+  .dialog {
+    animation: none;
+  }
+}
