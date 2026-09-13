@@ -8,3 +8,4 @@ __pycache__/
 core/packaging/build/
 core/packaging/dist/
 app/src-tauri/binaries/
+.gstack/
